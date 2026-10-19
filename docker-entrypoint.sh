@@ -10,7 +10,7 @@ npx prisma migrate deploy
 
 # 2. Inicia o Backend API (Express + Baileys + WhatsApp Bot) na porta 4000 em background
 echo "⚡ Iniciando BarberFlow API & WhatsApp Engine (porta 4000)..."
-node dist/index.js &
+PORT=4000 node dist/index.js &
 SERVER_PID=$!
 
 # 3. Aguarda a API estar saudável antes de prosseguir
