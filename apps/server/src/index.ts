@@ -26,6 +26,9 @@ import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 
 const app = express();
 
+// Confia no proxy reverso (Traefik no Easypanel, Nginx, Cloudflare)
+app.set('trust proxy', 1);
+
 // Middlewares essenciais de segurança e parsing
 app.use(
   helmet({
@@ -37,11 +40,11 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permite requisições sem origin (mobile/curl/proxy interno) ou configuradas
-      if (!origin || corsOrigins.includes(origin) || !isProduction) {
+      // Permite requisições sem origin (curl/proxy interno Next.js) ou mesma origem se CORS_ORIGIN não estiver restrito
+      if (!origin || corsOrigins.length === 0 || corsOrigins.includes(origin) || !isProduction) {
         callback(null, true);
       } else {
-        callback(new Error('Bloqueado pelo CORS'));
+        callback(null, false);
       }
     },
     credentials: true,
@@ -95,23 +98,37 @@ async function bootstrap() {
     });
   }
 
-  // 2. Cria Super Admin se configurado no ambiente
+  // 2. Cria ou sincroniza Super Admin se configurado no ambiente
   if (env.SUPER_ADMIN_EMAIL && env.SUPER_ADMIN_PASSWORD) {
-    const existingAdmin = await prisma.user.findFirst({
-      where: { role: 'SUPER_ADMIN' },
+    const normalizedEmail = env.SUPER_ADMIN_EMAIL.toLowerCase().trim();
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
     });
 
-    if (!existingAdmin) {
-      const passwordHash = await bcrypt.hash(env.SUPER_ADMIN_PASSWORD, 12);
+    const passwordHash = await bcrypt.hash(env.SUPER_ADMIN_PASSWORD, 12);
+
+    if (!existingUser) {
       await prisma.user.create({
         data: {
           name: env.SUPER_ADMIN_NAME,
-          email: env.SUPER_ADMIN_EMAIL.toLowerCase().trim(),
+          email: normalizedEmail,
           passwordHash,
           role: 'SUPER_ADMIN',
+          isActive: true,
         },
       });
-      logger.info({ email: env.SUPER_ADMIN_EMAIL }, 'Super Admin inicial criado com sucesso');
+      logger.info({ email: normalizedEmail }, 'Super Admin inicial criado com sucesso');
+    } else {
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name: env.SUPER_ADMIN_NAME,
+          passwordHash,
+          role: 'SUPER_ADMIN',
+          isActive: true,
+        },
+      });
+      logger.info({ email: normalizedEmail }, 'Super Admin sincronizado com credenciais do ambiente');
     }
   }
 

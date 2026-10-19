@@ -20,11 +20,17 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
     try {
-      await api.post('/api/auth/login', { email, password });
+      const res = await api.post<{
+        token: string;
+        user: { id: string; name: string; email: string; role: string };
+      }>('/api/auth/login', { email, password });
       await refresh();
-      router.push('/dashboard');
+      if (res.user.role === 'SUPER_ADMIN') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(err.message);
