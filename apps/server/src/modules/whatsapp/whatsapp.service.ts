@@ -24,6 +24,10 @@ class WhatsAppService {
   private reminderInterval: NodeJS.Timeout | null = null;
 
   init() {
+    this.restoreSavedSessions().catch((err) => {
+      logger.error({ err }, 'Erro ao restaurar sessões do WhatsApp');
+    });
+
     // Iniciar checagem periódica de lembretes automáticos a cada 60 segundos
     if (!this.reminderInterval) {
       this.reminderInterval = setInterval(() => {
@@ -31,6 +35,19 @@ class WhatsAppService {
           logger.error({ err }, 'Erro no worker de lembretes do WhatsApp');
         });
       }, 60 * 1000);
+    }
+  }
+
+  async restoreSavedSessions() {
+    const activeConfigs = await prisma.whatsAppConfig.findMany({
+      where: { status: 'CONNECTED' },
+      select: { tenantId: true },
+    });
+    for (const cfg of activeConfigs) {
+      logger.info({ tenantId: cfg.tenantId }, 'Restaurando sessão salva do WhatsApp...');
+      this.connectTenant(cfg.tenantId).catch((err) => {
+        logger.error({ err, tenantId: cfg.tenantId }, 'Falha ao restaurar sessão');
+      });
     }
   }
 
@@ -50,6 +67,17 @@ class WhatsAppService {
     const existing = this.connections.get(tenantId);
     if (existing?.socket && existing.status === 'CONNECTED') {
       return existing;
+    }
+
+    if (existing?.socket) {
+      try {
+        existing.socket.ev.removeAllListeners('connection.update');
+        existing.socket.ev.removeAllListeners('creds.update');
+        existing.socket.ev.removeAllListeners('messages.upsert');
+        existing.socket.end(undefined);
+      } catch {
+        // Ignora
+      }
     }
 
     const { state, saveCreds, clearSession } = await usePostgresAuthState(tenantId);
@@ -107,7 +135,7 @@ class WhatsAppService {
         conn.qrCode = null;
         conn.qrDataUrl = null;
 
-        const rawPhone = socket.user?.id?.replace(/@.*$/, '') || null;
+        const rawPhone = socket.user?.id?.replace(/[:@].*$/, '') || null;
         conn.phoneNumber = rawPhone ? normalizePhone(rawPhone) : null;
 
         await prisma.whatsAppConfig.update({
@@ -124,12 +152,15 @@ class WhatsAppService {
       }
 
       if (connection === 'close') {
-        const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        const error = lastDisconnect?.error as { output?: { statusCode?: number }; message?: string } | undefined;
+        const statusCode = error?.output?.statusCode;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
+        const shouldReconnect = !isLoggedOut;
 
-        logger.warn({ tenantId, statusCode, shouldReconnect }, 'WhatsApp conexão fechada');
+        logger.warn({ tenantId, statusCode, isRestartRequired, shouldReconnect }, 'WhatsApp conexão fechada');
 
-        if (statusCode === DisconnectReason.loggedOut) {
+        if (isLoggedOut) {
           conn.status = 'DISCONNECTED';
           conn.socket = null;
           conn.qrCode = null;
@@ -140,10 +171,28 @@ class WhatsAppService {
             where: { tenantId },
             data: {
               status: 'DISCONNECTED',
+              phoneNumber: null,
               lastDisconnectedAt: new Date(),
               lastError: 'Desconectado pelo usuário no WhatsApp',
             },
           });
+        } else if (shouldReconnect) {
+          conn.status = 'CONNECTING';
+          await prisma.whatsAppConfig.update({
+            where: { tenantId },
+            data: {
+              status: 'CONNECTING',
+              lastError: isRestartRequired ? null : (error?.message || 'Reconectando...'),
+            },
+          });
+
+          // Reconexão automática usando credenciais salvas no Postgres (crítico para código 515 pós-pareamento de QR)
+          const delayMs = isRestartRequired ? 1000 : 3000;
+          setTimeout(() => {
+            this.connectTenant(tenantId).catch((err) => {
+              logger.error({ err, tenantId }, 'Erro ao reconectar WhatsApp após fechamento');
+            });
+          }, delayMs);
         } else {
           conn.status = 'DISCONNECTED';
           await prisma.whatsAppConfig.update({
@@ -151,7 +200,7 @@ class WhatsAppService {
             data: {
               status: 'DISCONNECTED',
               lastDisconnectedAt: new Date(),
-              lastError: lastDisconnect?.error?.message || 'Conexão interrompida',
+              lastError: error?.message || 'Conexão interrompida',
             },
           });
         }
