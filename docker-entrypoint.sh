@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 echo "🚀 Iniciando BarberFlow All-in-One Container..."
@@ -33,13 +33,16 @@ shutdown() {
   exit 0
 }
 
-trap shutdown SIGTERM SIGINT
+trap shutdown TERM INT
 
-# 4. Inicia o Frontend Next.js na porta 3000 em foreground
+# 4. Inicia o Frontend Next.js na porta 3000
 echo "🌐 Iniciando BarberFlow Frontend Next.js 15 (porta 3000)..."
 cd /app/web
 PORT=3000 HOSTNAME=0.0.0.0 node server.js &
 WEB_PID=$!
 
+echo "✨ BarberFlow está online e pronto para receber conexões!"
+
 # Mantém o container ativo aguardando os processos
-wait -n "$SERVER_PID" "$WEB_PID"
+wait -n "$SERVER_PID" "$WEB_PID" || true
+shutdown
