@@ -14,7 +14,7 @@ RUN npm ci --no-audit --no-fund
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN mkdir -p public && npm run build
 
 # 3) Runtime de produção minimalista
 FROM base AS runner
