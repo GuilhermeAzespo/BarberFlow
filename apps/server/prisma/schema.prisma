@@ -1,0 +1,415 @@
+// ─────────────────────────────────────────────────────────────
+// BarberFlow — Prisma Schema
+//
+// Estratégia multi-tenant: banco compartilhado + isolamento lógico.
+// Toda entidade de negócio carrega `tenantId` (FK com ON DELETE CASCADE)
+// e índices compostos iniciados por `tenantId`, garantindo que todas as
+// consultas sejam filtradas e performáticas por salão.
+//
+// Valores monetários são armazenados em centavos (Int) para evitar
+// erros de ponto flutuante. Datas são persistidas em UTC; o fuso de
+// cada salão fica em `Tenant.timezone`.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN // Gestão do SaaS (sem tenant)
+  OWNER // Dono do salão
+  MANAGER // Gerente/recepção
+  PROFESSIONAL // Profissional com acesso ao painel
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED // Suspensão administrativa (suporte, abuso, solicitação)
+  BLOCKED // Bloqueio por inadimplência
+  CANCELED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum AppointmentSource {
+  PANEL
+  WHATSAPP
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+  TRANSFER
+  OTHER
+}
+
+enum WhatsAppStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_PENDING
+  CONNECTED
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+// ─────────────────────────── SaaS / Billing ───────────────────────────
+
+model Plan {
+  id                      String         @id @default(cuid())
+  name                    String
+  slug                    String         @unique
+  description             String?
+  priceCents              Int            @default(0)
+  // null = ilimitado
+  maxProfessionals        Int?
+  maxAppointmentsPerMonth Int?
+  whatsappEnabled         Boolean        @default(true)
+  isActive                Boolean        @default(true)
+  isDefault               Boolean        @default(false)
+  sortOrder               Int            @default(0)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  subscriptions           Subscription[]
+}
+
+model Tenant {
+  id                  String       @id @default(cuid())
+  name                String
+  slug                String       @unique
+  logoUrl             String?
+  phone               String?
+  email               String?
+  address             String?
+  timezone            String       @default("America/Sao_Paulo")
+  currency            String       @default("BRL")
+  slotIntervalMinutes Int          @default(30)
+  onboardingCompleted Boolean      @default(false)
+  status              TenantStatus @default(ACTIVE)
+  statusReason        String?
+  statusChangedAt     DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  subscription          Subscription?
+  logo                  TenantLogo?
+  users                 User[]
+  businessHours         BusinessHour[]
+  professionals         Professional[]
+  services              Service[]
+  customers             Customer[]
+  appointments          Appointment[]
+  transactions          Transaction[]
+  whatsAppConfig        WhatsAppConfig?
+  whatsAppSessionKeys   WhatsAppSessionKey[]
+  whatsAppConversations WhatsAppConversation[]
+  logs                  SystemLog[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Subscription {
+  id                       String             @id @default(cuid())
+  tenantId                 String             @unique
+  planId                   String
+  status                   SubscriptionStatus @default(TRIALING)
+  trialEndsAt              DateTime?
+  currentPeriodStart       DateTime?
+  currentPeriodEnd         DateTime?
+  canceledAt               DateTime?
+  lastPaymentAt            DateTime?
+  // Ajustes de limite por cliente (sobrescrevem o plano quando definidos)
+  maxProfessionalsOverride Int?
+  maxAppointmentsOverride  Int?
+  notes                    String?
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([planId])
+}
+
+model TenantLogo {
+  tenantId  String   @id
+  mimeType  String
+  data      Bytes
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────────── Identidade ─────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  tenantId     String?
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(OWNER)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant       Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  professional Professional?
+  transactions Transaction[]
+
+  @@index([tenantId])
+}
+
+// ─────────────────────────── Configurações ───────────────────────────
+
+model BusinessHour {
+  id         String  @id @default(cuid())
+  tenantId   String
+  // 0 = domingo ... 6 = sábado
+  weekday    Int
+  isOpen     Boolean @default(true)
+  // Formato HH:mm no fuso do salão
+  openTime   String  @default("09:00")
+  closeTime  String  @default("19:00")
+  breakStart String?
+  breakEnd   String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, weekday])
+}
+
+// ───────────────────────────── Operação ─────────────────────────────
+
+model Professional {
+  id                String   @id @default(cuid())
+  tenantId          String
+  userId            String?  @unique
+  name              String
+  phone             String?
+  email             String?
+  color             String   @default("#C9A227")
+  commissionPercent Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  services     ProfessionalService[]
+  appointments Appointment[]
+
+  @@index([tenantId, isActive])
+}
+
+model Service {
+  id              String   @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  durationMinutes Int
+  priceCents      Int
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  professionals ProfessionalService[]
+  appointments  Appointment[]
+
+  @@index([tenantId, isActive])
+}
+
+// Profissional sem nenhum vínculo = atende todos os serviços.
+model ProfessionalService {
+  professionalId String
+  serviceId      String
+
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([professionalId, serviceId])
+  @@index([serviceId])
+}
+
+model Customer {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  // Apenas dígitos, com DDI (ex: 5511999998888)
+  phone        String?
+  whatsappJid  String?
+  email        String?
+  birthDate    DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, phone])
+  @@unique([tenantId, whatsappJid])
+  @@index([tenantId, name])
+}
+
+model Appointment {
+  id             String            @id @default(cuid())
+  tenantId       String
+  customerId     String
+  professionalId String
+  serviceId      String
+  startAt        DateTime
+  endAt          DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  source         AppointmentSource @default(PANEL)
+  priceCents     Int
+  notes          String?
+  reminderSentAt DateTime?
+  canceledAt     DateTime?
+  cancelReason   String?
+  completedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  professional Professional @relation(fields: [professionalId], references: [id], onDelete: Restrict)
+  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  transaction  Transaction?
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, professionalId, startAt])
+  @@index([tenantId, status])
+  @@index([customerId])
+  @@index([reminderSentAt, startAt])
+}
+
+model Transaction {
+  id            String          @id @default(cuid())
+  tenantId      String
+  type          TransactionType
+  category      String
+  description   String?
+  amountCents   Int
+  paymentMethod PaymentMethod   @default(CASH)
+  occurredAt    DateTime        @default(now())
+  appointmentId String?         @unique
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, type, occurredAt])
+}
+
+// ───────────────────────────── WhatsApp ─────────────────────────────
+
+model WhatsAppConfig {
+  id                  String         @id @default(cuid())
+  tenantId            String         @unique
+  status              WhatsAppStatus @default(DISCONNECTED)
+  phoneNumber         String?
+  botEnabled          Boolean        @default(true)
+  welcomeMessage      String         @db.Text
+  confirmationMessage String         @db.Text
+  reminderMessage     String         @db.Text
+  cancellationMessage String         @db.Text
+  reminderEnabled     Boolean        @default(true)
+  reminderHoursBefore Int            @default(2)
+  lastConnectedAt     DateTime?
+  lastDisconnectedAt  DateTime?
+  lastError           String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Credenciais/chaves Signal da sessão Baileys persistidas no Postgres
+// (o container fica stateless: reinícios/deploys não derrubam a sessão).
+model WhatsAppSessionKey {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+// Estado da conversa do bot por contato (máquina de estados do agendamento).
+model WhatsAppConversation {
+  id            String   @id @default(cuid())
+  tenantId      String
+  contactJid    String
+  phone         String?
+  state         String   @default("MENU")
+  context       Json     @default("{}")
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, contactJid])
+}
+
+// ───────────────────────────── Observabilidade ─────────────────────────────
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  level     LogLevel @default(INFO)
+  source    String
+  message   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([level, createdAt])
+  @@index([source, createdAt])
+}

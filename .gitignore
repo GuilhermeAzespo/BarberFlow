@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────
+# BarberFlow — .gitignore (Node.js / Next.js / Prisma / Docker)
+# ─────────────────────────────────────────────
+
+# Credenciais locais (NUNCA versionar)
+/Git
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dependências
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+.yarn/*
+!.yarn/releases
+
+# Builds
+dist/
+build/
+out/
+.next/
+**/.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+apps/server/prisma/*.db
+apps/server/prisma/*.db-journal
+
+# Sessões locais do WhatsApp (caso alguém use file auth em dev)
+auth_info*/
+.wwebjs_auth/
+.baileys/
+
+# Uploads locais
+uploads/
+tmp/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testes / cobertura
+coverage/
+.nyc_output/
+
+# Docker local
+docker-compose.override.yml
+pgdata/
+
+# IDE / SO
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

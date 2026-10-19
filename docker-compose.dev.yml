@@ -1,0 +1,12 @@
+# Override para uso local: publica as portas no host.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  server:
+    ports:
+      - "${API_PORT:-4000}:4000"
+  web:
+    ports:
+      - "${WEB_PORT:-3000}:3000"
