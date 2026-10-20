@@ -19,6 +19,8 @@ import {
   Scissors,
   Plus,
   Sparkles,
+  Calendar,
+  Info,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -56,6 +58,16 @@ export default function SettingsPage() {
   const [instagram, setInstagram] = useState('');
   const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(30);
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([]);
+
+  // Configuração inteligente de horários (estilo Definições de Data & Tempo)
+  const [scheduleMode, setScheduleMode] = useState<'grouped' | 'detailed'>('grouped');
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [groupOpenTime, setGroupOpenTime] = useState('09:00');
+  const [groupCloseTime, setGroupCloseTime] = useState('19:00');
+  const [hasBreak, setHasBreak] = useState(false);
+  const [groupBreakStart, setGroupBreakStart] = useState('12:00');
+  const [groupBreakEnd, setGroupBreakEnd] = useState('13:00');
+  const [scheduleAppliedMsg, setScheduleAppliedMsg] = useState<string | null>(null);
 
   // Media
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -215,6 +227,47 @@ export default function SettingsPage() {
     );
   };
 
+  const handleToggleAllDays = (checked: boolean) => {
+    if (checked) {
+      setSelectedDays([0, 1, 2, 3, 4, 5, 6]);
+    } else {
+      setSelectedDays([]);
+    }
+  };
+
+  const handleToggleDay = (day: number) => {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+    );
+  };
+
+  const handleApplyGroupSchedule = () => {
+    if (selectedDays.length === 0) {
+      setErrorMsg('Selecione ao menos um dia da semana para aplicar os horários.');
+      setTimeout(() => setErrorMsg(null), 3500);
+      return;
+    }
+
+    setBusinessHours((prev) =>
+      prev.map((h) => {
+        if (selectedDays.includes(h.weekday)) {
+          return {
+            ...h,
+            isOpen: true,
+            openTime: groupOpenTime,
+            closeTime: groupCloseTime,
+            breakStart: hasBreak ? groupBreakStart : null,
+            breakEnd: hasBreak ? groupBreakEnd : null,
+          };
+        }
+        return h;
+      }),
+    );
+
+    setScheduleAppliedMsg(`Horários aplicados com sucesso para ${selectedDays.length} dia(s)!`);
+    setTimeout(() => setScheduleAppliedMsg(null), 3000);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -248,7 +301,14 @@ export default function SettingsPage() {
 
       // Atualiza horários de funcionamento
       await api.put('/api/tenant/business-hours', {
-        businessHours,
+        businessHours: businessHours.map((h) => ({
+          weekday: h.weekday,
+          isOpen: h.isOpen,
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          breakStart: h.isOpen && h.breakStart ? h.breakStart : null,
+          breakEnd: h.isOpen && h.breakEnd ? h.breakEnd : null,
+        })),
       });
 
       await refresh();
@@ -841,68 +901,639 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Horários de Funcionamento */}
+            {/* Horários de Funcionamento — Redesenhado estilo Definições de Data & Tempo */}
             <div className="glass-panel" style={{ padding: '28px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                <Clock size={20} color="var(--primary)" />
-                <h3 style={{ fontSize: '1.18rem', fontWeight: 600 }}>Horários de Atendimento Semanal</h3>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {businessHours.map((hour) => (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div
-                    key={hour.weekday}
                     style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '10px',
+                      background: 'rgba(229, 179, 56, 0.15)',
+                      border: '1px solid rgba(229, 179, 56, 0.3)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '12px 16px',
-                      borderRadius: '8px',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border-color)',
-                      flexWrap: 'wrap',
-                      gap: '12px',
+                      justifyContent: 'center',
+                      color: 'var(--primary)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '150px' }}>
-                      <input
-                        type="checkbox"
-                        checked={hour.isOpen}
-                        onChange={(e) => handleHourChange(hour.weekday, 'isOpen', e.target.checked)}
-                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
-                      />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem', color: hour.isOpen ? 'inherit' : 'var(--text-dim)' }}>
-                        {weekdayNames[hour.weekday]}
+                    <Clock size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Horários de Atendimento Semanal</h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', margin: '3px 0 0 0' }}>
+                      Defina os dias de abertura, expediente e horário de almoço/intervalo da sua barbearia.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Seleção do Modo de Configuração (Image 3) */}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    padding: '4px',
+                    gap: '4px',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setScheduleMode('grouped')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '7px',
+                      fontSize: '0.84rem',
+                      fontWeight: 600,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: scheduleMode === 'grouped' ? 'var(--primary)' : 'transparent',
+                      color: scheduleMode === 'grouped' ? '#0B0F17' : 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <span>Configurar por Grupo de Dias</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setScheduleMode('detailed')}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '7px',
+                      fontSize: '0.84rem',
+                      fontWeight: 600,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: scheduleMode === 'detailed' ? 'var(--primary)' : 'transparent',
+                      color: scheduleMode === 'detailed' ? '#0B0F17' : 'var(--text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <span>Ajuste Individual por Dia</span>
+                  </button>
+                </div>
+              </div>
+
+              {scheduleMode === 'grouped' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                  {/* 1. Definições de Data (Image 3) */}
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '20px 22px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Calendar size={18} color="var(--primary)" />
+                        <h4 style={{ fontSize: '0.98rem', fontWeight: 700, margin: 0 }}>
+                          Definições de Data / Dias da Semana
+                        </h4>
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
+                          className="glass-card"
+                          style={{ padding: '5px 12px', fontSize: '0.78rem', cursor: 'pointer', borderRadius: '6px', fontWeight: 600 }}
+                        >
+                          Seg a Sex
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDays([1, 2, 3, 4, 5, 6])}
+                          className="glass-card"
+                          style={{ padding: '5px 12px', fontSize: '0.78rem', cursor: 'pointer', borderRadius: '6px', fontWeight: 600 }}
+                        >
+                          Seg a Sáb
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDays([0, 1, 2, 3, 4, 5, 6])}
+                          className="glass-card"
+                          style={{ padding: '5px 12px', fontSize: '0.78rem', cursor: 'pointer', borderRadius: '6px', fontWeight: 600 }}
+                        >
+                          Todos os Dias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDays([])}
+                          className="glass-card"
+                          style={{ padding: '5px 12px', fontSize: '0.78rem', cursor: 'pointer', borderRadius: '6px', color: 'var(--text-dim)' }}
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Checkbox "Todas" + Lista de Dias (Image 3) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          fontSize: '0.86rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          background: selectedDays.length === 7 ? 'rgba(229, 179, 56, 0.2)' : 'rgba(0, 0, 0, 0.35)',
+                          border: `1px solid ${selectedDays.length === 7 ? 'var(--primary)' : 'var(--border-color)'}`,
+                          color: selectedDays.length === 7 ? 'var(--primary)' : 'var(--text-muted)',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDays.length === 7}
+                          onChange={(e) => handleToggleAllDays(e.target.checked)}
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                        />
+                        <span>Todas</span>
+                      </label>
+
+                      {weekdayNames.map((dayName, idx) => {
+                        const isSelected = selectedDays.includes(idx);
+                        return (
+                          <label
+                            key={idx}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              fontSize: '0.86rem',
+                              cursor: 'pointer',
+                              padding: '8px 14px',
+                              borderRadius: '8px',
+                              background: isSelected ? 'rgba(229, 179, 56, 0.12)' : 'rgba(0, 0, 0, 0.3)',
+                              border: `1px solid ${isSelected ? 'rgba(229, 179, 56, 0.45)' : 'var(--border-color)'}`,
+                              color: isSelected ? '#F3F4F6' : 'var(--text-dim)',
+                              fontWeight: isSelected ? 600 : 500,
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleDay(idx)}
+                              style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                            <span>{dayName}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 2. Definições de Tempo (Image 2) */}
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '12px',
+                      padding: '20px 22px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                      <Clock size={18} color="var(--primary)" />
+                      <h4 style={{ fontSize: '0.98rem', fontWeight: 700, margin: 0 }}>
+                        Definições de Horário
+                      </h4>
+                    </div>
+
+                    {/* Horário de Trabalho (Tabela estilo Image 2) */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '8px' }}>
+                        Horário Trabalho
+                      </span>
+
+                      <div
+                        style={{
+                          background: 'rgba(0, 0, 0, 0.35)',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            padding: '10px 16px',
+                            background: 'rgba(255, 255, 255, 0.02)',
+                            borderBottom: '1px solid var(--border-color)',
+                            fontSize: '0.82rem',
+                            color: 'var(--text-dim)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <span>Início</span>
+                          <span>Final</span>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            padding: '12px 16px',
+                            gap: '16px',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <input
+                            type="time"
+                            value={groupOpenTime}
+                            onChange={(e) => setGroupOpenTime(e.target.value)}
+                            className="input-field"
+                            style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                          />
+
+                          <input
+                            type="time"
+                            value={groupCloseTime}
+                            onChange={(e) => setGroupCloseTime(e.target.value)}
+                            className="input-field"
+                            style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Horário de Intervalo / Almoço (Tabela estilo Image 2) */}
+                    <div style={{ marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Horário Intervalo / Almoço
+                        </span>
+
+                        {!hasBreak && (
+                          <button
+                            type="button"
+                            onClick={() => setHasBreak(true)}
+                            className="glass-card"
+                            style={{
+                              padding: '5px 12px',
+                              fontSize: '0.8rem',
+                              color: 'var(--primary)',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            <Plus size={14} />
+                            <span>+ Adicionar</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {hasBreak ? (
+                        <div
+                          style={{
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr 60px',
+                              padding: '10px 16px',
+                              background: 'rgba(255, 255, 255, 0.02)',
+                              borderBottom: '1px solid var(--border-color)',
+                              fontSize: '0.82rem',
+                              color: 'var(--text-dim)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            <span>Início</span>
+                            <span>Final</span>
+                            <span style={{ textAlign: 'center' }}>Operações</span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr 60px',
+                              padding: '12px 16px',
+                              gap: '16px',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <input
+                              type="time"
+                              value={groupBreakStart}
+                              onChange={(e) => setGroupBreakStart(e.target.value)}
+                              className="input-field"
+                              style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                            />
+
+                            <input
+                              type="time"
+                              value={groupBreakEnd}
+                              onChange={(e) => setGroupBreakEnd(e.target.value)}
+                              className="input-field"
+                              style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                            />
+
+                            <div style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => setHasBreak(false)}
+                                title="Remover intervalo"
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#EF4444',
+                                  cursor: 'pointer',
+                                  padding: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Faixa azul explicativa idêntica à Image 2 */}
+                          <div
+                            style={{
+                              background: 'rgba(59, 130, 246, 0.1)',
+                              borderTop: '1px solid rgba(59, 130, 246, 0.25)',
+                              padding: '10px 16px',
+                              fontSize: '0.82rem',
+                              color: '#93C5FD',
+                              lineHeight: 1.5,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                            }}
+                          >
+                            <Info size={16} style={{ flexShrink: 0 }} />
+                            <span>
+                              O horário de intervalo bloqueia agendamentos durante esse período para que os barbeiros possam almoçar ou descansar.
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            padding: '18px',
+                            background: 'rgba(0, 0, 0, 0.25)',
+                            borderRadius: '8px',
+                            border: '1px dashed var(--border-color)',
+                            textAlign: 'center',
+                            color: 'var(--text-dim)',
+                            fontSize: '0.85rem',
+                          }}
+                        >
+                          Expediente contínuo sem pausas. Clique em "+ Adicionar" acima para definir intervalo de almoço.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botão de Aplicar Horários */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <button
+                        type="button"
+                        onClick={handleApplyGroupSchedule}
+                        className="gold-gradient-primary gold-glow"
+                        style={{
+                          padding: '11px 24px',
+                          borderRadius: '8px',
+                          fontSize: '0.92rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
+                        <Check size={18} />
+                        <span>Aplicar aos {selectedDays.length} dias selecionados</span>
+                      </button>
+
+                      {scheduleAppliedMsg && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            color: '#10B981',
+                            fontSize: '0.88rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <CheckCircle2 size={16} />
+                          <span>{scheduleAppliedMsg}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 3. Tabela Resumo dos 7 Dias da Semana */}
+                  <div
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: '14px 20px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderBottom: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#F3F4F6' }}>
+                        Grade Semanal Configurada
+                      </span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                        Status e expediente aplicado para cada dia
                       </span>
                     </div>
 
-                    {hour.isOpen ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Abertura:</span>
-                        <input
-                          type="time"
-                          value={hour.openTime}
-                          onChange={(e) => handleHourChange(hour.weekday, 'openTime', e.target.value)}
-                          className="input-field"
-                          style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
-                        />
-                        <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
-                        <input
-                          type="time"
-                          value={hour.closeTime}
-                          onChange={(e) => handleHourChange(hour.weekday, 'closeTime', e.target.value)}
-                          className="input-field"
-                          style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
-                        />
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                        Fechado
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {businessHours.map((hour) => {
+                        const isToday = new Date().getDay() === hour.weekday;
+                        return (
+                          <div
+                            key={hour.weekday}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '12px 20px',
+                              borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                              background: isToday ? 'rgba(229, 179, 56, 0.06)' : 'transparent',
+                              flexWrap: 'wrap',
+                              gap: '12px',
+                            }}
+                          >
+                            {/* Nome do Dia e Toggle Aberto/Fechado */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '190px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleHourChange(hour.weekday, 'isOpen', !hour.isOpen)}
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  background: hour.isOpen ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.15)',
+                                  color: hour.isOpen ? '#10B981' : '#FB7185',
+                                  border: `1px solid ${hour.isOpen ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'}`,
+                                }}
+                              >
+                                {hour.isOpen ? 'ABERTO' : 'FECHADO'}
+                              </button>
+
+                              <span style={{ fontWeight: isToday ? 700 : 600, fontSize: '0.92rem', color: isToday ? 'var(--primary)' : '#F3F4F6' }}>
+                                {weekdayNames[hour.weekday]} {isToday && '(Hoje)'}
+                              </span>
+                            </div>
+
+                            {/* Informações de Horário */}
+                            {hour.isOpen ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}>
+                                  <Clock size={14} color="var(--primary)" />
+                                  <span style={{ color: 'var(--text-muted)' }}>Expediente:</span>
+                                  <strong style={{ color: '#F3F4F6' }}>{hour.openTime} às {hour.closeTime}</strong>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}>
+                                  <span style={{ color: 'var(--text-dim)' }}>Almoço:</span>
+                                  {hour.breakStart && hour.breakEnd ? (
+                                    <span style={{ color: 'var(--gold-light)', fontWeight: 600 }}>
+                                      {hour.breakStart} às {hour.breakEnd}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                      Sem pausa
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                Barbearia fechada
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                /* Modo Ajuste Individual por Dia */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {businessHours.map((hour) => (
+                    <div
+                      key={hour.weekday}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '10px',
+                        padding: '16px 20px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '16px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '160px' }}>
+                        <input
+                          type="checkbox"
+                          checked={hour.isOpen}
+                          onChange={(e) => handleHourChange(hour.weekday, 'isOpen', e.target.checked)}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                        />
+                        <span style={{ fontWeight: 600, fontSize: '0.94rem', color: hour.isOpen ? '#F3F4F6' : 'var(--text-dim)' }}>
+                          {weekdayNames[hour.weekday]}
+                        </span>
+                      </div>
+
+                      {hour.isOpen ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+                          {/* Expediente */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Expediente:</span>
+                            <input
+                              type="time"
+                              value={hour.openTime}
+                              onChange={(e) => handleHourChange(hour.weekday, 'openTime', e.target.value)}
+                              className="input-field"
+                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                            />
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
+                            <input
+                              type="time"
+                              value={hour.closeTime}
+                              onChange={(e) => handleHourChange(hour.weekday, 'closeTime', e.target.value)}
+                              className="input-field"
+                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                            />
+                          </div>
+
+                          {/* Intervalo */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Almoço:</span>
+                            <input
+                              type="time"
+                              value={hour.breakStart || ''}
+                              onChange={(e) => handleHourChange(hour.weekday, 'breakStart', e.target.value || null)}
+                              placeholder="--:--"
+                              className="input-field"
+                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                            />
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
+                            <input
+                              type="time"
+                              value={hour.breakEnd || ''}
+                              onChange={(e) => handleHourChange(hour.weekday, 'breakEnd', e.target.value || null)}
+                              placeholder="--:--"
+                              className="input-field"
+                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                          Fechado
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Botão de Salvar */}
