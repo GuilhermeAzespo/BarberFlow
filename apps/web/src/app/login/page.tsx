@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Sparkles, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
+import { Sparkles, ArrowRight, ArrowLeft, Lock, Mail, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 
@@ -46,6 +46,7 @@ export default function LoginPage() {
     <div
       style={{
         minHeight: '100vh',
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -53,6 +54,42 @@ export default function LoginPage() {
         background: 'radial-gradient(circle at top center, rgba(229, 179, 56, 0.08) 0%, transparent 60%)',
       }}
     >
+      <Link
+        href="/"
+        style={{
+          position: 'absolute',
+          top: '24px',
+          left: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '8px 16px',
+          borderRadius: '10px',
+          background: 'rgba(255, 255, 255, 0.04)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          color: 'var(--text-muted)',
+          fontSize: '0.88rem',
+          fontWeight: 500,
+          textDecoration: 'none',
+          backdropFilter: 'blur(10px)',
+          transition: 'all 0.2s ease',
+          zIndex: 10,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = 'var(--text-main)';
+          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+          e.currentTarget.style.borderColor = 'rgba(229, 179, 56, 0.3)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = 'var(--text-muted)';
+          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+        }}
+      >
+        <ArrowLeft size={16} />
+        <span>Voltar à Página Inicial</span>
+      </Link>
+
       <div
         className="glass-panel animate-fade-in"
         style={{
@@ -172,6 +209,27 @@ export default function LoginPage() {
           Não tem uma conta?{' '}
           <Link href="/register" style={{ color: 'var(--primary)', fontWeight: 600 }}>
             Cadastre seu salão grátis
+          </Link>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: '18px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+          <Link
+            href="/"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: 'var(--text-muted)',
+              fontSize: '0.84rem',
+              fontWeight: 500,
+              textDecoration: 'none',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-main)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            <ArrowLeft size={14} />
+            <span>Voltar para o site principal</span>
           </Link>
         </div>
       </div>

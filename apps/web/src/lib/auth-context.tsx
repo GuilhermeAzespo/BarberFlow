@@ -128,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSubscription(null);
     setAccess(null);
     setIsImpersonated(false);
-    router.push('/login');
+    router.push('/');
   };
 
   const exitImpersonation = async () => {
