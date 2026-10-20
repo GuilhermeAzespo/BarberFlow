@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { DateTime } from 'luxon';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
+import { HttpError } from '../../lib/http-error.js';
 import { formatCurrency, normalizePhone, renderTemplate } from '../../lib/utils.js';
 import { usePostgresAuthState } from './baileys-session.js';
 import { handleIncomingMessage } from './whatsapp-bot.js';
@@ -35,6 +36,7 @@ const REPLACED_MAX_ATTEMPTS = 6;
 class WhatsAppService {
   private connections = new Map<string, TenantConnection>();
   private replacedAttempts = new Map<string, number>();
+  private sentMessages = new Map<string, proto.IMessage>();
   private reminderInterval: NodeJS.Timeout | null = null;
 
   init() {
@@ -118,19 +120,6 @@ class WhatsAppService {
       },
     });
 
-    // Cache das mensagens enviadas: o Baileys precisa delas para reenviar quando o destinatário
-    // não consegue decifrar ("Aguardando mensagem"). Sem getMessage o reenvio nunca acontece.
-    const sentMessages = new Map<string, proto.IMessage>();
-    const rememberSent = (sent: proto.IWebMessageInfo | undefined) => {
-      const id = sent?.key?.id;
-      if (!id || !sent?.message) return;
-      sentMessages.set(id, sent.message);
-      if (sentMessages.size > SENT_MESSAGES_CACHE_LIMIT) {
-        const oldest = sentMessages.keys().next().value;
-        if (oldest) sentMessages.delete(oldest);
-      }
-    };
-
     const baileysLogger = logger.child({ class: 'baileys', tenantId });
     baileysLogger.level = 'warn';
 
@@ -144,7 +133,7 @@ class WhatsAppService {
       browser: ['BarberFlow', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
-      getMessage: async (key) => (key.id ? sentMessages.get(key.id) : undefined),
+      getMessage: async (key) => (key.id ? this.sentMessages.get(key.id) : undefined),
     });
 
     conn.socket = socket;
@@ -277,6 +266,14 @@ class WhatsAppService {
       }
     });
 
+    socket.ev.on('messages.update', (updates) => {
+      for (const { key, update } of updates) {
+        if (!key.fromMe || update.status === undefined || update.status === null) continue;
+        // 1=PENDING, 2=SERVER_ACK, 3=DELIVERY_ACK, 4=READ
+        logger.info({ tenantId, to: key.remoteJid, messageId: key.id, status: update.status }, 'Status de mensagem enviada atualizado');
+      }
+    });
+
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
       logger.info({ tenantId, type, count: messages.length }, 'WhatsApp messages.upsert recebido');
       if (type !== 'notify') return;
@@ -324,7 +321,7 @@ class WhatsAppService {
             text,
             reply: async (replyText: string) => {
               const sent = await socket.sendMessage(senderJid, { text: replyText });
-              rememberSent(sent);
+              this.rememberSent(sent);
             },
           });
         } catch (err) {
@@ -370,9 +367,38 @@ class WhatsAppService {
     const cleanPhone = normalizePhone(phone);
     if (!cleanPhone) return false;
 
-    const jid = `${cleanPhone}@s.whatsapp.net`;
-    await conn.socket.sendMessage(jid, { text });
+    // Confirma que o número existe no WhatsApp e usa o JID oficial retornado (ex.: ajusta o 9º dígito).
+    let jid = `${cleanPhone}@s.whatsapp.net`;
+    try {
+      const [lookup] = (await conn.socket.onWhatsApp(jid)) ?? [];
+      if (lookup && !lookup.exists) {
+        logger.warn({ tenantId, phone: cleanPhone }, 'Número não encontrado no WhatsApp');
+        throw HttpError.badRequest('Este número não foi encontrado no WhatsApp. Confira o DDD e o número.');
+      }
+      if (lookup?.jid) jid = lookup.jid;
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      logger.warn({ err, tenantId, phone: cleanPhone }, 'Falha ao validar número com onWhatsApp; usando JID padrão');
+    }
+
+    const sent = await conn.socket.sendMessage(jid, { text });
+    this.rememberSent(sent);
+    logger.info({ tenantId, to: jid, messageId: sent?.key?.id }, 'Mensagem enviada ao servidor do WhatsApp');
     return true;
+  }
+
+  /**
+   * Guarda as mensagens enviadas: o Baileys precisa delas (getMessage) para reenviar quando o
+   * destinatário não consegue decifrar ("Aguardando mensagem").
+   */
+  private rememberSent(sent: proto.IWebMessageInfo | undefined) {
+    const id = sent?.key?.id;
+    if (!id || !sent?.message) return;
+    this.sentMessages.set(id, sent.message);
+    if (this.sentMessages.size > SENT_MESSAGES_CACHE_LIMIT) {
+      const oldest = this.sentMessages.keys().next().value;
+      if (oldest) this.sentMessages.delete(oldest);
+    }
   }
 
   /** Checa e envia lembretes automáticos antes dos atendimentos */
