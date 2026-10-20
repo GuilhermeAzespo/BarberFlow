@@ -1420,12 +1420,12 @@ export default function SuperAdminPage() {
       </Modal>
 
       {/* Modal: Editar Plano da Vitrine */}
-      <Modal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title={`Editar Plano: ${selectedPlan?.name}`}>
+      <Modal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title={`Editar Plano: ${selectedPlan?.name}`} maxWidth="620px">
         {selectedPlan && (
-          <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
                   Nome do Plano *
                 </label>
                 <input
@@ -1437,7 +1437,7 @@ export default function SuperAdminPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
                   Preço Mensal (R$) *
                 </label>
                 <input
@@ -1451,7 +1451,7 @@ export default function SuperAdminPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
                 Descrição na Vitrine
               </label>
               <input
@@ -1462,10 +1462,11 @@ export default function SuperAdminPage() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  Máx. Profissionais (vazio = ilimitado)
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  <span>Máx. Profissionais</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>vazio = ilimitado</span>
                 </label>
                 <input
                   type="number"
@@ -1476,8 +1477,9 @@ export default function SuperAdminPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  Máx. Agendamentos/mês (vazio = ilimitado)
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  <span>Máx. Agendamentos/mês</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>vazio = ilimitado</span>
                 </label>
                 <input
                   type="number"
@@ -1488,9 +1490,9 @@ export default function SuperAdminPage() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'flex-start' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
                   Selo de Destaque (Badge)
                 </label>
                 <input
@@ -1501,36 +1503,60 @@ export default function SuperAdminPage() {
                 />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', cursor: 'pointer', marginTop: '18px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Destaque Visual
+                </label>
+                <label
+                  style={{
+                    height: '42px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '0 14px',
+                    borderRadius: '8px',
+                    background: planForm.isHighlighted ? 'rgba(229, 179, 56, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    border: planForm.isHighlighted ? '1px solid rgba(229, 179, 56, 0.5)' : '1px solid var(--border-color)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxSizing: 'border-box',
+                    userSelect: 'none',
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={planForm.isHighlighted}
                     onChange={(e) => setPlanForm({ ...planForm, isHighlighted: e.target.checked })}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--primary)', cursor: 'pointer', margin: 0 }}
                   />
-                  <span>Destacar Card Dourado</span>
+                  <Sparkles size={16} color={planForm.isHighlighted ? 'var(--primary)' : 'var(--text-muted)'} />
+                  <span style={{ fontSize: '0.84rem', fontWeight: 600, color: planForm.isHighlighted ? 'var(--primary)' : 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    Destacar Card Dourado
+                  </span>
                 </label>
               </div>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Lista de Benefícios / Features na Home (1 por linha)
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                <span>Lista de Benefícios na Vitrine</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>1 benefício por linha</span>
               </label>
               <textarea
                 rows={5}
                 placeholder="1 Profissional&#10;Até 300 agendamentos/mês&#10;Bot de WhatsApp integrado&#10;Fluxo de caixa básico"
                 value={planForm.featuresText}
                 onChange={(e) => setPlanForm({ ...planForm, featuresText: e.target.value })}
+                style={{ resize: 'vertical', minHeight: '110px' }}
               />
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setIsPlanModalOpen(false)}
                 className="glass-card"
-                style={{ padding: '12px 18px', fontWeight: 600 }}
+                style={{ padding: '12px 24px', fontWeight: 600, border: '1px solid var(--border-color)', cursor: 'pointer' }}
               >
                 Cancelar
               </button>
@@ -1538,7 +1564,7 @@ export default function SuperAdminPage() {
                 type="submit"
                 disabled={updating}
                 className="gold-gradient-primary gold-glow"
-                style={{ flex: 1, padding: '12px', fontWeight: 600 }}
+                style={{ flex: 1, padding: '12px', fontWeight: 600, cursor: 'pointer' }}
               >
                 {updating ? 'Salvando...' : 'Salvar Alterações do Plano'}
               </button>
