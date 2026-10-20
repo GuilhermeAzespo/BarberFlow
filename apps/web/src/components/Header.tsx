@@ -90,29 +90,57 @@ export function Header() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-        {/* Logo Oficial BarberFlow na Direita com maior tamanho */}
-        <Link
-          href="/dashboard"
-          title="BarberFlow"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            textDecoration: 'none',
-            paddingRight: '16px',
-            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-          }}
-        >
-          <img
-            src="/logo.png"
-            alt="BarberFlow"
+        {/* Logo do Salão na Direita (ou BarberFlow se não configurada) */}
+        {tenant?.logoUrl ? (
+          <Link
+            href="/settings"
+            title={`Logo de ${tenant.name} - Clique para alterar`}
             style={{
-              height: '56px',
-              width: 'auto',
-              objectFit: 'contain',
-              filter: 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))',
+              display: 'flex',
+              alignItems: 'center',
+              textDecoration: 'none',
+              paddingRight: '16px',
+              borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+              transition: 'opacity 0.2s',
             }}
-          />
-        </Link>
+          >
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.name}
+              style={{
+                height: '52px',
+                width: 'auto',
+                maxWidth: '140px',
+                objectFit: 'contain',
+                borderRadius: '8px',
+                filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35))',
+              }}
+            />
+          </Link>
+        ) : (
+          <Link
+            href="/dashboard"
+            title="BarberFlow"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              textDecoration: 'none',
+              paddingRight: '16px',
+              borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            <img
+              src="/logo.png"
+              alt="BarberFlow"
+              style={{
+                height: '52px',
+                width: 'auto',
+                objectFit: 'contain',
+                filter: 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))',
+              }}
+            />
+          </Link>
+        )}
 
         {user?.role === 'SUPER_ADMIN' && (
           <Link
