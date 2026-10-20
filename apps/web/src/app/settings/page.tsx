@@ -1,7 +1,25 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Settings, Upload, Clock, Save, Building, CheckCircle2, AlertCircle, Globe, Copy, ExternalLink, Check } from 'lucide-react';
+import {
+  Settings,
+  Upload,
+  Clock,
+  Save,
+  Building,
+  CheckCircle2,
+  AlertCircle,
+  Globe,
+  Copy,
+  ExternalLink,
+  Check,
+  Image as ImageIcon,
+  Trash2,
+  Instagram as InstagramIcon,
+  Scissors,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
@@ -17,6 +35,13 @@ interface BusinessHour {
   breakEnd?: string | null;
 }
 
+interface GalleryImage {
+  id: string;
+  title?: string | null;
+  sortOrder: number;
+  url: string;
+}
+
 const weekdayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 
 export default function SettingsPage() {
@@ -26,12 +51,24 @@ export default function SettingsPage() {
   const [slug, setSlug] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [bio, setBio] = useState('');
+  const [instagram, setInstagram] = useState('');
   const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(30);
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([]);
+
+  // Media
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+
+  const [gallery, setGallery] = useState<GalleryImage[]>([]);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+
   const [origin, setOrigin] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [copiedHome, setCopiedHome] = useState(false);
+  const [copiedBooking, setCopiedBooking] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -45,7 +82,10 @@ export default function SettingsPage() {
           slug?: string;
           phone?: string | null;
           address?: string | null;
+          bio?: string | null;
+          instagram?: string | null;
           logoUrl?: string | null;
+          coverUrl?: string | null;
           slotIntervalMinutes: number;
         };
         businessHours: BusinessHour[];
@@ -55,9 +95,16 @@ export default function SettingsPage() {
       setSlug(res.tenant.slug || '');
       setPhone(res.tenant.phone || '');
       setAddress(res.tenant.address || '');
+      setBio(res.tenant.bio || '');
+      setInstagram(res.tenant.instagram || '');
       setSlotIntervalMinutes(res.tenant.slotIntervalMinutes || 30);
       setLogoPreview(res.tenant.logoUrl || null);
+      setCoverPreview(res.tenant.coverUrl || null);
       setBusinessHours(res.businessHours);
+
+      // Load gallery
+      const galleryRes = await api.get<{ images: GalleryImage[] }>('/api/tenant/gallery');
+      setGallery(galleryRes.images || []);
     } catch {
       // Ignora erro
     }
@@ -71,11 +118,12 @@ export default function SettingsPage() {
   }, []);
 
   const tenantSlug = slug || tenant?.slug || '';
-  const publicBookingUrl = tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : '');
+  const publicHomeUrl = tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : '');
+  const publicBookingUrl = tenantSlug && origin ? `${origin}/${tenantSlug}/agendar` : (tenantSlug ? `/${tenantSlug}/agendar` : '');
 
-  const handleCopyLink = () => {
-    if (!publicBookingUrl) return;
-    const fullUrl = publicBookingUrl.startsWith('http') ? publicBookingUrl : `${window.location.origin}${publicBookingUrl}`;
+  const copyToClipboard = (text: string, type: 'home' | 'booking') => {
+    if (!text) return;
+    const fullUrl = text.startsWith('http') ? text : `${window.location.origin}${text}`;
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(fullUrl);
     } else {
@@ -89,8 +137,14 @@ export default function SettingsPage() {
       document.execCommand('copy');
       textArea.remove();
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+
+    if (type === 'home') {
+      setCopiedHome(true);
+      setTimeout(() => setCopiedHome(false), 2500);
+    } else {
+      setCopiedBooking(true);
+      setTimeout(() => setCopiedBooking(false), 2500);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,6 +152,59 @@ export default function SettingsPage() {
     if (file) {
       setLogoFile(file);
       setLogoPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleRemoveCover = async () => {
+    setCoverFile(null);
+    setCoverPreview(null);
+    try {
+      await api.delete('/api/tenant/cover');
+      await refresh();
+      setSuccessMsg('Foto de capa removida com sucesso!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleGalleryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingGallery(true);
+      setErrorMsg(null);
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await api.post<{ image: GalleryImage }>('/api/tenant/gallery', formData);
+      setGallery((prev) => [...prev, res.image]);
+      setSuccessMsg('Foto adicionada à galeria com sucesso!');
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao enviar foto da galeria.');
+    } finally {
+      setUploadingGallery(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteGalleryItem = async (imageId: string) => {
+    try {
+      await api.delete(`/api/tenant/gallery/${imageId}`);
+      setGallery((prev) => prev.filter((img) => img.id !== imageId));
+      setSuccessMsg('Foto removida da galeria.');
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao remover foto da galeria.');
     }
   };
 
@@ -119,6 +226,8 @@ export default function SettingsPage() {
         name,
         phone,
         address,
+        bio: bio.trim() || null,
+        instagram: instagram.trim() || null,
         slotIntervalMinutes: Number(slotIntervalMinutes),
       });
 
@@ -129,14 +238,21 @@ export default function SettingsPage() {
         await api.post('/api/tenant/logo', formData);
       }
 
+      // Atualiza capa se selecionada
+      if (coverFile) {
+        const formData = new FormData();
+        formData.append('cover', coverFile);
+        await api.post('/api/tenant/cover', formData);
+      }
+
       // Atualiza horários de funcionamento
       await api.put('/api/tenant/business-hours', {
         businessHours,
       });
 
       await refresh();
-      setSuccessMsg('Configurações do salão atualizadas com sucesso!');
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setSuccessMsg('Configurações da barbearia atualizadas com sucesso!');
+      setTimeout(() => setSuccessMsg(null), 3500);
     } catch (err: unknown) {
       setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao salvar configurações.');
     } finally {
@@ -154,7 +270,7 @@ export default function SettingsPage() {
           <div style={{ marginBottom: '28px' }}>
             <h1 style={{ fontSize: '1.85rem', fontWeight: 700, marginBottom: '4px' }}>Configurações do Salão</h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Personalize sua identidade visual, horários de expediente e intervalos de agendamento.
+              Personalize a identidade visual, página inicial vitrine, horários e fotos da sua barbearia.
             </p>
           </div>
 
@@ -198,7 +314,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Link Personalizado de Agendamento Online */}
+          {/* Links Públicos da Barbearia (Home e Agendamento) */}
           <div
             className="glass-panel"
             style={{
@@ -206,287 +322,586 @@ export default function SettingsPage() {
               marginBottom: '28px',
               border: '1px solid rgba(212, 175, 55, 0.35)',
               background: 'radial-gradient(ellipse at top left, rgba(212, 175, 55, 0.08) 0%, rgba(18, 18, 20, 0.6) 100%)',
-              position: 'relative',
-              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: '280px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'rgba(212, 175, 55, 0.15)',
+                    border: '1px solid rgba(212, 175, 55, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--gold-primary)',
+                  }}
+                >
+                  <Globe size={18} />
+                </div>
+                <h3 style={{ fontSize: '1.18rem', fontWeight: 600 }}>Links do Salão na Web</h3>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    fontWeight: 700,
+                  }}
+                >
+                  DISPONÍVEL
+                </span>
+              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                Divulgue a página oficial da sua barbearia para que seus clientes vejam fotos, serviços, horários e façam agendamentos online.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+              {/* Home Page Link */}
+              <div
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <Sparkles size={16} color="var(--primary)" />
+                    <strong style={{ fontSize: '0.92rem' }}>Página Inicial / Vitrine</strong>
+                  </div>
+                  <code style={{ fontSize: '0.84rem', color: 'var(--gold-light)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                    {publicHomeUrl || `.../${tenantSlug}`}
+                  </code>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(publicHomeUrl, 'home')}
+                    className="glass-card"
                     style={{
-                      width: '34px',
-                      height: '34px',
-                      borderRadius: '10px',
-                      background: 'rgba(212, 175, 55, 0.15)',
-                      border: '1px solid rgba(212, 175, 55, 0.3)',
+                      flex: 1,
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'var(--gold-primary)',
-                    }}
-                  >
-                    <Globe size={18} />
-                  </div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Link de Agendamento Online</h3>
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      color: '#10B981',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      gap: '6px',
+                      cursor: 'pointer',
                       fontWeight: 600,
+                      color: copiedHome ? '#10B981' : 'var(--text-primary)',
+                      borderColor: copiedHome ? 'rgba(16, 185, 129, 0.4)' : undefined,
                     }}
                   >
-                    DISPONÍVEL
-                  </span>
-                </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '16px', lineHeight: 1.5 }}>
-                  Compartilhe este link na bio do Instagram, no WhatsApp ou envie diretamente para seus clientes agendarem horários em poucos segundos.
-                </p>
+                    {copiedHome ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedHome ? 'Copiado!' : 'Copiar Link'}</span>
+                  </button>
 
-                {/* URL display box */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    background: 'rgba(0, 0, 0, 0.45)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '10px',
-                    padding: '8px 14px',
-                    maxWidth: '560px',
-                  }}
-                >
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', userSelect: 'none' }}>Página:</span>
-                  <code
-                    style={{
-                      flex: 1,
-                      color: 'var(--gold-light)',
-                      fontSize: '0.88rem',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      fontFamily: 'monospace',
-                    }}
-                  >
-                    {publicBookingUrl || `.../${tenantSlug || 'seu-salao'}`}
-                  </code>
+                  {publicHomeUrl && (
+                    <a
+                      href={publicHomeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="gold-gradient-primary"
+                      style={{
+                        padding: '8px 14px',
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        fontWeight: 600,
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      <span>Abrir</span>
+                    </a>
+                  )}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="glass-card"
-                  style={{
-                    padding: '10px 18px',
-                    fontSize: '0.88rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    color: copied ? '#10B981' : 'var(--text-primary)',
-                    borderColor: copied ? 'rgba(16, 185, 129, 0.4)' : undefined,
-                    background: copied ? 'rgba(16, 185, 129, 0.1)' : undefined,
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  {copied ? <Check size={16} /> : <Copy size={16} />}
-                  <span>{copied ? 'Link Copiado!' : 'Copiar Link'}</span>
-                </button>
+              {/* Booking Form Direct Link */}
+              <div
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <Scissors size={16} color="var(--primary)" />
+                    <strong style={{ fontSize: '0.92rem' }}>Formulário Direto de Agendamento</strong>
+                  </div>
+                  <code style={{ fontSize: '0.84rem', color: 'var(--gold-light)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                    {publicBookingUrl || `.../${tenantSlug}/agendar`}
+                  </code>
+                </div>
 
-                {publicBookingUrl && (
-                  <a
-                    href={publicBookingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="gold-gradient-primary gold-glow"
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(publicBookingUrl, 'booking')}
+                    className="glass-card"
                     style={{
-                      padding: '10px 18px',
-                      fontSize: '0.88rem',
+                      flex: 1,
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px',
-                      textDecoration: 'none',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
                       fontWeight: 600,
+                      color: copiedBooking ? '#10B981' : 'var(--text-primary)',
+                      borderColor: copiedBooking ? 'rgba(16, 185, 129, 0.4)' : undefined,
                     }}
                   >
-                    <ExternalLink size={16} />
-                    <span>Abrir Página</span>
-                  </a>
-                )}
+                    {copiedBooking ? <Check size={14} /> : <Copy size={14} />}
+                    <span>{copiedBooking ? 'Copiado!' : 'Copiar Link'}</span>
+                  </button>
+
+                  {publicBookingUrl && (
+                    <a
+                      href={publicBookingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="gold-gradient-primary"
+                      style={{
+                        padding: '8px 14px',
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        fontWeight: 600,
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      <span>Abrir</span>
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-            {/* Identidade Visual */}
+            {/* Identidade Visual & Fotos */}
             <div className="glass-panel" style={{ padding: '28px' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '20px' }}>Identidade & Dados</h3>
+              <h3 style={{ fontSize: '1.18rem', fontWeight: 600, marginBottom: '20px' }}>
+                Identidade & Vitrine da Barbearia
+              </h3>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '24px' }}>
-                <div
-                  style={{
-                    width: '84px',
-                    height: '84px',
-                    borderRadius: '16px',
-                    background: 'var(--bg-input)',
-                    border: '2px dashed var(--border-color)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {logoPreview ? (
-                    <img src={logoPreview} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : (
-                    <Building size={34} color="var(--text-dim)" />
-                  )}
+              {/* Logo e Capa Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '28px' }}>
+                {/* Logo */}
+                <div>
+                  <span style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '8px' }}>
+                    Logo do Salão
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div
+                      style={{
+                        width: '84px',
+                        height: '84px',
+                        borderRadius: '16px',
+                        background: 'var(--bg-input)',
+                        border: '2px dashed var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {logoPreview ? (
+                        <img src={logoPreview} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <Building size={34} color="var(--text-dim)" />
+                      )}
+                    </div>
+
+                    <div>
+                      <label
+                        className="glass-card"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 16px',
+                          fontSize: '0.85rem',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                      >
+                        <Upload size={16} />
+                        <span>Substituir Logo</span>
+                        <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
+                      </label>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '6px' }}>
+                        PNG ou JPG quadrado recomendado (máx. 2MB).
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
+                {/* Foto de Capa / Banner */}
                 <div>
-                  <label
-                    className="glass-card"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '8px 16px',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      fontWeight: 500,
-                    }}
-                  >
-                    <Upload size={16} />
-                    <span>Substituir Logo</span>
-                    <input type="file" accept="image/png, image/jpeg, image/webp" onChange={handleLogoUpload} style={{ display: 'none' }} />
-                  </label>
-                  <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '6px' }}>
-                    A logo é exibida na área de agendamento e cabeçalhos.
+                  <span style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '8px' }}>
+                    Foto de Capa / Banner da Home
                   </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '96px',
+                        borderRadius: '12px',
+                        background: coverPreview
+                          ? `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.5)), url(${coverPreview}) center/cover no-repeat`
+                          : 'var(--bg-input)',
+                        border: '2px dashed var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        position: 'relative',
+                      }}
+                    >
+                      {!coverPreview && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-dim)', fontSize: '0.84rem' }}>
+                          <ImageIcon size={20} />
+                          <span>Nenhuma foto de capa definida</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <label
+                        className="glass-card"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 14px',
+                          fontSize: '0.82rem',
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                        }}
+                      >
+                        <Upload size={14} />
+                        <span>{coverPreview ? 'Trocar Capa' : 'Enviar Foto de Capa'}</span>
+                        <input type="file" accept="image/*" onChange={handleCoverUpload} style={{ display: 'none' }} />
+                      </label>
+
+                      {coverPreview && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveCover}
+                          className="glass-card"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '8px 12px',
+                            fontSize: '0.82rem',
+                            color: '#FB7185',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          <span>Remover</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+              {/* Informações de Contato e Bio */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Nome do Salão
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                    Nome da Barbearia *
                   </label>
-                  <input type="text" required value={name} onChange={(e) => setName(e.target.value)} />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="input-field"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px' }}
+                  />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Telefone de Atendimento
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                    Telefone / WhatsApp de Contato
                   </label>
-                  <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(11) 99999-9999"
+                    className="input-field"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '8px' }}
+                  />
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Endereço
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                    Instagram (@ da Barbearia)
                   </label>
-                  <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} />
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      value={instagram}
+                      onChange={(e) => setInstagram(e.target.value)}
+                      placeholder="@suabarbearia"
+                      className="input-field"
+                      style={{ width: '100%', padding: '10px 14px 10px 38px', borderRadius: '8px' }}
+                    />
+                    <InstagramIcon
+                      size={18}
+                      color="var(--text-dim)"
+                      style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Intervalo dos Horários na Grade
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                    Intervalo dos Agendamentos
                   </label>
                   <Select
                     value={slotIntervalMinutes}
                     onChange={(e) => setSlotIntervalMinutes(Number(e.target.value))}
                   >
-                    <option value={15}>15 minutos</option>
-                    <option value={20}>20 minutos</option>
-                    <option value={30}>30 minutos</option>
-                    <option value={45}>45 minutos</option>
-                    <option value={60}>60 minutos (1 hora)</option>
+                    <option value={15}>15 em 15 minutos</option>
+                    <option value={20}>20 em 20 minutos</option>
+                    <option value={30}>30 em 30 minutos (Padrão)</option>
+                    <option value={45}>45 em 45 minutos</option>
+                    <option value={60}>60 em 60 minutos</option>
                   </Select>
                 </div>
               </div>
+
+              {/* Endereço */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Endereço Completo
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Rua, Número, Bairro, Cidade - UF"
+                  className="input-field"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px' }}
+                />
+              </div>
+
+              {/* Bio / Slogan */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Apresentação / Bio da Barbearia
+                </label>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Conte um pouco sobre sua barbearia, estilo, tradição e experiência oferecida aos clientes..."
+                  rows={3}
+                  className="input-field"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', resize: 'vertical' }}
+                />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                  Esse texto será exibido no destaque da página inicial do seu salão.
+                </span>
+              </div>
+            </div>
+
+            {/* Galeria de Fotos */}
+            <div className="glass-panel" style={{ padding: '28px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.18rem', fontWeight: 600, marginBottom: '4px' }}>
+                    Galeria de Fotos da Barbearia
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+                    Exiba fotos dos seus melhores cortes, barbas e do ambiente do salão na vitrine pública.
+                  </p>
+                </div>
+
+                <label
+                  className="gold-gradient-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    cursor: uploadingGallery ? 'wait' : 'pointer',
+                    opacity: uploadingGallery ? 0.7 : 1,
+                  }}
+                >
+                  <Plus size={16} />
+                  <span>{uploadingGallery ? 'Enviando Foto...' : 'Adicionar Foto'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleGalleryUpload}
+                    disabled={uploadingGallery}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              {gallery.length === 0 ? (
+                <div
+                  style={{
+                    padding: '40px 20px',
+                    textAlign: 'center',
+                    border: '1px dashed var(--border-color)',
+                    borderRadius: '12px',
+                    color: 'var(--text-dim)',
+                  }}
+                >
+                  <ImageIcon size={36} style={{ margin: '0 auto 10px auto', opacity: 0.4 }} />
+                  <p style={{ fontSize: '0.9rem', margin: 0 }}>Nenhuma foto adicionada à galeria ainda.</p>
+                  <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>Clique em "Adicionar Foto" para enriquecer a página inicial.</span>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                    gap: '14px',
+                  }}
+                >
+                  {gallery.map((img) => (
+                    <div
+                      key={img.id}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1/1',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                      }}
+                    >
+                      <img
+                        src={img.url}
+                        alt="Foto da galeria"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGalleryItem(img.id)}
+                        title="Remover foto"
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          right: '6px',
+                          background: 'rgba(0, 0, 0, 0.75)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          width: '28px',
+                          height: '28px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#FB7185',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Horários de Funcionamento */}
             <div className="glass-panel" style={{ padding: '28px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
                 <Clock size={20} color="var(--primary)" />
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Horários de Funcionamento da Semana</h3>
+                <h3 style={{ fontSize: '1.18rem', fontWeight: 600 }}>Horários de Atendimento Semanal</h3>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {businessHours.map((bh) => (
+                {businessHours.map((hour) => (
                   <div
-                    key={bh.weekday}
-                    className="glass-card"
+                    key={hour.weekday}
                     style={{
-                      padding: '14px 20px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
+                      padding: '12px 16px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-color)',
                       flexWrap: 'wrap',
-                      gap: '14px',
-                      opacity: bh.isOpen ? 1 : 0.5,
+                      gap: '12px',
                     }}
                   >
-                    <div style={{ width: '150px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '150px' }}>
                       <input
                         type="checkbox"
-                        checked={bh.isOpen}
-                        onChange={(e) => handleHourChange(bh.weekday, 'isOpen', e.target.checked)}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        checked={hour.isOpen}
+                        onChange={(e) => handleHourChange(hour.weekday, 'isOpen', e.target.checked)}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
                       />
-                      <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{weekdayNames[bh.weekday]}</span>
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem', color: hour.isOpen ? 'inherit' : 'var(--text-dim)' }}>
+                        {weekdayNames[hour.weekday]}
+                      </span>
                     </div>
 
-                    {bh.isOpen ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                          <span>Abertura:</span>
-                          <input
-                            type="time"
-                            value={bh.openTime}
-                            onChange={(e) => handleHourChange(bh.weekday, 'openTime', e.target.value)}
-                            style={{ width: '100px', padding: '6px 8px' }}
-                          />
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                          <span>Fechamento:</span>
-                          <input
-                            type="time"
-                            value={bh.closeTime}
-                            onChange={(e) => handleHourChange(bh.weekday, 'closeTime', e.target.value)}
-                            style={{ width: '100px', padding: '6px 8px' }}
-                          />
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                          <span>Almoço:</span>
-                          <input
-                            type="time"
-                            value={bh.breakStart || ''}
-                            onChange={(e) => handleHourChange(bh.weekday, 'breakStart', e.target.value || null)}
-                            style={{ width: '90px', padding: '6px 8px' }}
-                          />
-                          <span>às</span>
-                          <input
-                            type="time"
-                            value={bh.breakEnd || ''}
-                            onChange={(e) => handleHourChange(bh.weekday, 'breakEnd', e.target.value || null)}
-                            style={{ width: '90px', padding: '6px 8px' }}
-                          />
-                        </div>
+                    {hour.isOpen ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Abertura:</span>
+                        <input
+                          type="time"
+                          value={hour.openTime}
+                          onChange={(e) => handleHourChange(hour.weekday, 'openTime', e.target.value)}
+                          className="input-field"
+                          style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                        />
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
+                        <input
+                          type="time"
+                          value={hour.closeTime}
+                          onChange={(e) => handleHourChange(hour.weekday, 'closeTime', e.target.value)}
+                          className="input-field"
+                          style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                        />
                       </div>
                     ) : (
-                      <span style={{ color: 'var(--text-dim)', fontSize: '0.88rem', fontStyle: 'italic' }}>
-                        Salão fechado
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                        Fechado
                       </span>
                     )}
                   </div>
@@ -494,15 +909,25 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            {/* Botão de Salvar */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button
                 type="submit"
                 disabled={saving}
                 className="gold-gradient-primary gold-glow"
-                style={{ padding: '14px 32px', fontWeight: 600, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 28px',
+                  fontSize: '0.95rem',
+                  fontWeight: 700,
+                  cursor: saving ? 'wait' : 'pointer',
+                  opacity: saving ? 0.7 : 1,
+                }}
               >
                 <Save size={18} />
-                <span>{saving ? 'Salvando...' : 'Salvar Todas as Configurações'}</span>
+                <span>{saving ? 'Salvando Alterações...' : 'Salvar Todas as Configurações'}</span>
               </button>
             </div>
           </form>

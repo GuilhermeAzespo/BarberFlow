@@ -20,6 +20,25 @@ const upload = multer({
   },
 });
 
+const uploadCover = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_LOGO_TYPES.includes(file.mimetype)) return cb(null, true);
+    cb(HttpError.badRequest('Formato inválido. Envie PNG, JPG ou WEBP.'));
+  },
+});
+
+const uploadGallery = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_LOGO_TYPES.includes(file.mimetype)) return cb(null, true);
+    cb(HttpError.badRequest('Formato inválido. Envie PNG, JPG ou WEBP.'));
+  },
+});
+
+
 const isValidTimezone = (tz: string) => {
   try {
     Intl.DateTimeFormat('pt-BR', { timeZone: tz });
@@ -34,6 +53,8 @@ const updateTenantSchema = z.object({
   phone: z.string().trim().max(30).nullable().optional(),
   email: z.email().nullable().optional(),
   address: z.string().trim().max(200).nullable().optional(),
+  bio: z.string().trim().max(1000).nullable().optional(),
+  instagram: z.string().trim().max(100).nullable().optional(),
   timezone: z.string().refine(isValidTimezone, 'Fuso horário inválido').optional(),
   slotIntervalMinutes: z.number().int().refine((v) => [10, 15, 20, 30, 45, 60].includes(v), 'Intervalo inválido').optional(),
 });
@@ -78,6 +99,9 @@ function serializeTenant(tenant: Awaited<ReturnType<typeof prisma.tenant.findUni
     phone: tenant.phone,
     email: tenant.email,
     address: tenant.address,
+    bio: tenant.bio,
+    instagram: tenant.instagram,
+    coverUrl: tenant.coverUrl,
     timezone: tenant.timezone,
     currency: tenant.currency,
     slotIntervalMinutes: tenant.slotIntervalMinutes,
@@ -141,6 +165,74 @@ tenantRouter.delete('/logo', requireRole('OWNER', 'MANAGER'), async (req, res) =
   await prisma.tenantLogo.deleteMany({ where: { tenantId: req.tenantId! } });
   const tenant = await prisma.tenant.update({ where: { id: req.tenantId! }, data: { logoUrl: null } });
   res.json({ tenant: serializeTenant(tenant) });
+});
+
+tenantRouter.post('/cover', requireRole('OWNER', 'MANAGER'), uploadCover.single('cover'), async (req, res) => {
+  if (!req.file) throw HttpError.badRequest('Envie o arquivo no campo "cover"');
+  const tenantId = req.tenantId!;
+  const data = new Uint8Array(req.file.buffer);
+  await prisma.tenantCover.upsert({
+    where: { tenantId },
+    update: { mimeType: req.file.mimetype, data },
+    create: { tenantId, mimeType: req.file.mimetype, data },
+  });
+  const coverUrl = `/api/public/tenants/${tenantId}/cover?v=${Date.now()}`;
+  const tenant = await prisma.tenant.update({ where: { id: tenantId }, data: { coverUrl } });
+  res.json({ tenant: serializeTenant(tenant) });
+});
+
+tenantRouter.delete('/cover', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  await prisma.tenantCover.deleteMany({ where: { tenantId: req.tenantId! } });
+  const tenant = await prisma.tenant.update({ where: { id: req.tenantId! }, data: { coverUrl: null } });
+  res.json({ tenant: serializeTenant(tenant) });
+});
+
+tenantRouter.get('/gallery', async (req, res) => {
+  const images = await prisma.tenantGalleryImage.findMany({
+    where: { tenantId: req.tenantId! },
+    orderBy: { sortOrder: 'asc' },
+    select: { id: true, title: true, sortOrder: true, createdAt: true },
+  });
+  res.json({
+    images: images.map((img) => ({
+      ...img,
+      url: `/api/public/tenants/gallery/${img.id}`,
+    })),
+  });
+});
+
+tenantRouter.post('/gallery', requireRole('OWNER', 'MANAGER'), uploadGallery.single('image'), async (req, res) => {
+  if (!req.file) throw HttpError.badRequest('Envie o arquivo no campo "image"');
+  const count = await prisma.tenantGalleryImage.count({ where: { tenantId: req.tenantId! } });
+  if (count >= 15) throw HttpError.badRequest('Limite de 15 fotos na galeria atingido.');
+
+  const data = new Uint8Array(req.file.buffer);
+  const title = typeof req.body.title === 'string' ? req.body.title.trim().slice(0, 100) : null;
+  const image = await prisma.tenantGalleryImage.create({
+    data: {
+      tenantId: req.tenantId!,
+      title,
+      mimeType: req.file.mimetype,
+      data,
+      sortOrder: count,
+    },
+    select: { id: true, title: true, sortOrder: true, createdAt: true },
+  });
+
+  res.status(201).json({
+    image: {
+      ...image,
+      url: `/api/public/tenants/gallery/${image.id}`,
+    },
+  });
+});
+
+tenantRouter.delete('/gallery/:id', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const id = String(req.params.id);
+  await prisma.tenantGalleryImage.deleteMany({
+    where: { id, tenantId: req.tenantId! },
+  });
+  res.json({ ok: true });
 });
 
 /** Finaliza o onboarding: exige ao menos 1 dia aberto, 1 serviço e 1 profissional ativos (requisitos do bot). */

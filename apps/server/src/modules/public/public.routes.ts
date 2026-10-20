@@ -15,7 +15,7 @@ import { logger } from '../../lib/logger.js';
 export const publicRouter = Router();
 
 publicRouter.get('/tenants/:tenantId/logo', async (req, res) => {
-  const logo = await prisma.tenantLogo.findUnique({ where: { tenantId: req.params.tenantId } });
+  const logo = await prisma.tenantLogo.findUnique({ where: { tenantId: String(req.params.tenantId) } });
   if (!logo) throw HttpError.notFound('Logo não encontrado');
   res.setHeader('Content-Type', logo.mimeType);
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -24,17 +24,44 @@ publicRouter.get('/tenants/:tenantId/logo', async (req, res) => {
   res.send(Buffer.from(logo.data));
 });
 
+publicRouter.get('/tenants/:tenantId/cover', async (req, res) => {
+  const cover = await prisma.tenantCover.findUnique({ where: { tenantId: String(req.params.tenantId) } });
+  if (!cover) throw HttpError.notFound('Foto de capa não encontrada');
+  res.setHeader('Content-Type', cover.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.send(Buffer.from(cover.data));
+});
+
+publicRouter.get('/tenants/gallery/:imageId', async (req, res) => {
+  const img = await prisma.tenantGalleryImage.findUnique({ where: { id: String(req.params.imageId) } });
+  if (!img) throw HttpError.notFound('Imagem não encontrada');
+  res.setHeader('Content-Type', img.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.send(Buffer.from(img.data));
+});
+
 /** Dados públicos do salão (vitrine/link de agendamento web). */
 publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   const tenant = await prisma.tenant.findUnique({
-    where: { slug: req.params.slug },
+    where: { slug: String(req.params.slug) },
     select: {
       id: true,
       name: true,
       slug: true,
       logoUrl: true,
+      coverUrl: true,
+      bio: true,
+      instagram: true,
       phone: true,
       address: true,
+      galleryImages: {
+        select: { id: true, title: true, sortOrder: true },
+        orderBy: { sortOrder: 'asc' },
+      },
       timezone: true,
       slotIntervalMinutes: true,
       status: true,
@@ -58,8 +85,20 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   });
 
   if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia não encontrada ou inativa');
-  const { status: _status, ...publicData } = tenant;
-  res.json({ tenant: publicData });
+  const { status: _status, galleryImages, ...publicData } = tenant;
+  const gallery = galleryImages.map((img) => ({
+    id: img.id,
+    title: img.title,
+    sortOrder: img.sortOrder,
+    url: `/api/public/tenants/gallery/${img.id}`,
+  }));
+
+  res.json({
+    tenant: {
+      ...publicData,
+      gallery,
+    },
+  });
 });
 
 /** Próximas datas com horários disponíveis para agendamento online */

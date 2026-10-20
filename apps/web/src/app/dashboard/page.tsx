@@ -224,7 +224,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>Agendamento Online para Clientes:</span>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>Página da Barbearia & Agendamento:</span>
                     <code
                       style={{
                         color: 'var(--gold-light)',
@@ -240,7 +240,7 @@ export default function DashboardPage() {
                     </code>
                   </div>
                   <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Seus clientes podem escolher serviços, barbeiro e agendar horários diretamente por esse link.
+                    Seus clientes podem conhecer a barbearia, ver fotos, serviços, barbeiros e agendar horários online.
                   </p>
                 </div>
               </div>

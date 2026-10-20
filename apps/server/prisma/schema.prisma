@@ -117,6 +117,9 @@ model Tenant {
   phone               String?
   email               String?
   address             String?
+  bio                 String?
+  instagram           String?
+  coverUrl            String?
   timezone            String       @default("America/Sao_Paulo")
   currency            String       @default("BRL")
   slotIntervalMinutes Int          @default(30)
@@ -129,6 +132,8 @@ model Tenant {
 
   subscription          Subscription?
   logo                  TenantLogo?
+  cover                 TenantCover?
+  galleryImages         TenantGalleryImage[]
   users                 User[]
   businessHours         BusinessHour[]
   professionals         Professional[]
@@ -176,6 +181,30 @@ model TenantLogo {
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantCover {
+  tenantId  String   @id
+  mimeType  String
+  data      Bytes
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model TenantGalleryImage {
+  id        String   @id @default(cuid())
+  tenantId  String
+  title     String?
+  mimeType  String
+  data      Bytes
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sortOrder])
 }
 
 // ───────────────────────────── Identidade ─────────────────────────────
