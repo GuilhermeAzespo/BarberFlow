@@ -1,3 +1,6 @@
+<img width="669" height="373" alt="Logo" src="https://github.com/user-attachments/assets/38fd55ae-2a18-4d8e-9ce3-e5bc4ddc1483" />
+
+
 # BarberFlow 💈⚡
 
 Plataforma SaaS multi-tenant moderna e 100% automatizada para gestão de barbearias e salões de beleza, com agendamentos em tempo real via WhatsApp, controle de fluxo de caixa e painel Super Admin para gestão global da plataforma.
