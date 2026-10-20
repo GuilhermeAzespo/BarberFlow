@@ -49,6 +49,17 @@ a {
   text-decoration: none;
 }
 
+/* Botões nativos herdam cor/fonte (evita texto preto no tema dark) */
+button {
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* Glassmorphism Classes */
 .glass-panel {
   background: var(--bg-card);
