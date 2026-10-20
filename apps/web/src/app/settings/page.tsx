@@ -5,7 +5,8 @@ import { Settings, Upload, Clock, Save, Building, CheckCircle2, AlertCircle } fr
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
-import { Header } from '../../components/Header';
+import { Header } from '../../components/Header';
+import { Select } from '../../components/Select';
 
 interface BusinessHour {
   weekday: number;
@@ -241,7 +242,7 @@ export default function SettingsPage() {
                   <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                     Intervalo dos Horários na Grade
                   </label>
-                  <select
+                  <Select
                     value={slotIntervalMinutes}
                     onChange={(e) => setSlotIntervalMinutes(Number(e.target.value))}
                   >
@@ -250,7 +251,7 @@ export default function SettingsPage() {
                     <option value={30}>30 minutos</option>
                     <option value={45}>45 minutos</option>
                     <option value={60}>60 minutos (1 hora)</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
             </div>

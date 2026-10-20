@@ -17,6 +17,7 @@ import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { Select } from '../../components/Select';
 import { DateTime } from 'luxon';
 
 interface FinanceReport {
@@ -412,27 +413,27 @@ export default function FinancePage() {
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Categoria *
               </label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <Select value={category} onChange={(e) => setCategory(e.target.value)}>
                 {(type === 'INCOME' ? categories.income : categories.expense).map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Meio de Pagamento *
               </label>
-              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+              <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                 <option value="PIX">Pix</option>
                 <option value="CREDIT_CARD">Cartão de Crédito</option>
                 <option value="DEBIT_CARD">Cartão de Débito</option>
                 <option value="CASH">Dinheiro</option>
                 <option value="TRANSFER">Transferência</option>
                 <option value="OTHER">Outro</option>
-              </select>
+              </Select>
             </div>
           </div>
 

@@ -21,6 +21,7 @@ import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { Select } from '../../components/Select';
 import { DateTime } from 'luxon';
 
 interface SuperAdminOverview {
@@ -476,11 +477,11 @@ export default function SuperAdminPage() {
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Status da Instância
               </label>
-              <select value={newStatus} onChange={(e) => setNewStatus(e.target.value as 'ACTIVE' | 'SUSPENDED' | 'BLOCKED')}>
+              <Select value={newStatus} onChange={(e) => setNewStatus(e.target.value as 'ACTIVE' | 'SUSPENDED' | 'BLOCKED')}>
                 <option value="ACTIVE">ACTIVE (Acesso Liberado)</option>
                 <option value="SUSPENDED">SUSPENDED (Suspensão Administrativa)</option>
                 <option value="BLOCKED">BLOCKED (Bloqueio por Inadimplência)</option>
-              </select>
+              </Select>
             </div>
 
             <div>

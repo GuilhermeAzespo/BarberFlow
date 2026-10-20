@@ -18,6 +18,7 @@ import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { Select } from '../../components/Select';
 import { DateTime } from 'luxon';
 
 interface Professional {
@@ -225,7 +226,7 @@ export default function CalendarPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               {/* Professional Filter */}
               <div style={{ position: 'relative' }}>
-                <select
+                <Select
                   value={selectedProfId}
                   onChange={(e) => setSelectedProfId(e.target.value)}
                   style={{ padding: '8px 14px', width: 'auto', minWidth: '180px' }}
@@ -236,7 +237,7 @@ export default function CalendarPage() {
                       {p.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <button
@@ -408,27 +409,27 @@ export default function CalendarPage() {
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Serviço *
               </label>
-              <select required value={newServiceId} onChange={(e) => setNewServiceId(e.target.value)}>
+              <Select required value={newServiceId} onChange={(e) => setNewServiceId(e.target.value)}>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.durationMinutes} min - {formatBRL(s.priceCents)})
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Profissional
               </label>
-              <select value={newProfId} onChange={(e) => setNewProfId(e.target.value)}>
+              <Select value={newProfId} onChange={(e) => setNewProfId(e.target.value)}>
                 <option value="">Qualquer Disponível</option>
                 {professionals.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </div>
 
@@ -499,14 +500,14 @@ export default function CalendarPage() {
                 <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>
                   Forma de Pagamento (lançamento automático no Caixa):
                 </label>
-                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                   <option value="PIX">Pix</option>
                   <option value="CREDIT_CARD">Cartão de Crédito</option>
                   <option value="DEBIT_CARD">Cartão de Débito</option>
                   <option value="CASH">Dinheiro em Espécie</option>
                   <option value="TRANSFER">Transferência Bancária</option>
                   <option value="OTHER">Outro</option>
-                </select>
+                </Select>
               </div>
             )}
 
