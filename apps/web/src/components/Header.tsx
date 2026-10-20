@@ -56,44 +56,13 @@ export function Header() {
           </button>
         </div>
       )}
-      <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40 }}>
+      <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '10px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40, minHeight: '74px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        {tenant?.logoUrl ? (
-          <img
-            src={tenant.logoUrl}
-            alt={tenant.name}
-            style={{ width: '38px', height: '38px', borderRadius: '8px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
-          />
-        ) : tenant ? (
-          <div
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #E5B338, #A17514)',
-              color: '#0B0F17',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: '1.1rem',
-            }}
-          >
-            {tenant.name.charAt(0).toUpperCase()}
-          </div>
-        ) : (
-          <img
-            src="/logo.png"
-            alt="BarberFlow"
-            style={{ height: '38px', width: 'auto', objectFit: 'contain' }}
-          />
-        )}
-
         <div>
-          <h2 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-main)', lineHeight: 1.2 }}>
+          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2 }}>
             {tenant ? tenant.name : 'BarberFlow'}
           </h2>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
             {user?.role === 'SUPER_ADMIN' ? 'Painel Master SaaS' : `${subscription?.plan.name || 'Trial'} Plan`}
           </span>
         </div>
@@ -120,7 +89,31 @@ export function Header() {
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+        {/* Logo Oficial BarberFlow na Direita com maior tamanho */}
+        <Link
+          href="/dashboard"
+          title="BarberFlow"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            textDecoration: 'none',
+            paddingRight: '16px',
+            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="BarberFlow"
+            style={{
+              height: '56px',
+              width: 'auto',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))',
+            }}
+          />
+        </Link>
+
         {user?.role === 'SUPER_ADMIN' && (
           <Link
             href="/admin"
