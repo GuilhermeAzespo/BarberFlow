@@ -47,7 +47,6 @@ export default function RegisterPage() {
     <div
       style={{
         minHeight: '100vh',
-        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -55,41 +54,7 @@ export default function RegisterPage() {
         background: 'radial-gradient(circle at top center, rgba(229, 179, 56, 0.08) 0%, transparent 60%)',
       }}
     >
-      <Link
-        href="/"
-        style={{
-          position: 'absolute',
-          top: '24px',
-          left: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '8px 16px',
-          borderRadius: '10px',
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          color: 'var(--text-muted)',
-          fontSize: '0.88rem',
-          fontWeight: 500,
-          textDecoration: 'none',
-          backdropFilter: 'blur(10px)',
-          transition: 'all 0.2s ease',
-          zIndex: 10,
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = 'var(--text-main)';
-          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-          e.currentTarget.style.borderColor = 'rgba(229, 179, 56, 0.3)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = 'var(--text-muted)';
-          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-        }}
-      >
-        <ArrowLeft size={16} />
-        <span>Voltar à Página Inicial</span>
-      </Link>
+      
 
       <div
         className="glass-panel animate-fade-in"
