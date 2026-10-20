@@ -1053,12 +1053,12 @@ export default function TenantHomePage() {
                         loading="lazy"
                         allowFullScreen
                         referrerPolicy="no-referrer-when-downgrade"
-                        src={`https://maps.google.com/maps?q=${encodeURIComponent(`${tenant.name} ${tenant.address}`)}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(tenant.address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
                       />
                     </div>
 
                     <a
-                      href={`https://maps.google.com/?q=${encodeURIComponent(`${tenant.name} ${tenant.address}`)}`}
+                      href={`https://maps.google.com/?q=${encodeURIComponent(tenant.address)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="glass-card"
