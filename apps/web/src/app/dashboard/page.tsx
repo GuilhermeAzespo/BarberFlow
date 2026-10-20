@@ -125,29 +125,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              {publicBookingUrl && (
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  className="glass-card"
-                  style={{
-                    padding: '10px 16px',
-                    fontSize: '0.88rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    color: copied ? '#10B981' : 'var(--text-primary)',
-                    borderColor: copied ? 'rgba(16, 185, 129, 0.4)' : undefined,
-                  }}
-                  title="Copiar link de agendamento online para clientes"
-                >
-                  {copied ? <Check size={16} /> : <Copy size={16} />}
-                  <span>{copied ? 'Link Copiado!' : 'Copiar Link Web'}</span>
-                </button>
-              )}
-
+            <div style={{ display: 'flex', gap: '12px' }}>
               <Link
                 href="/calendar"
                 className="gold-gradient-primary gold-glow"
