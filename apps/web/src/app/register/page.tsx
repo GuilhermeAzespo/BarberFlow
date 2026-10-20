@@ -65,23 +65,21 @@ export default function RegisterPage() {
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
         }}
       >
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #E5B338, #966C0F)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 20px var(--primary-glow)',
-              marginBottom: '16px',
-            }}
-          >
-            <Sparkles size={24} color="#0B0F17" />
-          </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '6px' }}>Criar Conta no BarberFlow</h2>
+        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          <Link href="/" style={{ display: 'inline-block', marginBottom: '16px' }}>
+            <img
+              src="/logo.png"
+              alt="BarberFlow"
+              style={{
+                height: '76px',
+                width: 'auto',
+                maxWidth: '220px',
+                objectFit: 'contain',
+                filter: 'drop-shadow(0 4px 16px rgba(0, 0, 0, 0.4))',
+              }}
+            />
+          </Link>
+          <h2 style={{ fontSize: '1.65rem', fontWeight: 700, marginBottom: '6px' }}>Criar Conta no BarberFlow</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
             Inicie seu teste gratuito de 14 dias sem cartão de crédito
           </p>

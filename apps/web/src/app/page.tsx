@@ -125,25 +125,18 @@ export default function LandingPage() {
           zIndex: 50,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+          <img
+            src="/logo.png"
+            alt="BarberFlow"
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #E5B338, #966C0F)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 15px var(--primary-glow)',
+              height: '52px',
+              width: 'auto',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 16px rgba(0, 0, 0, 0.4))',
             }}
-          >
-            <Sparkles size={20} color="#0B0F17" />
-          </div>
-          <span style={{ fontSize: '1.35rem', fontWeight: 800, letterSpacing: '-0.03em' }}>
-            Barber<span style={{ color: 'var(--primary)' }}>Flow</span>
-          </span>
-        </div>
+          />
+        </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <Link
@@ -496,7 +489,14 @@ export default function LandingPage() {
           fontSize: '0.88rem',
         }}
       >
-        <span>© {new Date().getFullYear()} BarberFlow SaaS. Todos os direitos reservados.</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img
+            src="/logo.png"
+            alt="BarberFlow"
+            style={{ height: '32px', width: 'auto', objectFit: 'contain' }}
+          />
+          <span>© {new Date().getFullYear()} BarberFlow SaaS. Todos os direitos reservados.</span>
+        </div>
         <div style={{ display: 'flex', gap: '24px' }}>
           <Link href="/login">Área do Cliente</Link>
           <Link href="/register">Cadastrar Salão</Link>

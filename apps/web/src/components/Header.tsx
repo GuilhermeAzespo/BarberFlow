@@ -64,7 +64,7 @@ export function Header() {
             alt={tenant.name}
             style={{ width: '38px', height: '38px', borderRadius: '8px', objectFit: 'cover', border: '1px solid var(--border-color)' }}
           />
-        ) : (
+        ) : tenant ? (
           <div
             style={{
               width: '38px',
@@ -79,8 +79,14 @@ export function Header() {
               fontSize: '1.1rem',
             }}
           >
-            {tenant ? tenant.name.charAt(0).toUpperCase() : 'B'}
+            {tenant.name.charAt(0).toUpperCase()}
           </div>
+        ) : (
+          <img
+            src="/logo.png"
+            alt="BarberFlow"
+            style={{ height: '38px', width: 'auto', objectFit: 'contain' }}
+          />
         )}
 
         <div>

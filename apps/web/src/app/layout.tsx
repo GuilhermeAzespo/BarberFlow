@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: 'BarberFlow — Gestão Inteligente para Barbearias e Salões',
   description:
     'SaaS multi-tenant moderno com automação 100% via WhatsApp, agendamentos em tempo real e controle de fluxo de caixa.',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({
@@ -18,6 +22,7 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="icon" href="/logo.png" type="image/png" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
       <body>

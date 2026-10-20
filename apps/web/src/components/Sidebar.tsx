@@ -48,27 +48,27 @@ export function Sidebar() {
     >
       <div>
         {/* Brand Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 12px 24px 12px' }}>
-          <div
+        <Link
+          href="/dashboard"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 8px 24px 8px',
+            textDecoration: 'none',
+          }}
+        >
+          <img
+            src="/logo.png"
+            alt="BarberFlow"
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #E5B338, #966C0F)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 15px var(--primary-glow)',
+              height: '46px',
+              width: 'auto',
+              maxWidth: '100%',
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4))',
             }}
-          >
-            <Sparkles size={18} color="#0B0F17" />
-          </div>
-          <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.03em' }}>
-              Barber<span style={{ color: 'var(--primary)' }}>Flow</span>
-            </h1>
-          </div>
-        </div>
+          />
+        </Link>
 
         {/* Navigation links */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
