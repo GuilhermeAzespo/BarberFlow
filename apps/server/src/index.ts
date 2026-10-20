@@ -89,13 +89,22 @@ app.use(errorHandler);
 async function bootstrap() {
   logger.info('Iniciando inicialização do sistema...');
 
-  // 1. Cria planos padrão se não existirem
+  // 1. Cria ou sincroniza planos padrão se não existirem
   for (const planData of DEFAULT_PLANS) {
-    await prisma.plan.upsert({
-      where: { slug: planData.slug },
-      update: {},
-      create: planData,
-    });
+    const existing = await prisma.plan.findUnique({ where: { slug: planData.slug } });
+    if (!existing) {
+      await prisma.plan.create({ data: planData });
+    } else if (!existing.features) {
+      await prisma.plan.update({
+        where: { id: existing.id },
+        data: {
+          features: planData.features,
+          badge: planData.badge,
+          isHighlighted: planData.isHighlighted,
+          description: existing.description || planData.description,
+        },
+      });
+    }
   }
 
   // 2. Cria ou sincroniza Super Admin se configurado no ambiente

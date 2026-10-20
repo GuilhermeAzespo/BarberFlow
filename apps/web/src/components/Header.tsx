@@ -3,13 +3,60 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '../lib/auth-context';
-import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle } from 'lucide-react';
+import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft } from 'lucide-react';
 
 export function Header() {
-  const { user, tenant, subscription, access, logout } = useAuth();
+  const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
 
   return (
-    <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40 }}>
+    <>
+      {isImpersonated && (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #F59E0B, #D97706)',
+            color: '#0B0F17',
+            padding: '8px 28px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontWeight: 600,
+            fontSize: '0.86rem',
+            boxShadow: '0 2px 12px rgba(245, 158, 11, 0.35)',
+            zIndex: 50,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <ShieldAlert size={18} />
+            <span>
+              <strong>Modo Suporte Super Admin:</strong> Você está acessando a conta de{' '}
+              <u>{tenant?.name ?? 'Salão'}</u> com permissões completas de gerenciamento.
+            </span>
+          </div>
+          <button
+            onClick={exitImpersonation}
+            style={{
+              background: '#0B0F17',
+              color: '#FBBF24',
+              border: '1px solid rgba(251, 191, 36, 0.5)',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontWeight: 700,
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = '#1A2333')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = '#0B0F17')}
+          >
+            <ArrowLeft size={14} />
+            <span>Sair do Salão & Voltar ao Super Admin</span>
+          </button>
+        </div>
+      )}
+      <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {tenant?.logoUrl ? (
           <img
@@ -132,5 +179,6 @@ export function Header() {
         </button>
       </div>
     </header>
+  </>
   );
 }

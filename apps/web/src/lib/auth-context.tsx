@@ -55,9 +55,11 @@ interface AuthContextType {
   tenant: Tenant | null;
   subscription: Subscription | null;
   access: AccessStatus | null;
+  isImpersonated: boolean;
   loading: boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
+  exitImpersonation: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -65,9 +67,11 @@ const AuthContext = createContext<AuthContextType>({
   tenant: null,
   subscription: null,
   access: null,
+  isImpersonated: false,
   loading: true,
   refresh: async () => {},
   logout: async () => {},
+  exitImpersonation: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -75,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [access, setAccess] = useState<AccessStatus | null>(null);
+  const [isImpersonated, setIsImpersonated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const router = useRouter();
@@ -87,18 +92,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tenant: Tenant | null;
         subscription: Subscription | null;
         access: AccessStatus;
+        isImpersonated?: boolean;
       }>('/api/auth/me');
 
       setUser(res.user);
       setTenant(res.tenant);
       setSubscription(res.subscription);
       setAccess(res.access);
+      setIsImpersonated(Boolean(res.isImpersonated));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);
         setTenant(null);
         setSubscription(null);
         setAccess(null);
+        setIsImpersonated(false);
       }
     } finally {
       setLoading(false);
@@ -119,7 +127,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenant(null);
     setSubscription(null);
     setAccess(null);
+    setIsImpersonated(false);
     router.push('/login');
+  };
+
+  const exitImpersonation = async () => {
+    try {
+      await api.post('/api/auth/exit-impersonation');
+      await refresh();
+      router.push('/admin');
+    } catch (err) {
+      console.error('Falha ao encerrar personificação:', err);
+    }
   };
 
   return (
@@ -129,9 +148,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tenant,
         subscription,
         access,
+        isImpersonated,
         loading,
         refresh,
         logout,
+        exitImpersonation,
       }}
     >
       {children}

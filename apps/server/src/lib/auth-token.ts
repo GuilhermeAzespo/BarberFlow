@@ -9,6 +9,7 @@ export interface TokenPayload {
   sub: string;
   tid: string | null;
   role: UserRole;
+  impersonatedBy?: string | null;
 }
 
 export function signToken(payload: TokenPayload): string {
@@ -21,7 +22,12 @@ export function signToken(payload: TokenPayload): string {
 export function verifyToken(token: string): TokenPayload {
   const decoded = jwt.verify(token, env.JWT_SECRET, { issuer: 'barberflow' });
   if (typeof decoded === 'string' || !decoded.sub) throw new Error('Token inválido');
-  return { sub: decoded.sub, tid: (decoded.tid as string | null) ?? null, role: decoded.role as UserRole };
+  return {
+    sub: decoded.sub,
+    tid: (decoded.tid as string | null) ?? null,
+    role: decoded.role as UserRole,
+    impersonatedBy: (decoded.impersonatedBy as string | null) ?? null,
+  };
 }
 
 function parseDurationMs(value: string): number {

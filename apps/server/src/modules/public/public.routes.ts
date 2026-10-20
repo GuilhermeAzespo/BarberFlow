@@ -39,7 +39,19 @@ publicRouter.get('/plans', async (_req, res) => {
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: 'asc' },
-    select: { id: true, name: true, slug: true, description: true, priceCents: true, maxProfessionals: true, maxAppointmentsPerMonth: true, whatsappEnabled: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      priceCents: true,
+      maxProfessionals: true,
+      maxAppointmentsPerMonth: true,
+      whatsappEnabled: true,
+      features: true,
+      badge: true,
+      isHighlighted: true,
+    },
   });
   res.json({ plans });
 });

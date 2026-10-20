@@ -100,6 +100,9 @@ model Plan {
   isActive                Boolean        @default(true)
   isDefault               Boolean        @default(false)
   sortOrder               Int            @default(0)
+  features                Json?
+  badge                   String?
+  isHighlighted           Boolean        @default(false)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   subscriptions           Subscription[]
@@ -412,4 +415,17 @@ model SystemLog {
   @@index([tenantId, createdAt])
   @@index([level, createdAt])
   @@index([source, createdAt])
+}
+
+// Configurações globais do SaaS (SMTP para e-mails, notificações e parâmetros do sistema)
+model SystemSetting {
+  id                        String   @id @default("global")
+  smtpHost                  String?
+  smtpPort                  Int?     @default(587)
+  smtpUser                  String?
+  smtpPass                  String?
+  smtpFrom                  String?
+  smtpSecure                Boolean  @default(false)
+  emailNotificationsEnabled Boolean  @default(true)
+  updatedAt                 DateTime @updatedAt
 }

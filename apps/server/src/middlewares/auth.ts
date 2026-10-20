@@ -31,7 +31,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   });
   if (!user || !user.isActive) throw HttpError.unauthorized('Usuário inválido ou desativado');
 
-  req.auth = { userId: user.id, tenantId: user.tenantId, role: user.role };
+  req.auth = {
+    userId: user.id,
+    tenantId: user.tenantId,
+    role: user.role,
+    impersonatedBy: payload.impersonatedBy ?? null,
+  };
   next();
 }
 

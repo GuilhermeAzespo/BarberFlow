@@ -169,6 +169,44 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         }
       : null,
     access,
+    isImpersonated: Boolean(req.auth?.impersonatedBy),
+    impersonatedBy: req.auth?.impersonatedBy ?? null,
+  });
+});
+
+/** Sai do modo de personificação (impersonation) e restaura a sessão original do Super Admin */
+authRouter.post('/exit-impersonation', requireAuth, async (req, res) => {
+  const superAdminId = req.auth?.impersonatedBy;
+  if (!superAdminId) {
+    throw HttpError.badRequest('Você não está em uma sessão de personificação de suporte.');
+  }
+
+  const superAdmin = await prisma.user.findUnique({
+    where: { id: superAdminId },
+  });
+
+  if (!superAdmin || superAdmin.role !== 'SUPER_ADMIN' || !superAdmin.isActive) {
+    throw HttpError.forbidden('Conta de Super Admin não encontrada ou inativa.');
+  }
+
+  const token = signToken({
+    sub: superAdmin.id,
+    tid: superAdmin.tenantId ?? null,
+    role: superAdmin.role,
+  });
+
+  res.cookie(AUTH_COOKIE, token, authCookieOptions());
+
+  await systemLog({
+    tenantId: null,
+    source: 'superadmin',
+    message: `Super Admin ${superAdmin.email} encerrou acesso de suporte/personificação`,
+    meta: { superAdminId },
+  });
+
+  res.json({
+    token,
+    user: { id: superAdmin.id, name: superAdmin.name, email: superAdmin.email, role: superAdmin.role },
   });
 });
 
@@ -185,3 +223,4 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
   await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(data.newPassword, 12) } });
   res.status(204).end();
 });
+

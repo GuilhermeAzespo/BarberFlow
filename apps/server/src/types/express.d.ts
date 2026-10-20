@@ -7,6 +7,7 @@ declare global {
         userId: string;
         tenantId: string | null;
         role: UserRole;
+        impersonatedBy?: string | null;
       };
       /** Preenchido por `requireTenant` — sempre use este valor para escopo multi-tenant. */
       tenantId?: string;

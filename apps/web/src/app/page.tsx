@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { api } from '../lib/api';
 import {
   Sparkles,
   MessageSquare,
@@ -13,7 +14,98 @@ import {
   Zap,
 } from 'lucide-react';
 
+interface PublicPlan {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  priceCents: number;
+  maxProfessionals?: number | null;
+  maxAppointmentsPerMonth?: number | null;
+  whatsappEnabled: boolean;
+  features?: string[] | null;
+  badge?: string | null;
+  isHighlighted?: boolean;
+}
+
+const DEFAULT_HOME_PLANS: PublicPlan[] = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    slug: 'starter',
+    description: 'Ideal para barbeiros autônomos que desejam automatizar o WhatsApp.',
+    priceCents: 4990,
+    maxProfessionals: 1,
+    maxAppointmentsPerMonth: 300,
+    whatsappEnabled: true,
+    features: [
+      '1 Profissional',
+      'Até 300 agendamentos/mês',
+      'Bot de WhatsApp integrado',
+      'Fluxo de caixa básico',
+    ],
+    badge: null,
+    isHighlighted: false,
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    slug: 'pro',
+    description: 'Perfeito para equipes com múltiplos barbeiros e alta demanda.',
+    priceCents: 9990,
+    maxProfessionals: 5,
+    maxAppointmentsPerMonth: null,
+    whatsappEnabled: true,
+    features: [
+      'Até 5 Profissionais',
+      'Agendamentos ilimitados',
+      'Bot de WhatsApp personalizado',
+      'Lembretes automáticos',
+      'Relatórios financeiros completos',
+    ],
+    badge: 'MAIS POPULAR',
+    isHighlighted: true,
+  },
+  {
+    id: 'premium',
+    name: 'Premium',
+    slug: 'premium',
+    description: 'Para salões de grande porte e redes que necessitam de capacidade total.',
+    priceCents: 19990,
+    maxProfessionals: null,
+    maxAppointmentsPerMonth: null,
+    whatsappEnabled: true,
+    features: [
+      'Profissionais ilimitados',
+      'Agendamentos ilimitados',
+      'Suporte prioritário',
+      'Todas as funcionalidades inclusas',
+    ],
+    badge: null,
+    isHighlighted: false,
+  },
+];
+
 export default function LandingPage() {
+  const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_HOME_PLANS);
+
+  useEffect(() => {
+    api
+      .get<{ plans: PublicPlan[] }>('/api/public/plans')
+      .then((res) => {
+        if (res.plans && res.plans.length > 0) {
+          setPlans(res.plans);
+        }
+      })
+      .catch(() => {
+        // Mantém fallback caso a API demore a responder
+      });
+  }, []);
+
+  const formatBRL = (cents: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
+  };
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Top Navbar */}
@@ -301,157 +393,93 @@ export default function LandingPage() {
               textAlign: 'left',
             }}
           >
-            {/* Starter */}
-            <div className="glass-panel" style={{ padding: '36px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <h4 style={{ fontSize: '1.3rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>Starter</h4>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-                  Ideal para barbeiros autônomos que desejam automatizar o WhatsApp.
-                </p>
-                <div style={{ marginBottom: '28px' }}>
-                  <span style={{ fontSize: '2.5rem', fontWeight: 800 }}>R$ 49,90</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>/mês</span>
-                </div>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> 1 Profissional
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Até 300 agendamentos/mês
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Bot de WhatsApp integrado
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Fluxo de caixa básico
-                  </li>
-                </ul>
-              </div>
-              <Link
-                href="/register"
-                className="glass-card"
-                style={{
-                  marginTop: '32px',
-                  padding: '12px',
-                  textAlign: 'center',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                }}
-              >
-                Começar no Starter
-              </Link>
-            </div>
+            {plans.map((p) => {
+              const isHighlight = p.isHighlighted || p.slug === 'pro';
+              const features = Array.isArray(p.features) && p.features.length > 0
+                ? p.features
+                : [
+                    p.maxProfessionals ? `Até ${p.maxProfessionals} Profissionais` : 'Profissionais ilimitados',
+                    p.maxAppointmentsPerMonth ? `Até ${p.maxAppointmentsPerMonth} agendamentos/mês` : 'Agendamentos ilimitados',
+                    p.whatsappEnabled ? 'Bot de WhatsApp integrado' : 'WhatsApp não incluso',
+                    'Painel de Gestão e Caixa',
+                  ];
 
-            {/* Pro (Highlighted) */}
-            <div
-              className="glass-panel gold-glow"
-              style={{
-                padding: '36px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                borderColor: 'var(--primary)',
-                position: 'relative',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '-12px',
-                  right: '24px',
-                  background: 'linear-gradient(135deg, #E5B338, #C99520)',
-                  color: '#0B0F17',
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                }}
-              >
-                MAIS POPULAR
-              </div>
-              <div>
-                <h4 style={{ fontSize: '1.3rem', fontWeight: 600, color: 'var(--primary)', marginBottom: '8px' }}>Pro</h4>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-                  Perfeito para equipes com múltiplos barbeiros e alta demanda.
-                </p>
-                <div style={{ marginBottom: '28px' }}>
-                  <span style={{ fontSize: '2.5rem', fontWeight: 800 }}>R$ 99,90</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>/mês</span>
-                </div>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Até 5 Profissionais
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Agendamentos ilimitados
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Bot de WhatsApp personalizado
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Lembretes automáticos
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Relatórios financeiros completos
-                  </li>
-                </ul>
-              </div>
-              <Link
-                href="/register"
-                className="gold-gradient-primary"
-                style={{
-                  marginTop: '32px',
-                  padding: '12px',
-                  textAlign: 'center',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                }}
-              >
-                Testar Pro Grátis
-              </Link>
-            </div>
+              return (
+                <div
+                  key={p.id || p.slug}
+                  className={`glass-panel ${isHighlight ? 'gold-glow' : ''}`}
+                  style={{
+                    padding: '36px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    borderColor: isHighlight ? 'var(--primary)' : undefined,
+                    position: 'relative',
+                  }}
+                >
+                  {p.badge && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '-12px',
+                        right: '24px',
+                        background: 'linear-gradient(135deg, #E5B338, #C99520)',
+                        color: '#0B0F17',
+                        padding: '4px 12px',
+                        borderRadius: '12px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      {p.badge}
+                    </div>
+                  )}
 
-            {/* Premium */}
-            <div className="glass-panel" style={{ padding: '36px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
-                <h4 style={{ fontSize: '1.3rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>Premium</h4>
-                <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '24px' }}>
-                  Para salões de grande porte e redes que necessitam de capacidade total.
-                </p>
-                <div style={{ marginBottom: '28px' }}>
-                  <span style={{ fontSize: '2.5rem', fontWeight: 800 }}>R$ 199,90</span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>/mês</span>
+                  <div>
+                    <h4
+                      style={{
+                        fontSize: '1.3rem',
+                        fontWeight: 600,
+                        color: isHighlight ? 'var(--primary)' : 'var(--text-main)',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      {p.name}
+                    </h4>
+                    <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '24px', minHeight: '40px' }}>
+                      {p.description || 'Plano sob medida para o crescimento do seu salão.'}
+                    </p>
+                    <div style={{ marginBottom: '28px' }}>
+                      <span style={{ fontSize: '2.5rem', fontWeight: 800 }}>{formatBRL(p.priceCents)}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>/mês</span>
+                    </div>
+                    <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
+                      {features.map((feat, idx) => (
+                        <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <CheckCircle2 size={16} color="#E5B338" />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <Link
+                    href={`/register?plan=${p.slug}`}
+                    className={isHighlight ? 'gold-gradient-primary' : 'glass-card'}
+                    style={{
+                      marginTop: '32px',
+                      padding: '12px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    Começar no {p.name}
+                  </Link>
                 </div>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Profissionais ilimitados
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Agendamentos ilimitados
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Suporte prioritário
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <CheckCircle2 size={16} color="#E5B338" /> Todas as funcionalidades inclusas
-                  </li>
-                </ul>
-              </div>
-              <Link
-                href="/register"
-                className="glass-card"
-                style={{
-                  marginTop: '32px',
-                  padding: '12px',
-                  textAlign: 'center',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                }}
-              >
-                Começar no Premium
-              </Link>
-            </div>
+              );
+            })}
           </div>
         </section>
       </main>
