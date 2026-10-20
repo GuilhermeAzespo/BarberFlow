@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Settings, Upload, Clock, Save, Building, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Settings, Upload, Clock, Save, Building, CheckCircle2, AlertCircle, Globe, Copy, ExternalLink, Check } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
-import { Header } from '../../components/Header';
+import { Header } from '../../components/Header';
 import { Select } from '../../components/Select';
 
 interface BusinessHour {
@@ -23,12 +23,15 @@ export default function SettingsPage() {
   const { tenant, refresh } = useAuth();
 
   const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [slotIntervalMinutes, setSlotIntervalMinutes] = useState(30);
   const [businessHours, setBusinessHours] = useState<BusinessHour[]>([]);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [origin, setOrigin] = useState('');
+  const [copied, setCopied] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -39,6 +42,7 @@ export default function SettingsPage() {
       const res = await api.get<{
         tenant: {
           name: string;
+          slug?: string;
           phone?: string | null;
           address?: string | null;
           logoUrl?: string | null;
@@ -48,6 +52,7 @@ export default function SettingsPage() {
       }>('/api/tenant');
 
       setName(res.tenant.name);
+      setSlug(res.tenant.slug || '');
       setPhone(res.tenant.phone || '');
       setAddress(res.tenant.address || '');
       setSlotIntervalMinutes(res.tenant.slotIntervalMinutes || 30);
@@ -60,7 +65,33 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
   }, []);
+
+  const tenantSlug = slug || tenant?.slug || '';
+  const publicBookingUrl = tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : '');
+
+  const handleCopyLink = () => {
+    if (!publicBookingUrl) return;
+    const fullUrl = publicBookingUrl.startsWith('http') ? publicBookingUrl : `${window.location.origin}${publicBookingUrl}`;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(fullUrl);
+    } else {
+      const textArea = document.createElement('textarea');
+      textArea.value = fullUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      textArea.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -166,6 +197,132 @@ export default function SettingsPage() {
               <span>{errorMsg}</span>
             </div>
           )}
+
+          {/* Link Personalizado de Agendamento Online */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '24px 28px',
+              marginBottom: '28px',
+              border: '1px solid rgba(212, 175, 55, 0.35)',
+              background: 'radial-gradient(ellipse at top left, rgba(212, 175, 55, 0.08) 0%, rgba(18, 18, 20, 0.6) 100%)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '10px',
+                      background: 'rgba(212, 175, 55, 0.15)',
+                      border: '1px solid rgba(212, 175, 55, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--gold-primary)',
+                    }}
+                  >
+                    <Globe size={18} />
+                  </div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Link de Agendamento Online</h3>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    DISPONÍVEL
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '16px', lineHeight: 1.5 }}>
+                  Compartilhe este link na bio do Instagram, no WhatsApp ou envie diretamente para seus clientes agendarem horários em poucos segundos.
+                </p>
+
+                {/* URL display box */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    padding: '8px 14px',
+                    maxWidth: '560px',
+                  }}
+                >
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', userSelect: 'none' }}>Página:</span>
+                  <code
+                    style={{
+                      flex: 1,
+                      color: 'var(--gold-light)',
+                      fontSize: '0.88rem',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {publicBookingUrl || `.../${tenantSlug || 'seu-salao'}`}
+                  </code>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="glass-card"
+                  style={{
+                    padding: '10px 18px',
+                    fontSize: '0.88rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    color: copied ? '#10B981' : 'var(--text-primary)',
+                    borderColor: copied ? 'rgba(16, 185, 129, 0.4)' : undefined,
+                    background: copied ? 'rgba(16, 185, 129, 0.1)' : undefined,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                  <span>{copied ? 'Link Copiado!' : 'Copiar Link'}</span>
+                </button>
+
+                {publicBookingUrl && (
+                  <a
+                    href={publicBookingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gold-gradient-primary gold-glow"
+                    style={{
+                      padding: '10px 18px',
+                      fontSize: '0.88rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      textDecoration: 'none',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <ExternalLink size={16} />
+                    <span>Abrir Página</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
 
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Identidade Visual */}

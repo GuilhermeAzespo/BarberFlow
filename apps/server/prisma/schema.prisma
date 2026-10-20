@@ -55,6 +55,7 @@ enum AppointmentStatus {
 enum AppointmentSource {
   PANEL
   WHATSAPP
+  WEB
 }
 
 enum TransactionType {

@@ -13,6 +13,10 @@ import {
   ArrowRight,
   User,
   Scissors,
+  Globe,
+  Copy,
+  ExternalLink,
+  Check,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -51,6 +55,36 @@ export default function DashboardPage() {
   const { tenant } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [origin, setOrigin] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
+  }, []);
+
+  const publicBookingUrl = tenant?.slug && origin ? `${origin}/${tenant.slug}` : (tenant?.slug ? `/${tenant.slug}` : '');
+
+  const handleCopyLink = () => {
+    if (!publicBookingUrl) return;
+    const fullUrl = publicBookingUrl.startsWith('http') ? publicBookingUrl : `${window.location.origin}${publicBookingUrl}`;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(fullUrl);
+    } else {
+      const textArea = document.createElement('textarea');
+      textArea.value = fullUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      textArea.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
 
   const loadDashboard = async () => {
     try {
@@ -91,7 +125,29 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              {publicBookingUrl && (
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="glass-card"
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: '0.88rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    color: copied ? '#10B981' : 'var(--text-primary)',
+                    borderColor: copied ? 'rgba(16, 185, 129, 0.4)' : undefined,
+                  }}
+                  title="Copiar link de agendamento online para clientes"
+                >
+                  {copied ? <Check size={16} /> : <Copy size={16} />}
+                  <span>{copied ? 'Link Copiado!' : 'Copiar Link Web'}</span>
+                </button>
+              )}
+
               <Link
                 href="/calendar"
                 className="gold-gradient-primary gold-glow"
@@ -152,6 +208,105 @@ export default function DashboardPage() {
                 <span>Conectar via QR Code</span>
                 <ArrowRight size={14} />
               </Link>
+            </div>
+          )}
+
+          {/* Personalized Public Booking Link Banner */}
+          {tenant?.slug && (
+            <div
+              className="glass-panel"
+              style={{
+                padding: '16px 22px',
+                marginBottom: '28px',
+                border: '1px solid rgba(212, 175, 55, 0.25)',
+                background: 'linear-gradient(90deg, rgba(212, 175, 55, 0.08) 0%, rgba(18, 18, 20, 0.4) 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '260px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    background: 'rgba(212, 175, 55, 0.15)',
+                    border: '1px solid rgba(212, 175, 55, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--gold-primary)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 600 }}>Agendamento Online para Clientes:</span>
+                    <code
+                      style={{
+                        color: 'var(--gold-light)',
+                        fontSize: '0.85rem',
+                        fontFamily: 'monospace',
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      {publicBookingUrl || `/${tenant.slug}`}
+                    </code>
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Seus clientes podem escolher serviços, barbeiro e agendar horários diretamente por esse link.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="glass-card"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '0.82rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    color: copied ? '#10B981' : 'var(--text-primary)',
+                  }}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? 'Copiado!' : 'Copiar'}</span>
+                </button>
+                {publicBookingUrl && (
+                  <a
+                    href={publicBookingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="gold-gradient-primary"
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: '0.82rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      textDecoration: 'none',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>Ver Página</span>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
             </div>
           )}
 
