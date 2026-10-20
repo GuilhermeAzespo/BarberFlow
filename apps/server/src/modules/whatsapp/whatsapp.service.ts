@@ -26,8 +26,15 @@ const CONNECTION_REPLACED_CODE = 440;
 /** Máximo de mensagens enviadas mantidas em memória para reenvio (retry de descriptografia). */
 const SENT_MESSAGES_CACHE_LIMIT = 500;
 
+/** Espera antes de reconectar após 440, para não derrubar a outra instância em loop rápido. */
+const REPLACED_RECONNECT_DELAY_MS = 20_000;
+
+/** Tentativas seguidas de reconexão após 440 antes de desistir. */
+const REPLACED_MAX_ATTEMPTS = 6;
+
 class WhatsAppService {
   private connections = new Map<string, TenantConnection>();
+  private replacedAttempts = new Map<string, number>();
   private reminderInterval: NodeJS.Timeout | null = null;
 
   init() {
@@ -159,6 +166,7 @@ class WhatsAppService {
       }
 
       if (connection === 'open') {
+        this.replacedAttempts.delete(tenantId);
         conn.status = 'CONNECTED';
         conn.qrCode = null;
         conn.qrDataUrl = null;
@@ -190,11 +198,35 @@ class WhatsAppService {
         logger.warn({ tenantId, statusCode, isRestartRequired, isReplaced, shouldReconnect }, 'WhatsApp conexão fechada');
 
         if (isReplaced) {
-          // Outra instância assumiu a sessão. Reconectar aqui derrubaria a outra em loop (ping-pong),
-          // então apenas encerramos localmente sem alterar o status compartilhado no banco.
-          logger.warn({ tenantId }, 'Sessão substituída por outra instância; não reconectando automaticamente');
-          conn.status = 'DISCONNECTED';
+          // Outra instância assumiu a sessão (comum durante deploy com dois containers).
+          // Reconecta com espera maior: se a outra instância for encerrada, esta volta a operar;
+          // se ela continuar viva, o limite de tentativas evita o loop infinito.
+          const attempts = (this.replacedAttempts.get(tenantId) ?? 0) + 1;
+          this.replacedAttempts.set(tenantId, attempts);
           conn.socket = null;
+
+          if (attempts > REPLACED_MAX_ATTEMPTS) {
+            logger.error({ tenantId, attempts }, 'Sessão do WhatsApp continua em uso por outra instância; desistindo');
+            this.replacedAttempts.delete(tenantId);
+            conn.status = 'DISCONNECTED';
+            await prisma.whatsAppConfig.update({
+              where: { tenantId },
+              data: {
+                status: 'DISCONNECTED',
+                lastDisconnectedAt: new Date(),
+                lastError: 'Sessão em uso por outra instância. Reconecte o aparelho.',
+              },
+            });
+            return;
+          }
+
+          logger.warn({ tenantId, attempts }, 'Sessão substituída por outra instância; tentando reconectar em instantes');
+          conn.status = 'CONNECTING';
+          setTimeout(() => {
+            this.connectTenant(tenantId).catch((err) => {
+              logger.error({ err, tenantId }, 'Erro ao reconectar WhatsApp após sessão substituída');
+            });
+          }, REPLACED_RECONNECT_DELAY_MS);
           return;
         }
 
@@ -331,6 +363,7 @@ class WhatsAppService {
   async sendMessage(tenantId: string, phone: string, text: string): Promise<boolean> {
     const conn = this.connections.get(tenantId);
     if (!conn?.socket || conn.status !== 'CONNECTED') {
+      logger.warn({ tenantId, memoryStatus: conn?.status ?? 'SEM_CONEXAO', hasSocket: Boolean(conn?.socket) }, 'Envio ignorado: WhatsApp não está conectado neste servidor');
       return false;
     }
 
