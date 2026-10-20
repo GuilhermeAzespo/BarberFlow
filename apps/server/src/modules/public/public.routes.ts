@@ -244,3 +244,75 @@ publicRouter.get('/plans', async (_req, res) => {
   res.json({ plans });
 });
 
+/** Pesquisa de endereço / geolocalização com suporte a CEP e Logradouro */
+publicRouter.get('/address-search', async (req, res) => {
+  const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!query || query.length < 3) return res.json({ results: [] });
+
+  // 1. Busca por CEP (8 dígitos)
+  const numericOnly = query.replace(/\D/g, '');
+  if (numericOnly.length === 8 && query.length <= 10) {
+    try {
+      const viaCepRes = await fetch(`https://viacep.com.br/ws/${numericOnly}/json/`);
+      const viaCepData = (await viaCepRes.json()) as any;
+      if (!viaCepData.erro) {
+        const formatted = `${viaCepData.logradouro}, ${viaCepData.bairro} - ${viaCepData.localidade}/${viaCepData.uf}`;
+        return res.json({
+          results: [
+            {
+              displayName: formatted,
+              street: viaCepData.logradouro,
+              neighborhood: viaCepData.bairro,
+              city: viaCepData.localidade,
+              state: viaCepData.uf,
+              postalCode: viaCepData.cep,
+            },
+          ],
+        });
+      }
+    } catch {
+      // Ignora erro e tenta Nominatim
+    }
+  }
+
+  // 2. Busca por texto/logradouro via Nominatim OSM
+  try {
+    const osmUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=br&limit=6&addressdetails=1`;
+    const osmRes = await fetch(osmUrl, {
+      headers: {
+        'User-Agent': 'BarberFlow/1.0 (contato@barberflow.com)',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+    });
+    const osmData = (await osmRes.json()) as any;
+    if (Array.isArray(osmData)) {
+      const results = osmData.map((item: any) => {
+        const addr = item.address || {};
+        const road = addr.road || addr.street || addr.pedestrian || addr.suburb || '';
+        const houseNumber = addr.house_number ? `, ${addr.house_number}` : '';
+        const neighborhood = addr.neighbourhood || addr.suburb || addr.city_district || '';
+        const city = addr.city || addr.town || addr.municipality || addr.village || '';
+        const state = addr.state_code || addr.state || '';
+
+        const parts: string[] = [];
+        if (road) parts.push(`${road}${houseNumber}`);
+        if (neighborhood && neighborhood !== road) parts.push(neighborhood);
+        if (city) parts.push(state ? `${city} - ${state}` : city);
+
+        return {
+          displayName: parts.length >= 2 ? parts.join(', ') : item.display_name,
+          fullDisplayName: item.display_name,
+          lat: item.lat,
+          lon: item.lon,
+        };
+      });
+
+      return res.json({ results });
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Address search failed');
+  }
+
+  res.json({ results: [] });
+});
+

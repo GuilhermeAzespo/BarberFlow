@@ -1028,9 +1028,35 @@ export default function TenantHomePage() {
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Endereço da Barbearia
                     </span>
-                    <p style={{ fontSize: '0.95rem', color: '#F3F4F6', margin: '4px 0 12px 0', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: '0.95rem', color: '#F3F4F6', margin: '4px 0 12px 0', lineHeight: 1.5, fontWeight: 500 }}>
                       {tenant.address}
                     </p>
+
+                    {/* Google Maps Interativo Embutido */}
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '210px',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        marginBottom: '12px',
+                        border: '1px solid rgba(229, 179, 56, 0.25)',
+                        boxShadow: '0 4px 18px rgba(0, 0, 0, 0.4)',
+                        background: '#0B0F17',
+                      }}
+                    >
+                      <iframe
+                        title="Localização da Barbearia no Google Maps"
+                        width="100%"
+                        height="100%"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        allowFullScreen
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(`${tenant.name} ${tenant.address}`)}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+                      />
+                    </div>
+
                     <a
                       href={`https://maps.google.com/?q=${encodeURIComponent(`${tenant.name} ${tenant.address}`)}`}
                       target="_blank"

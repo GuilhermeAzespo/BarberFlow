@@ -25,6 +25,7 @@ import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Select } from '../../components/Select';
+import { AddressAutocomplete } from '../../components/AddressAutocomplete';
 
 interface BusinessHour {
   weekday: number;
@@ -707,18 +708,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Endereço */}
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-                  Endereço Completo
-                </label>
-                <input
-                  type="text"
+              {/* Endereço com busca e mapa */}
+              <div style={{ marginBottom: '24px' }}>
+                <AddressAutocomplete
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Rua, Número, Bairro, Cidade - UF"
-                  className="input-field"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px' }}
+                  onChange={setAddress}
+                  placeholder="Ex: Rua Marta da Silva Pereira, 80 ou digite o CEP"
+                  showMapPreview
                 />
               </div>
 

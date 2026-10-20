@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
+import { AddressAutocomplete } from '../../components/AddressAutocomplete';
 
 export default function OnboardingPage() {
   const { tenant, refresh } = useAuth();
@@ -281,14 +282,11 @@ export default function OnboardingPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                Endereço Completo
-              </label>
-              <input
-                type="text"
+              <AddressAutocomplete
                 value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Rua, número, bairro e cidade"
+                onChange={setAddress}
+                placeholder="Ex: Rua Marta da Silva Pereira, 80 ou digite o CEP"
+                showMapPreview
               />
             </div>
 
