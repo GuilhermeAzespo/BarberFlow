@@ -444,9 +444,7 @@ export default function PublicBookingPage() {
             </div>
           </div>
 
-          <Link href="/" title="Desenvolvido com BarberFlow" style={{ opacity: 0.6, transition: 'opacity 0.2s' }}>
-            <img src="/logo.png" alt="BarberFlow" style={{ height: '38px', width: 'auto' }} />
-          </Link>
+
         </div>
 
         {/* Indicador de Progresso (Passos 1 a 4) */}
