@@ -29,11 +29,13 @@ interface BotContext {
 export async function handleIncomingMessage(params: {
   tenantId: string;
   senderJid: string;
+  /** JID com o telefone real (útil quando senderJid é um @lid). */
+  phoneJid?: string;
   senderName?: string;
   text: string;
   reply: (text: string) => Promise<void>;
 }): Promise<void> {
-  const { tenantId, senderJid, senderName, text, reply } = params;
+  const { tenantId, senderJid, phoneJid, senderName, text, reply } = params;
 
   // Carrega configurações do WhatsApp e dados do salão
   const [tenant, waConfig] = await Promise.all([
@@ -51,8 +53,8 @@ export async function handleIncomingMessage(params: {
   }
 
   // Identifica ou atualiza cliente
-  const rawPhone = senderJid.replace(/@.*$/, '');
-  const normalizedPhone = normalizePhone(rawPhone);
+  const rawPhone = (phoneJid ?? senderJid).replace(/[:@].*$/, '');
+  const normalizedPhone = senderJid.endsWith('@lid') && !phoneJid ? null : normalizePhone(rawPhone);
 
   let customer = await prisma.customer.findFirst({
     where: {

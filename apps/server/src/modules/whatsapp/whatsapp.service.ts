@@ -1,5 +1,6 @@
 import makeWASocket, {
   DisconnectReason,
+  makeCacheableSignalKeyStore,
   type WASocket,
   proto,
 } from 'baileys';
@@ -18,6 +19,12 @@ interface TenantConnection {
   status: 'DISCONNECTED' | 'CONNECTING' | 'QR_PENDING' | 'CONNECTED';
   phoneNumber: string | null;
 }
+
+/** Código 440: outra sessão assumiu esta conta (ex.: dois containers durante um deploy). */
+const CONNECTION_REPLACED_CODE = 440;
+
+/** Máximo de mensagens enviadas mantidas em memória para reenvio (retry de descriptografia). */
+const SENT_MESSAGES_CACHE_LIMIT = 500;
 
 class WhatsAppService {
   private connections = new Map<string, TenantConnection>();
@@ -104,12 +111,33 @@ class WhatsAppService {
       },
     });
 
+    // Cache das mensagens enviadas: o Baileys precisa delas para reenviar quando o destinatário
+    // não consegue decifrar ("Aguardando mensagem"). Sem getMessage o reenvio nunca acontece.
+    const sentMessages = new Map<string, proto.IMessage>();
+    const rememberSent = (sent: proto.IWebMessageInfo | undefined) => {
+      const id = sent?.key?.id;
+      if (!id || !sent?.message) return;
+      sentMessages.set(id, sent.message);
+      if (sentMessages.size > SENT_MESSAGES_CACHE_LIMIT) {
+        const oldest = sentMessages.keys().next().value;
+        if (oldest) sentMessages.delete(oldest);
+      }
+    };
+
+    const baileysLogger = logger.child({ class: 'baileys', tenantId });
+    baileysLogger.level = 'warn';
+
     const socket = makeWASocket({
-      auth: state,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+      },
+      logger: baileysLogger,
       printQRInTerminal: false,
       browser: ['BarberFlow', 'Chrome', '1.0.0'],
       syncFullHistory: false,
       markOnlineOnConnect: false,
+      getMessage: async (key) => (key.id ? sentMessages.get(key.id) : undefined),
     });
 
     conn.socket = socket;
@@ -155,10 +183,20 @@ class WhatsAppService {
         const error = lastDisconnect?.error as { output?: { statusCode?: number }; message?: string } | undefined;
         const statusCode = error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        const isReplaced = statusCode === CONNECTION_REPLACED_CODE;
         const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
-        const shouldReconnect = !isLoggedOut;
+        const shouldReconnect = !isLoggedOut && !isReplaced;
 
-        logger.warn({ tenantId, statusCode, isRestartRequired, shouldReconnect }, 'WhatsApp conexão fechada');
+        logger.warn({ tenantId, statusCode, isRestartRequired, isReplaced, shouldReconnect }, 'WhatsApp conexão fechada');
+
+        if (isReplaced) {
+          // Outra instância assumiu a sessão. Reconectar aqui derrubaria a outra em loop (ping-pong),
+          // então apenas encerramos localmente sem alterar o status compartilhado no banco.
+          logger.warn({ tenantId }, 'Sessão substituída por outra instância; não reconectando automaticamente');
+          conn.status = 'DISCONNECTED';
+          conn.socket = null;
+          return;
+        }
 
         if (isLoggedOut) {
           conn.status = 'DISCONNECTED';
@@ -208,12 +246,23 @@ class WhatsAppService {
     });
 
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
+      logger.info({ tenantId, type, count: messages.length }, 'WhatsApp messages.upsert recebido');
       if (type !== 'notify') return;
 
       for (const msg of messages) {
-        if (!msg.message || msg.key.fromMe) continue;
+        if (msg.key.fromMe) continue;
 
         const senderJid = msg.key.remoteJid;
+
+        if (!msg.message) {
+          // Mensagem recebida mas não decifrada (stub CIPHERTEXT): sessão Signal dessincronizada.
+          logger.warn(
+            { tenantId, senderJid, stubType: msg.messageStubType, stubParams: msg.messageStubParameters },
+            'Mensagem recebida sem conteúdo (falha de descriptografia)',
+          );
+          continue;
+        }
+
         if (!senderJid || senderJid.endsWith('@g.us')) continue; // Ignora grupos
 
         // Extrai texto da mensagem
@@ -223,18 +272,27 @@ class WhatsAppService {
           msg.message.imageMessage?.caption ||
           '';
 
-        if (!text) continue;
+        if (!text) {
+          logger.info({ tenantId, senderJid }, 'Mensagem sem texto ignorada pelo bot');
+          continue;
+        }
 
         const senderName = msg.pushName || undefined;
+        // Contatos em @lid não expõem o telefone no JID; o Baileys fornece o número em remoteJidAlt.
+        const phoneJid = senderJid.endsWith('@lid') ? msg.key.remoteJidAlt || undefined : senderJid;
+
+        logger.info({ tenantId, senderJid, phoneJid }, 'Mensagem de texto recebida pelo bot');
 
         try {
           await handleIncomingMessage({
             tenantId,
             senderJid,
+            phoneJid,
             senderName,
             text,
             reply: async (replyText: string) => {
-              await socket.sendMessage(senderJid, { text: replyText });
+              const sent = await socket.sendMessage(senderJid, { text: replyText });
+              rememberSent(sent);
             },
           });
         } catch (err) {
