@@ -2,11 +2,11 @@
 
 export const DEFAULT_BUSINESS_HOURS = [
   { weekday: 0, isOpen: false, openTime: '09:00', closeTime: '13:00', breakStart: null, breakEnd: null },
-  { weekday: 1, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: '12:00', breakEnd: '13:00' },
-  { weekday: 2, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: '12:00', breakEnd: '13:00' },
-  { weekday: 3, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: '12:00', breakEnd: '13:00' },
-  { weekday: 4, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: '12:00', breakEnd: '13:00' },
-  { weekday: 5, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: '12:00', breakEnd: '13:00' },
+  { weekday: 1, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: null, breakEnd: null },
+  { weekday: 2, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: null, breakEnd: null },
+  { weekday: 3, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: null, breakEnd: null },
+  { weekday: 4, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: null, breakEnd: null },
+  { weekday: 5, isOpen: true, openTime: '09:00', closeTime: '19:00', breakStart: null, breakEnd: null },
   { weekday: 6, isOpen: true, openTime: '09:00', closeTime: '17:00', breakStart: null, breakEnd: null },
 ];
 

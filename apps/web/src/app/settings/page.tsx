@@ -114,7 +114,26 @@ export default function SettingsPage() {
       setSlotIntervalMinutes(res.tenant.slotIntervalMinutes || 30);
       setLogoPreview(res.tenant.logoUrl || null);
       setCoverPreview(res.tenant.coverUrl || null);
-      setBusinessHours(res.businessHours);
+      // Se os horários vieram com o padrão legado 12:00 às 13:00 (não configurado pelo usuário),
+      // limpa breakStart e breakEnd para que vá direto sem pausa
+      const loadedHours = (res.businessHours || []).map((h) => {
+        if (h.breakStart === '12:00' && h.breakEnd === '13:00') {
+          return { ...h, breakStart: null, breakEnd: null };
+        }
+        return h;
+      });
+      setBusinessHours(loadedHours);
+
+      // Sincroniza se existe algum intervalo ativo configurado
+      const anyDayHasBreak = loadedHours.some((h) => h.isOpen && h.breakStart && h.breakEnd);
+      setHasBreak(anyDayHasBreak);
+      if (anyDayHasBreak) {
+        const firstWithBreak = loadedHours.find((h) => h.isOpen && h.breakStart && h.breakEnd);
+        if (firstWithBreak?.breakStart && firstWithBreak?.breakEnd) {
+          setGroupBreakStart(firstWithBreak.breakStart);
+          setGroupBreakEnd(firstWithBreak.breakEnd);
+        }
+      }
 
       // Load gallery
       const galleryRes = await api.get<{ images: GalleryImage[] }>('/api/tenant/gallery');
@@ -1343,7 +1362,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* 3. Tabela Resumo dos 7 Dias da Semana */}
+                  {/* 3. Tabela Resumo dos 7 Dias da Semana (Grade Perfeitamente Alinhada) */}
                   <div
                     style={{
                       background: 'rgba(0, 0, 0, 0.25)',
@@ -1370,77 +1389,144 @@ export default function SettingsPage() {
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {businessHours.map((hour) => {
-                        const isToday = new Date().getDay() === hour.weekday;
-                        return (
-                          <div
-                            key={hour.weekday}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '12px 20px',
-                              borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-                              background: isToday ? 'rgba(229, 179, 56, 0.06)' : 'transparent',
-                              flexWrap: 'wrap',
-                              gap: '12px',
-                            }}
-                          >
-                            {/* Nome do Dia e Toggle Aberto/Fechado */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '190px' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleHourChange(hour.weekday, 'isOpen', !hour.isOpen)}
-                                style={{
-                                  padding: '4px 10px',
-                                  borderRadius: '6px',
-                                  fontSize: '0.74rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  background: hour.isOpen ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.15)',
-                                  color: hour.isOpen ? '#10B981' : '#FB7185',
-                                  border: `1px solid ${hour.isOpen ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'}`,
-                                }}
-                              >
-                                {hour.isOpen ? 'ABERTO' : 'FECHADO'}
-                              </button>
+                    <div style={{ overflowX: 'auto' }}>
+                      <div style={{ minWidth: '640px' }}>
+                        {/* Cabeçalho de Colunas Alinhadas */}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '95px 190px 240px 1fr',
+                            alignItems: 'center',
+                            padding: '10px 20px',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            color: 'var(--text-dim)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          <span>Status</span>
+                          <span>Dia da Semana</span>
+                          <span>Expediente</span>
+                          <span>Intervalo</span>
+                        </div>
 
-                              <span style={{ fontWeight: isToday ? 700 : 600, fontSize: '0.92rem', color: isToday ? 'var(--primary)' : '#F3F4F6' }}>
-                                {weekdayNames[hour.weekday]} {isToday && '(Hoje)'}
-                              </span>
-                            </div>
+                        {/* Linhas da Tabela */}
+                        {businessHours.map((hour) => {
+                          const isToday = new Date().getDay() === hour.weekday;
+                          const hasBreakConfigured = Boolean(hour.isOpen && hour.breakStart && hour.breakEnd);
 
-                            {/* Informações de Horário */}
-                            {hour.isOpen ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem' }}>
-                                  <Clock size={14} color="var(--primary)" />
-                                  <span style={{ color: 'var(--text-muted)' }}>Expediente:</span>
-                                  <strong style={{ color: '#F3F4F6' }}>{hour.openTime} às {hour.closeTime}</strong>
-                                </div>
+                          return (
+                            <div
+                              key={hour.weekday}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '95px 190px 240px 1fr',
+                                alignItems: 'center',
+                                padding: '12px 20px',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                                background: isToday ? 'rgba(229, 179, 56, 0.07)' : 'transparent',
+                                transition: 'background 0.15s ease',
+                              }}
+                            >
+                              {/* Coluna 1: Status Toggle */}
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleHourChange(hour.weekday, 'isOpen', !hour.isOpen)}
+                                  title="Clique para alternar Aberto/Fechado"
+                                  style={{
+                                    width: '78px',
+                                    padding: '4px 0',
+                                    textAlign: 'center',
+                                    borderRadius: '6px',
+                                    fontSize: '0.74rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    background: hour.isOpen ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.15)',
+                                    color: hour.isOpen ? '#10B981' : '#FB7185',
+                                    border: `1px solid ${hour.isOpen ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'}`,
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  {hour.isOpen ? 'ABERTO' : 'FECHADO'}
+                                </button>
+                              </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}>
-                                  <span style={{ color: 'var(--text-dim)' }}>Almoço:</span>
-                                  {hour.breakStart && hour.breakEnd ? (
-                                    <span style={{ color: 'var(--gold-light)', fontWeight: 600 }}>
+                              {/* Coluna 2: Dia da Semana + Badge Hoje */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span
+                                  style={{
+                                    fontWeight: isToday ? 700 : 600,
+                                    fontSize: '0.92rem',
+                                    color: isToday ? 'var(--primary)' : '#F3F4F6',
+                                  }}
+                                >
+                                  {weekdayNames[hour.weekday]}
+                                </span>
+                                {isToday && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      fontWeight: 700,
+                                      color: 'var(--primary)',
+                                      background: 'rgba(229, 179, 56, 0.18)',
+                                      border: '1px solid rgba(229, 179, 56, 0.35)',
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      textTransform: 'uppercase',
+                                      letterSpacing: '0.04em',
+                                    }}
+                                  >
+                                    Hoje
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Coluna 3: Expediente */}
+                              <div>
+                                {hour.isOpen ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem' }}>
+                                    <Clock size={15} color="var(--primary)" style={{ flexShrink: 0 }} />
+                                    <span style={{ color: 'var(--text-muted)' }}>Expediente:</span>
+                                    <strong style={{ color: '#F3F4F6', fontFamily: 'monospace, monospace', letterSpacing: '0.02em' }}>
+                                      {hour.openTime} às {hour.closeTime}
+                                    </strong>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize: '0.86rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                                    Barbearia fechada
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Coluna 4: Intervalo (aparece APENAS se configurado, caso contrário vai direto sem pausa) */}
+                              <div>
+                                {hasBreakConfigured ? (
+                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}>
+                                    <span style={{ color: 'var(--text-muted)' }}>Intervalo:</span>
+                                    <span
+                                      style={{
+                                        color: 'var(--primary)',
+                                        fontWeight: 600,
+                                        fontFamily: 'monospace, monospace',
+                                        background: 'rgba(229, 179, 56, 0.12)',
+                                        border: '1px solid rgba(229, 179, 56, 0.28)',
+                                        padding: '2px 8px',
+                                        borderRadius: '5px',
+                                      }}
+                                    >
                                       {hour.breakStart} às {hour.breakEnd}
                                     </span>
-                                  ) : (
-                                    <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                                      Sem pausa
-                                    </span>
-                                  )}
-                                </div>
+                                  </div>
+                                ) : null}
                               </div>
-                            ) : (
-                              <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                                Barbearia fechada
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
