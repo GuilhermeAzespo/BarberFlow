@@ -48,6 +48,31 @@ interface GalleryImage {
 
 const weekdayNames = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
 
+function getHourStats(hour: BusinessHour, slotInterval: number) {
+  if (!hour.isOpen) {
+    return { formattedHours: '0h', slots: 0, netMinutes: 0 };
+  }
+  const [openH, openM] = (hour.openTime || '09:00').split(':').map(Number);
+  const [closeH, closeM] = (hour.closeTime || '19:00').split(':').map(Number);
+  let totalMin = closeH * 60 + closeM - (openH * 60 + openM);
+  if (totalMin < 0) totalMin = 0;
+
+  let breakMin = 0;
+  if (hour.breakStart && hour.breakEnd) {
+    const [bStartH, bStartM] = hour.breakStart.split(':').map(Number);
+    const [bEndH, bEndM] = hour.breakEnd.split(':').map(Number);
+    breakMin = bEndH * 60 + bEndM - (bStartH * 60 + bStartM);
+    if (breakMin < 0) breakMin = 0;
+  }
+
+  const netMin = Math.max(0, totalMin - breakMin);
+  const h = Math.floor(netMin / 60);
+  const m = netMin % 60;
+  const formattedHours = m > 0 ? `${h}h ${m}m` : `${h} horas`;
+  const slots = slotInterval > 0 ? Math.floor(netMin / slotInterval) : 0;
+  return { formattedHours, slots, netMinutes: netMin };
+}
+
 export default function SettingsPage() {
   const { tenant, refresh } = useAuth();
 
@@ -63,6 +88,13 @@ export default function SettingsPage() {
   // Configuração inteligente de horários (estilo Definições de Data & Tempo)
   const [scheduleMode, setScheduleMode] = useState<'grouped' | 'detailed'>('grouped');
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]);
+
+  // Estatísticas e Métricas da Grade Semanal
+  const openDaysCount = businessHours.filter((h) => h.isOpen).length;
+  const totalWeeklyMinutes = businessHours.reduce((acc, h) => acc + getHourStats(h, slotIntervalMinutes).netMinutes, 0);
+  const totalWeeklyHoursFormatted = `${Math.floor(totalWeeklyMinutes / 60)}h${totalWeeklyMinutes % 60 > 0 ? ` ${totalWeeklyMinutes % 60}m` : ''}`;
+  const totalWeeklySlots = businessHours.reduce((acc, h) => acc + getHourStats(h, slotIntervalMinutes).slots, 0);
+
   const [groupOpenTime, setGroupOpenTime] = useState('09:00');
   const [groupCloseTime, setGroupCloseTime] = useState('19:00');
   const [hasBreak, setHasBreak] = useState(false);
@@ -1362,7 +1394,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* 3. Tabela Resumo dos 7 Dias da Semana (Grade Perfeitamente Alinhada) */}
+                  {/* 3. Tabela Resumo dos 7 Dias da Semana (Layout Executivo de Largura Total) */}
                   <div
                     style={{
                       background: 'rgba(0, 0, 0, 0.25)',
@@ -1371,31 +1403,82 @@ export default function SettingsPage() {
                       overflow: 'hidden',
                     }}
                   >
+                    {/* Header com Resumo Semanal e Métricas */}
                     <div
                       style={{
-                        padding: '14px 20px',
+                        padding: '16px 20px',
                         background: 'rgba(255, 255, 255, 0.03)',
                         borderBottom: '1px solid var(--border-color)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px',
                       }}
                     >
-                      <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#F3F4F6' }}>
-                        Grade Semanal Configurada
-                      </span>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                        Status e expediente aplicado para cada dia
-                      </span>
+                      <div>
+                        <h4 style={{ fontSize: '0.96rem', fontWeight: 700, color: '#F3F4F6', margin: 0 }}>
+                          Grade Semanal Configurada
+                        </h4>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', margin: '3px 0 0 0' }}>
+                          Visão geral executiva de horários, expediente e capacidade da barbearia
+                        </p>
+                      </div>
+
+                      {/* Métricas Semanais */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                            color: '#10B981',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {openDaysCount} dias de funcionamento
+                        </span>
+
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(229, 179, 56, 0.12)',
+                            border: '1px solid rgba(229, 179, 56, 0.25)',
+                            color: 'var(--primary)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {totalWeeklyHoursFormatted} semanais
+                        </span>
+
+                        <span
+                          style={{
+                            fontSize: '0.76rem',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(56, 189, 248, 0.1)',
+                            border: '1px solid rgba(56, 189, 248, 0.25)',
+                            color: '#38BDF8',
+                            fontWeight: 600,
+                          }}
+                        >
+                          ~{totalWeeklySlots} vagas / semana
+                        </span>
+                      </div>
                     </div>
 
+                    {/* Tabela de 6 Colunas Balanceadas que Preenche Todo o Espaço */}
                     <div style={{ overflowX: 'auto' }}>
-                      <div style={{ minWidth: '640px' }}>
-                        {/* Cabeçalho de Colunas Alinhadas */}
+                      <div style={{ minWidth: '860px' }}>
+                        {/* Cabeçalho de Colunas */}
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '95px 190px 240px 1fr',
+                            gridTemplateColumns: '100px 170px 220px 210px 140px 1fr',
                             alignItems: 'center',
                             padding: '10px 20px',
                             background: 'rgba(0, 0, 0, 0.35)',
@@ -1410,20 +1493,23 @@ export default function SettingsPage() {
                           <span>Status</span>
                           <span>Dia da Semana</span>
                           <span>Expediente</span>
-                          <span>Intervalo</span>
+                          <span>Intervalo / Almoço</span>
+                          <span>Carga Horária</span>
+                          <span>Capacidade Estimada</span>
                         </div>
 
                         {/* Linhas da Tabela */}
                         {businessHours.map((hour) => {
                           const isToday = new Date().getDay() === hour.weekday;
                           const hasBreakConfigured = Boolean(hour.isOpen && hour.breakStart && hour.breakEnd);
+                          const stats = getHourStats(hour, slotIntervalMinutes);
 
                           return (
                             <div
                               key={hour.weekday}
                               style={{
                                 display: 'grid',
-                                gridTemplateColumns: '95px 190px 240px 1fr',
+                                gridTemplateColumns: '100px 170px 220px 210px 140px 1fr',
                                 alignItems: 'center',
                                 padding: '12px 20px',
                                 borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
@@ -1438,7 +1524,7 @@ export default function SettingsPage() {
                                   onClick={() => handleHourChange(hour.weekday, 'isOpen', !hour.isOpen)}
                                   title="Clique para alternar Aberto/Fechado"
                                   style={{
-                                    width: '78px',
+                                    width: '80px',
                                     padding: '4px 0',
                                     textAlign: 'center',
                                     borderRadius: '6px',
@@ -1502,15 +1588,18 @@ export default function SettingsPage() {
                                 )}
                               </div>
 
-                              {/* Coluna 4: Intervalo (aparece APENAS se configurado, caso contrário vai direto sem pausa) */}
+                              {/* Coluna 4: Intervalo / Almoço */}
                               <div>
-                                {hasBreakConfigured ? (
-                                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem' }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>Intervalo:</span>
+                                {hour.isOpen ? (
+                                  hasBreakConfigured ? (
                                     <span
                                       style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
                                         color: 'var(--primary)',
                                         fontWeight: 600,
+                                        fontSize: '0.82rem',
                                         fontFamily: 'monospace, monospace',
                                         background: 'rgba(229, 179, 56, 0.12)',
                                         border: '1px solid rgba(229, 179, 56, 0.28)',
@@ -1518,10 +1607,70 @@ export default function SettingsPage() {
                                         borderRadius: '5px',
                                       }}
                                     >
-                                      {hour.breakStart} às {hour.breakEnd}
+                                      ☕ {hour.breakStart} às {hour.breakEnd}
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '2px 8px',
+                                        borderRadius: '5px',
+                                        background: 'rgba(255, 255, 255, 0.03)',
+                                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                                        color: 'var(--text-muted)',
+                                        fontSize: '0.78rem',
+                                      }}
+                                    >
+                                      ⚡ Expediente contínuo
+                                    </span>
+                                  )
+                                ) : (
+                                  <span style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>—</span>
+                                )}
+                              </div>
+
+                              {/* Coluna 5: Carga Horária */}
+                              <div>
+                                {hour.isOpen ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.86rem' }}>
+                                    <span style={{ fontWeight: 600, color: '#E2E8F0' }}>
+                                      {stats.formattedHours}
                                     </span>
                                   </div>
-                                ) : null}
+                                ) : (
+                                  <span style={{ color: 'var(--text-dim)', fontSize: '0.82rem' }}>—</span>
+                                )}
+                              </div>
+
+                              {/* Coluna 6: Capacidade Estimada */}
+                              <div>
+                                {hour.isOpen ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                                    <span
+                                      style={{
+                                        color: '#38BDF8',
+                                        background: 'rgba(56, 189, 248, 0.1)',
+                                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                                        padding: '2px 8px',
+                                        borderRadius: '5px',
+                                        fontWeight: 600,
+                                        fontFamily: 'monospace, monospace',
+                                        fontSize: '0.8rem',
+                                      }}
+                                    >
+                                      {stats.slots} vagas
+                                    </span>
+                                    <span style={{ color: 'var(--text-dim)', fontSize: '0.76rem' }}>
+                                      (~{slotIntervalMinutes}m)
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-dim)', fontSize: '0.82rem', fontStyle: 'italic' }}>
+                                    Sem vagas
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );
