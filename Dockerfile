@@ -17,8 +17,9 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 # ───────────────────── 1. Build do Backend ─────────────────────
 FROM base AS server-builder
 WORKDIR /app/server
+ARG GIT_SHA
 COPY apps/server/package.json apps/server/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --prefer-offline
 COPY apps/server/tsconfig.json ./
 COPY apps/server/prisma ./prisma
 COPY apps/server/src ./src
@@ -27,17 +28,19 @@ RUN npx prisma generate && npm run build
 # Dependências enxutas de produção do servidor
 FROM base AS server-prod-deps
 WORKDIR /app/server
+ARG GIT_SHA
 COPY apps/server/package.json apps/server/package-lock.json ./
 COPY apps/server/prisma ./prisma
-RUN npm ci --omit=dev --no-audit --no-fund \
+RUN npm ci --omit=dev --no-audit --no-fund --prefer-offline \
   && npx prisma generate \
   && npm cache clean --force
 
 # ───────────────────── 2. Build do Frontend ────────────────────
 FROM base AS web-builder
 WORKDIR /app/web
+ARG GIT_SHA
 COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --prefer-offline
 COPY apps/web ./
 RUN mkdir -p public && npm run build
 
