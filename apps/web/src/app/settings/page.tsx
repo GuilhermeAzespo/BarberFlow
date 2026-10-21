@@ -28,6 +28,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Select } from '../../components/Select';
 import { AddressAutocomplete } from '../../components/AddressAutocomplete';
+import { TimePicker } from '../../components/TimePicker';
 
 interface BusinessHour {
   weekday: number;
@@ -1153,20 +1154,16 @@ export default function SettingsPage() {
                             alignItems: 'center',
                           }}
                         >
-                          <input
-                            type="time"
+                          <TimePicker
                             value={groupOpenTime}
-                            onChange={(e) => setGroupOpenTime(e.target.value)}
-                            className="input-field"
-                            style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                            onChange={setGroupOpenTime}
+                            placeholder="09:00"
                           />
 
-                          <input
-                            type="time"
+                          <TimePicker
                             value={groupCloseTime}
-                            onChange={(e) => setGroupCloseTime(e.target.value)}
-                            className="input-field"
-                            style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                            onChange={setGroupCloseTime}
+                            placeholder="19:00"
                           />
                         </div>
                       </div>
@@ -1197,7 +1194,7 @@ export default function SettingsPage() {
                             }}
                           >
                             <Plus size={14} />
-                            <span>+ Adicionar</span>
+                            <span>Adicionar Intervalo</span>
                           </button>
                         )}
                       </div>
@@ -1237,20 +1234,16 @@ export default function SettingsPage() {
                               alignItems: 'center',
                             }}
                           >
-                            <input
-                              type="time"
+                            <TimePicker
                               value={groupBreakStart}
-                              onChange={(e) => setGroupBreakStart(e.target.value)}
-                              className="input-field"
-                              style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                              onChange={setGroupBreakStart}
+                              placeholder="12:00"
                             />
 
-                            <input
-                              type="time"
+                            <TimePicker
                               value={groupBreakEnd}
-                              onChange={(e) => setGroupBreakEnd(e.target.value)}
-                              className="input-field"
-                              style={{ padding: '8px 14px', borderRadius: '6px', fontSize: '0.95rem', fontWeight: 600 }}
+                              onChange={setGroupBreakEnd}
+                              placeholder="13:00"
                             />
 
                             <div style={{ textAlign: 'center' }}>
@@ -1306,7 +1299,7 @@ export default function SettingsPage() {
                             fontSize: '0.85rem',
                           }}
                         >
-                          Expediente contínuo sem pausas. Clique em "+ Adicionar" acima para definir intervalo de almoço.
+                          Expediente contínuo sem pausas. Clique em "Adicionar Intervalo" acima para definir intervalo de almoço.
                         </div>
                       )}
                     </div>
@@ -1484,44 +1477,38 @@ export default function SettingsPage() {
                       {hour.isOpen ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
                           {/* Expediente */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Expediente:</span>
-                            <input
-                              type="time"
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', minWidth: '70px' }}>Expediente:</span>
+                            <TimePicker
                               value={hour.openTime}
-                              onChange={(e) => handleHourChange(hour.weekday, 'openTime', e.target.value)}
-                              className="input-field"
-                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                              onChange={(val) => handleHourChange(hour.weekday, 'openTime', val)}
+                              style={{ width: '120px' }}
                             />
                             <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
-                            <input
-                              type="time"
+                            <TimePicker
                               value={hour.closeTime}
-                              onChange={(e) => handleHourChange(hour.weekday, 'closeTime', e.target.value)}
-                              className="input-field"
-                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                              onChange={(val) => handleHourChange(hour.weekday, 'closeTime', val)}
+                              style={{ width: '120px' }}
                             />
                           </div>
 
                           {/* Intervalo */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>Almoço:</span>
-                            <input
-                              type="time"
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', minWidth: '55px' }}>Almoço:</span>
+                            <TimePicker
                               value={hour.breakStart || ''}
-                              onChange={(e) => handleHourChange(hour.weekday, 'breakStart', e.target.value || null)}
+                              onChange={(val) => handleHourChange(hour.weekday, 'breakStart', val || null)}
                               placeholder="--:--"
-                              className="input-field"
-                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                              clearable
+                              style={{ width: '120px' }}
                             />
                             <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>até</span>
-                            <input
-                              type="time"
+                            <TimePicker
                               value={hour.breakEnd || ''}
-                              onChange={(e) => handleHourChange(hour.weekday, 'breakEnd', e.target.value || null)}
+                              onChange={(val) => handleHourChange(hour.weekday, 'breakEnd', val || null)}
                               placeholder="--:--"
-                              className="input-field"
-                              style={{ padding: '6px 10px', borderRadius: '6px', fontSize: '0.88rem' }}
+                              clearable
+                              style={{ width: '120px' }}
                             />
                           </div>
                         </div>

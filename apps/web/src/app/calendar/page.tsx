@@ -19,6 +19,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
+import { TimePicker } from '../../components/TimePicker';
 import { DateTime } from 'luxon';
 
 interface Professional {
@@ -437,7 +438,7 @@ export default function CalendarPage() {
             <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
               Horário de Início *
             </label>
-            <input type="time" required value={newTime} onChange={(e) => setNewTime(e.target.value)} />
+            <TimePicker value={newTime} onChange={setNewTime} placeholder="14:00" />
           </div>
 
           <div>
