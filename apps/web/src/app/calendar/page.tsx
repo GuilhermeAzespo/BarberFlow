@@ -57,7 +57,7 @@ type CalendarViewMode = 'week' | 'work_week' | 'day';
 
 const START_HOUR = 7;
 const END_HOUR = 22;
-const HOUR_HEIGHT = 64; // pixels por hora (1 min ≈ 1.06px)
+const HOUR_HEIGHT = 84; // pixels por hora (1 min = 1.4px, Teams style)
 const HOURS = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
 
 const WEEKDAY_NAMES_PT = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -1118,7 +1118,8 @@ export default function CalendarPage() {
                           );
 
                           const top = (startMinutes / 60) * HOUR_HEIGHT;
-                          const height = Math.max(26, (durationMinutes / 60) * HOUR_HEIGHT - 3);
+                          // Altura com mínimo garantido de 44px para acomodar com folga horário e nome do cliente
+                          const height = Math.max(44, (durationMinutes / 60) * HOUR_HEIGHT - 2);
 
                           // Cálculo de posicionamento horizontal (lado a lado se sobrepor)
                           const widthPercent = 100 / totalCols;
@@ -1136,41 +1137,42 @@ export default function CalendarPage() {
                                 setSelectedApp(app);
                                 setIsStatusModalOpen(true);
                               }}
-                              title={`${app.customer.name} - ${app.service.name} (${startDateTime.toFormat('HH:mm')} - ${endDateTime.toFormat('HH:mm')})`}
+                              title={`${app.customer.name}\n${app.service.name} (${app.service.durationMinutes} min) - ${formatBRL(app.priceCents)}\n${startDateTime.toFormat('HH:mm')} - ${endDateTime.toFormat('HH:mm')}\nProfissional: ${app.professional.name}\nStatus: ${app.status}`}
                               style={{
                                 position: 'absolute',
                                 top: `${top}px`,
                                 height: `${height}px`,
-                                left: `calc(${leftPercent}% + 3px)`,
-                                width: `calc(${widthPercent}% - 6px)`,
+                                left: `calc(${leftPercent}% + 2px)`,
+                                width: `calc(${widthPercent}% - 4px)`,
                                 background: isCanceled
                                   ? 'rgba(244, 63, 94, 0.16)'
                                   : isCompleted
                                   ? 'rgba(16, 185, 129, 0.16)'
-                                  : 'rgba(24, 30, 44, 0.92)',
+                                  : 'rgba(24, 30, 44, 0.95)',
                                 border: `1px solid ${
                                   isCanceled
-                                    ? 'rgba(244, 63, 94, 0.35)'
+                                    ? 'rgba(244, 63, 94, 0.4)'
                                     : isCompleted
-                                    ? 'rgba(16, 185, 129, 0.35)'
-                                    : 'rgba(255, 255, 255, 0.1)'
+                                    ? 'rgba(16, 185, 129, 0.4)'
+                                    : 'rgba(255, 255, 255, 0.12)'
                                 }`,
                                 borderLeft: `4px solid ${isCanceled ? '#F43F5E' : profColor}`,
                                 borderRadius: '6px',
-                                padding: height > 45 ? '6px 8px' : '2px 6px',
+                                padding: height > 60 ? '6px 8px' : '4px 7px',
                                 cursor: 'pointer',
                                 zIndex: 10,
                                 overflow: 'hidden',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                justifyContent: 'space-between',
+                                justifyContent: height > 75 ? 'space-between' : 'flex-start',
+                                gap: '2px',
                                 transition: 'all 0.15s ease',
                                 boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
                               }}
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.transform = 'translateY(-1px) scale(1.01)';
-                                e.currentTarget.style.zIndex = '25';
-                                e.currentTarget.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.6)';
+                                e.currentTarget.style.zIndex = '30';
+                                e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.7)';
                               }}
                               onMouseLeave={(e) => {
                                 e.currentTarget.style.transform = 'none';
@@ -1178,23 +1180,23 @@ export default function CalendarPage() {
                                 e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
                               }}
                             >
-                              <div style={{ overflow: 'hidden' }}>
-                                {/* Horário e Status */}
+                              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                {/* Linha 1: Horário e Status */}
                                 <div
                                   style={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
                                     gap: '4px',
-                                    marginBottom: '2px',
+                                    lineHeight: 1.15,
                                   }}
                                 >
                                   <span
                                     style={{
                                       fontFamily: 'monospace, monospace',
-                                      fontSize: height > 40 ? '0.74rem' : '0.68rem',
+                                      fontSize: height > 55 ? '0.74rem' : '0.68rem',
                                       fontWeight: 700,
-                                      color: '#F9FAFB',
+                                      color: 'rgba(255, 255, 255, 0.88)',
                                       whiteSpace: 'nowrap',
                                     }}
                                   >
@@ -1202,58 +1204,105 @@ export default function CalendarPage() {
                                   </span>
 
                                   {isCompleted && (
-                                    <span style={{ color: '#10B981', fontSize: '0.68rem', fontWeight: 700 }}>
-                                      ✓
+                                    <span
+                                      style={{
+                                        color: '#10B981',
+                                        fontSize: '0.64rem',
+                                        fontWeight: 800,
+                                        background: 'rgba(16, 185, 129, 0.2)',
+                                        padding: '1px 5px',
+                                        borderRadius: '3px',
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      ✓ CONCLUÍDO
                                     </span>
                                   )}
                                   {isCanceled && (
-                                    <span style={{ color: '#FB7185', fontSize: '0.65rem', fontWeight: 700 }}>
+                                    <span
+                                      style={{
+                                        color: '#FB7185',
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        background: 'rgba(244, 63, 94, 0.2)',
+                                        padding: '1px 5px',
+                                        borderRadius: '3px',
+                                        lineHeight: 1,
+                                      }}
+                                    >
                                       CANCELADO
                                     </span>
                                   )}
                                 </div>
 
-                                {/* Nome do Cliente */}
+                                {/* Linha 2: Nome do Cliente (EM DESTAQUE, TOTALMENTE VISÍVEL) */}
                                 <div
                                   style={{
+                                    display: 'flex',
+                                    alignItems: 'baseline',
+                                    gap: '6px',
                                     fontWeight: 700,
-                                    fontSize: height > 45 ? '0.84rem' : '0.76rem',
+                                    fontSize: height > 55 ? '0.84rem' : '0.78rem',
                                     color: '#FFFFFF',
+                                    lineHeight: 1.25,
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
                                   }}
                                 >
-                                  {app.customer.name}
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {app.customer.name}
+                                  </span>
+                                  {/* Em slots compactos (<= 55px), exibe o serviço ao lado se couber */}
+                                  {height <= 55 && app.service?.name && (
+                                    <span
+                                      style={{
+                                        fontWeight: 500,
+                                        fontSize: '0.70rem',
+                                        color: 'var(--text-muted)',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      • {app.service.name}
+                                    </span>
+                                  )}
                                 </div>
 
-                                {/* Serviço e Barbeiro (quando houver altura) */}
+                                {/* Linha 3: Serviço e Barbeiro (quando houver mais altura, > 55px) */}
                                 {height > 55 && (
                                   <div
                                     style={{
-                                      fontSize: '0.74rem',
+                                      fontSize: '0.73rem',
                                       color: 'var(--text-muted)',
                                       whiteSpace: 'nowrap',
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
-                                      marginTop: '2px',
+                                      lineHeight: 1.2,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
                                     }}
                                   >
-                                    {app.service.name} • {app.professional.name}
+                                    <span>{app.service.name}</span>
+                                    <span>•</span>
+                                    <span>{app.professional.name}</span>
                                   </div>
                                 )}
                               </div>
 
-                              {/* Rodapé com Preço (se houver altura suficiente) */}
+                              {/* Rodapé com Preço e Duração (se houver altura suficiente, > 75px) */}
                               {height > 75 && (
                                 <div
                                   style={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
-                                    paddingTop: '4px',
+                                    paddingTop: '3px',
                                     borderTop: '1px solid rgba(255, 255, 255, 0.06)',
                                     fontSize: '0.74rem',
+                                    lineHeight: 1.2,
                                   }}
                                 >
                                   <span style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>
