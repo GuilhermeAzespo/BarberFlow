@@ -338,26 +338,26 @@ export function TimePicker({
               <span>Minuto</span>
             </div>
 
-            {/* Duas colunas com rolagem independente */}
+            {/* Duas colunas com rolagem independente e scrollbar customizada */}
             <div
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
-                height: '180px',
+                height: '200px',
                 background: 'rgba(0, 0, 0, 0.25)',
               }}
             >
               {/* Coluna 1: Horas (00 a 23) */}
               <div
                 ref={hoursListRef}
+                className="custom-scrollbar"
                 style={{
                   overflowY: 'auto',
                   borderRight: '1px solid rgba(255, 255, 255, 0.06)',
-                  padding: '6px',
+                  padding: '6px 4px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '2px',
-                  scrollbarWidth: 'thin',
                 }}
               >
                 {HOURS.map((hr) => {
@@ -371,7 +371,7 @@ export function TimePicker({
                       style={{
                         padding: '6px 0',
                         textAlign: 'center',
-                        fontSize: '0.88rem',
+                        fontSize: '0.9rem',
                         fontWeight: isSelected ? 700 : 500,
                         fontFamily: 'monospace, monospace',
                         border: 'none',
@@ -406,13 +406,13 @@ export function TimePicker({
               {/* Coluna 2: Minutos */}
               <div
                 ref={minutesListRef}
+                className="custom-scrollbar"
                 style={{
                   overflowY: 'auto',
-                  padding: '6px',
+                  padding: '6px 4px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: '2px',
-                  scrollbarWidth: 'thin',
                 }}
               >
                 {minutes.map((min) => {
@@ -426,7 +426,7 @@ export function TimePicker({
                       style={{
                         padding: '6px 0',
                         textAlign: 'center',
-                        fontSize: '0.88rem',
+                        fontSize: '0.9rem',
                         fontWeight: isSelected ? 700 : 500,
                         fontFamily: 'monospace, monospace',
                         border: 'none',
@@ -457,51 +457,6 @@ export function TimePicker({
                   );
                 })}
               </div>
-            </div>
-
-            {/* Atalhos Rápidos de Minutos (:00, :15, :30, :45) */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 10px',
-                background: 'rgba(255, 255, 255, 0.02)',
-                borderTop: '1px solid rgba(255, 255, 255, 0.06)',
-                gap: '4px',
-              }}
-            >
-              {['00', '15', '30', '45'].map((quickMin) => (
-                <button
-                  key={quickMin}
-                  type="button"
-                  onClick={() => handleSelectMinute(quickMin)}
-                  style={{
-                    flex: 1,
-                    padding: '3px 0',
-                    fontSize: '0.72rem',
-                    fontWeight: currentMinute === quickMin ? 700 : 600,
-                    fontFamily: 'monospace, monospace',
-                    background:
-                      currentMinute === quickMin
-                        ? 'rgba(229, 179, 56, 0.25)'
-                        : 'rgba(0, 0, 0, 0.4)',
-                    color:
-                      currentMinute === quickMin
-                        ? 'var(--primary)'
-                        : 'var(--text-dim)',
-                    border: `1px solid ${
-                      currentMinute === quickMin
-                        ? 'rgba(229, 179, 56, 0.4)'
-                        : 'rgba(255, 255, 255, 0.06)'
-                    }`,
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  :{quickMin}
-                </button>
-              ))}
             </div>
 
             {/* Footer com botão Concluir */}

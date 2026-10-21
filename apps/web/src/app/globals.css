@@ -325,3 +325,35 @@ input:focus, select:focus, textarea:focus {
     transform: translateY(0) scale(1);
   }
 }
+
+/* Custom Sleek Scrollbar for Dropdowns and Pickers */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 179, 56, 0.35) rgba(0, 0, 0, 0.25);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(229, 179, 56, 0.35);
+  border-radius: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+.custom-scrollbar::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
