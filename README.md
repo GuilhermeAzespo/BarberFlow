@@ -1,4 +1,5 @@
-<img width="669" height="373" alt="Logo" src="https://github.com/user-attachments/assets/38fd55ae-2a18-4d8e-9ce3-e5bc4ddc1483" />
+<img width="2752" height="1536" alt="Gemini_Generated_Image_v5fvmrv5fvmrv5fv" src="https://github.com/user-attachments/assets/c37d3807-11ab-44d3-9384-c772de19e210" />
+
 
 
 # BarberFlow 💈⚡
