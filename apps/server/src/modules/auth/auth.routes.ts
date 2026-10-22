@@ -126,6 +126,7 @@ authRouter.post('/login', authLimiter, async (req, res) => {
       role: user.role,
       permissions: user.permissions as any,
     },
+    mustChangePassword: Boolean((user.permissions as any)?.mustChangePassword),
   });
 });
 
@@ -230,7 +231,7 @@ authRouter.post('/exit-impersonation', requireAuth, async (req, res) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, 'A nova senha deve ter pelo menos 8 caracteres').max(128),
+  newPassword: z.string().min(6, 'A nova senha deve ter pelo menos 6 caracteres').max(128),
 });
 
 authRouter.post('/change-password', requireAuth, async (req, res) => {
@@ -238,7 +239,50 @@ authRouter.post('/change-password', requireAuth, async (req, res) => {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
   const valid = await bcrypt.compare(data.currentPassword, user.passwordHash);
   if (!valid) throw HttpError.badRequest('Senha atual incorreta');
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(data.newPassword, 12) } });
+
+  const permissions = (user.permissions as any) || {};
+  permissions.mustChangePassword = false;
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await bcrypt.hash(data.newPassword, 12),
+      permissions,
+    },
+  });
   res.status(204).end();
+});
+
+const resetInitialPasswordSchema = z.object({
+  newPassword: z.string().min(6, 'A nova senha deve ter no mínimo 6 caracteres').max(128),
+});
+
+/** Redefine a senha provisória obrigatória no primeiro login do membro da equipe */
+authRouter.post('/reset-initial-password', requireAuth, async (req, res) => {
+  const { newPassword } = resetInitialPasswordSchema.parse(req.body);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+
+  const permissions = (user.permissions as any) || {};
+  permissions.mustChangePassword = false;
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await bcrypt.hash(newPassword, 12),
+      permissions,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: 'Senha alterada com sucesso!',
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions,
+    },
+  });
 });
 

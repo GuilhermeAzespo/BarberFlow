@@ -98,6 +98,20 @@ professionalsRouter.get('/:id', async (req, res) => {
   res.json({ professional: serialize(professional) });
 });
 
+function generateProvisionalPassword(): string {
+  const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lowers = 'abcdefghijkmnpqrstuvwxyz';
+  const digits = '23456789';
+  let pass = 'Bf@';
+  pass += uppers[Math.floor(Math.random() * uppers.length)];
+  pass += lowers[Math.floor(Math.random() * lowers.length)];
+  pass += lowers[Math.floor(Math.random() * lowers.length)];
+  pass += digits[Math.floor(Math.random() * digits.length)];
+  pass += digits[Math.floor(Math.random() * digits.length)];
+  pass += digits[Math.floor(Math.random() * digits.length)];
+  return pass;
+}
+
 professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) => {
   const tenantId = req.tenantId!;
   const { serviceIds, hasLogin, loginEmail, loginPassword, permissions, ...data } = professionalSchema.parse(req.body);
@@ -105,17 +119,28 @@ professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) 
   await assertServicesBelongToTenant(tenantId, serviceIds);
 
   let createdUserId: string | null = null;
+  let effectiveProvisionalPassword: string | null = null;
 
   if (hasLogin) {
     if (!loginEmail) throw HttpError.badRequest('Informe o e-mail de acesso para o profissional');
-    if (!loginPassword) throw HttpError.badRequest('Informe a senha de acesso para o profissional');
 
     const emailNorm = loginEmail.toLowerCase().trim();
     const existing = await prisma.user.findUnique({ where: { email: emailNorm } });
     if (existing) throw HttpError.conflict('Já existe um usuário cadastrado com este e-mail');
 
-    const passwordHash = await bcrypt.hash(loginPassword, 12);
+    effectiveProvisionalPassword = (loginPassword && loginPassword.trim().length >= 6)
+      ? loginPassword.trim()
+      : generateProvisionalPassword();
+
+    const passwordHash = await bcrypt.hash(effectiveProvisionalPassword, 12);
     const assignedRole = determineUserRole(permissions);
+    const userPerms: any = permissions || {
+      preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
+      allowedMenus: ['calendar'],
+      canViewAllAppointments: false,
+    };
+    userPerms.mustChangePassword = true;
+
     const user = await prisma.user.create({
       data: {
         tenantId,
@@ -123,11 +148,7 @@ professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) 
         email: emailNorm,
         passwordHash,
         role: assignedRole,
-        permissions: (permissions as any) || {
-          preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
-          allowedMenus: ['calendar'],
-          canViewAllAppointments: false,
-        },
+        permissions: userPerms,
         isActive: data.isActive !== false,
       },
     });
@@ -146,7 +167,10 @@ professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) 
     include,
   });
 
-  res.status(201).json({ professional: serialize(professional) });
+  res.status(201).json({
+    professional: serialize(professional),
+    provisionalPassword: effectiveProvisionalPassword,
+  });
 });
 
 professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, res) => {
@@ -172,6 +196,7 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
       });
       if (existingOther) throw HttpError.conflict('Já existe outro usuário com este e-mail');
 
+      const userPerms: any = permissions || (current.user.permissions as any) || {};
       const userUpdateData: any = {
         name: data.name || current.name,
         email: emailNorm,
@@ -179,12 +204,13 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
       };
 
       if (permissions) {
-        userUpdateData.permissions = permissions;
         userUpdateData.role = determineUserRole(permissions);
       }
       if (loginPassword && loginPassword.trim().length >= 6) {
-        userUpdateData.passwordHash = await bcrypt.hash(loginPassword, 12);
+        userUpdateData.passwordHash = await bcrypt.hash(loginPassword.trim(), 12);
+        userPerms.mustChangePassword = true;
       }
+      userUpdateData.permissions = userPerms;
 
       await prisma.user.update({
         where: { id: current.userId },
@@ -192,12 +218,22 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
       });
     } else {
       // Criar usuário para o profissional pela primeira vez
-      if (!loginPassword) throw HttpError.badRequest('Defina uma senha inicial para o profissional');
       const existing = await prisma.user.findUnique({ where: { email: emailNorm } });
       if (existing) throw HttpError.conflict('Já existe um usuário cadastrado com este e-mail');
 
-      const passwordHash = await bcrypt.hash(loginPassword, 12);
+      const effectivePassword = (loginPassword && loginPassword.trim().length >= 6)
+        ? loginPassword.trim()
+        : generateProvisionalPassword();
+
+      const passwordHash = await bcrypt.hash(effectivePassword, 12);
       const assignedRole = determineUserRole(permissions);
+      const userPerms: any = permissions || {
+        preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
+        allowedMenus: ['calendar'],
+        canViewAllAppointments: false,
+      };
+      userPerms.mustChangePassword = true;
+
       const user = await prisma.user.create({
         data: {
           tenantId,
@@ -205,11 +241,7 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
           email: emailNorm,
           passwordHash,
           role: assignedRole,
-          permissions: (permissions as any) || {
-            preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
-            allowedMenus: ['calendar'],
-            canViewAllAppointments: false,
-          },
+          permissions: userPerms,
           isActive: data.isActive !== undefined ? data.isActive : true,
         },
       });
@@ -327,6 +359,23 @@ professionalsRouter.post('/:id/send-invite', requireRole('OWNER', 'MANAGER'), as
   const appUrl = req.headers.origin || 'https://barberflow.com.br';
   const loginUrl = `${appUrl}/login`;
 
+  let passwordToUse = tempPassword?.trim();
+
+  // Se não foi informada uma senha provisória, gera uma nova automaticamente e atualiza o usuário no banco com mustChangePassword = true!
+  if (!passwordToUse) {
+    passwordToUse = generateProvisionalPassword();
+    const newHash = await bcrypt.hash(passwordToUse, 12);
+    const userPerms = (prof.user.permissions as any) || {};
+    userPerms.mustChangePassword = true;
+    await prisma.user.update({
+      where: { id: prof.user.id },
+      data: {
+        passwordHash: newHash,
+        permissions: userPerms,
+      },
+    });
+  }
+
   const inviteText = [
     `✂️ Olá, *${prof.name}*!`,
     ``,
@@ -335,9 +384,11 @@ professionalsRouter.post('/:id/send-invite', requireRole('OWNER', 'MANAGER'), as
     `🔐 *Seus dados de acesso:*`,
     `🌐 *Link do Painel:* ${loginUrl}`,
     `📧 *E-mail:* ${email}`,
-    tempPassword ? `🔑 *Senha provisória:* ${tempPassword}` : `🔑 *Senha:* (a senha cadastrada pela administração)`,
+    `🔑 *Senha provisória:* ${passwordToUse}`,
     ``,
-    `Acesse o link acima para visualizar sua agenda e gerenciar seus atendimentos!`,
+    `⚠️ *Primeiro Acesso:* Ao fazer login com a senha provisória acima, você deverá cadastrar sua própria senha pessoal definitiva.`,
+    ``,
+    `Acesse o link acima para visualizar sua agenda e atendimentos!`,
   ].join('\n');
 
   if (channel === 'WHATSAPP_BOT') {
@@ -346,16 +397,21 @@ professionalsRouter.post('/:id/send-invite', requireRole('OWNER', 'MANAGER'), as
     if (!sent) {
       throw HttpError.badRequest('Não foi possível enviar via bot. Verifique se o WhatsApp da barbearia está conectado.');
     }
-    return res.json({ success: true, message: 'Convite enviado com sucesso pelo WhatsApp do salão!' });
+    return res.json({
+      success: true,
+      message: 'Convite com senha provisória enviado com sucesso pelo WhatsApp do salão!',
+      generatedPassword: passwordToUse,
+    });
   }
 
-  // Link do WhatsApp
   const waDigits = phone ? phone.replace(/\D/g, '') : '';
   const waUrl = waDigits ? `https://wa.me/55${waDigits}?text=${encodeURIComponent(inviteText)}` : null;
 
-  res.json({
+  return res.json({
     success: true,
-    message: inviteText,
+    channel,
+    inviteText,
+    generatedPassword: passwordToUse,
     whatsappUrl: waUrl,
     loginUrl,
     email,

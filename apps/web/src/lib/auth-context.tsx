@@ -16,6 +16,7 @@ export interface UserPermissions {
   canManageFinancials?: boolean;
   canManageTeam?: boolean;
   canManageSettings?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface User {

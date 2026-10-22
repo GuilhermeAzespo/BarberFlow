@@ -315,23 +315,19 @@ export default function ProfessionalsPage() {
   };
 
   const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$';
-    let pass = '';
     const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
     const lowers = 'abcdefghijkmnpqrstuvwxyz';
     const nums = '23456789';
-    const specs = '!@#$';
+    let pass = 'Bf@';
     pass += uppers[Math.floor(Math.random() * uppers.length)];
     pass += lowers[Math.floor(Math.random() * lowers.length)];
     pass += lowers[Math.floor(Math.random() * lowers.length)];
     pass += nums[Math.floor(Math.random() * nums.length)];
     pass += nums[Math.floor(Math.random() * nums.length)];
-    pass += specs[Math.floor(Math.random() * specs.length)];
-    for (let i = 0; i < 3; i++) {
-      pass += chars[Math.floor(Math.random() * chars.length)];
-    }
+    pass += nums[Math.floor(Math.random() * nums.length)];
     setLoginPassword(pass);
     setShowPassword(true);
+    return pass;
   };
 
   const buildInviteText = (opts?: {
@@ -347,18 +343,18 @@ export default function ProfessionalsPage() {
     const salonName = tenant?.name || 'BarberFlow';
     const loginUrl = `${origin || (typeof window !== 'undefined' ? window.location.origin : '')}/login`;
 
-    let text = `Olá, *${targetName}*! 👋\n\n`;
-    text += `Seu acesso ao sistema *BarberFlow* da *${salonName}* foi liberado com sucesso.\n\n`;
-    text += `👤 *Cargo / Função:* ${targetRole}\n`;
-    text += `🔗 *Link de Acesso:* ${loginUrl}\n`;
-    text += `✉️ *E-mail de Login:* ${targetEmail}\n`;
+    let text = `✂️ Olá, *${targetName}*!\n\n`;
+    text += `Você recebeu acesso ao painel do *BarberFlow* na barbearia *${salonName}*.\n\n`;
+    text += `🔐 *Seus dados de acesso:*\n`;
+    text += `🌐 *Link do Painel:* ${loginUrl}\n`;
+    text += `📧 *E-mail:* ${targetEmail}\n`;
     if (pwd) {
       text += `🔑 *Senha provisória:* ${pwd}\n\n`;
-      text += `Recomendamos trocar sua senha após o primeiro acesso.\n\n`;
     } else {
-      text += `🔑 *Senha:* Utilize a senha informada pela gerência.\n\n`;
+      text += `🔑 *Senha provisória:* (Uma senha temporária será enviada automaticamente)\n\n`;
     }
-    text += `Acesse pelo seu celular ou computador para consultar sua agenda e atendimentos! 💈✂️`;
+    text += `⚠️ *Primeiro Acesso:* Ao fazer login com esta senha provisória, o sistema solicitará que você defina sua própria senha definitiva.\n\n`;
+    text += `Acesse pelo seu celular ou computador para visualizar sua agenda e gerenciar seus atendimentos! 💈✂️`;
     return text;
   };
 
@@ -453,8 +449,9 @@ export default function ProfessionalsPage() {
     setHasLogin(true);
     setExistingHasLogin(false);
     setLoginEmail('');
-    setLoginPassword('');
-    setShowPassword(false);
+    const provisionalPass = generateRandomPassword();
+    setLoginPassword(provisionalPass);
+    setShowPassword(true);
     setInviteCopied(false);
     setBotInviteSuccess(null);
     setErrorMsg(null);
@@ -521,14 +518,15 @@ export default function ProfessionalsPage() {
     e.preventDefault();
     setErrorMsg(null);
 
+    let effectivePassword = loginPassword?.trim();
+
     if (hasLogin) {
       if (!loginEmail.trim() || !loginEmail.includes('@')) {
         setErrorMsg('Informe um e-mail válido para o acesso do membro da equipe.');
         return;
       }
-      if (!existingHasLogin && (!loginPassword || loginPassword.length < 6)) {
-        setErrorMsg('Para habilitar o primeiro acesso, defina uma senha com no mínimo 6 caracteres.');
-        return;
+      if (!existingHasLogin && (!effectivePassword || effectivePassword.length < 6)) {
+        effectivePassword = generateRandomPassword();
       }
       if (allowedMenus.length === 0) {
         setErrorMsg('Selecione ao menos 1 menu permitido para o acesso.');
@@ -547,7 +545,7 @@ export default function ProfessionalsPage() {
         serviceIds: isServiceWorker ? selectedServices : [],
         hasLogin,
         loginEmail: hasLogin ? loginEmail.trim().toLowerCase() : undefined,
-        loginPassword: hasLogin && loginPassword ? loginPassword : undefined,
+        loginPassword: hasLogin && effectivePassword ? effectivePassword : undefined,
         permissions: hasLogin
           ? {
               preset,
@@ -1472,7 +1470,7 @@ export default function ProfessionalsPage() {
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        {existingHasLogin ? 'Nova Senha (opcional)' : 'Senha de Acesso *'}
+                        {existingHasLogin ? 'Nova Senha Provisória (opcional)' : 'Senha Provisória de Acesso *'}
                       </label>
                       <button
                         type="button"
@@ -1491,14 +1489,14 @@ export default function ProfessionalsPage() {
                         }}
                       >
                         <Sparkles size={12} />
-                        <span>Gerar Senha</span>
+                        <span>Gerar Nova Senha</span>
                       </button>
                     </div>
                     <div style={{ position: 'relative' }}>
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required={hasLogin && !existingHasLogin}
-                        placeholder={existingHasLogin ? 'Deixe vazio para manter' : 'Mínimo 6 dígitos'}
+                        placeholder={existingHasLogin ? 'Deixe vazio para manter' : 'Senha temporária gerada'}
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         style={{ paddingRight: '40px' }}
@@ -1522,6 +1520,9 @@ export default function ProfessionalsPage() {
                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                      🔒 O colaborador será obrigado a cadastrar sua própria senha no primeiro login.
+                    </p>
                   </div>
                 </div>
 
