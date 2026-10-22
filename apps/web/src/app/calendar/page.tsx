@@ -548,9 +548,9 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              {/* Filtro de Profissionais (Teams Style) */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              {/* Filtro de Profissionais (Teams Style - Meus Calendários) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', padding: '0 2px' }}>
                   <span
                     style={{
                       fontSize: '0.75rem',
@@ -567,100 +567,162 @@ export default function CalendarPage() {
                   </span>
                 </div>
 
-                {/* Opção Todos */}
-                <label
+                {/* Opção: Todos os Profissionais */}
+                <button
+                  type="button"
+                  onClick={() => setSelectedProfId('ALL')}
                   style={{
+                    width: '100%',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '10px',
+                    justifyContent: 'space-between',
                     padding: '8px 10px',
                     borderRadius: '6px',
+                    border: 'none',
                     cursor: 'pointer',
-                    background: selectedProfId === 'ALL' ? 'rgba(229, 179, 56, 0.12)' : 'transparent',
-                    border: `1px solid ${selectedProfId === 'ALL' ? 'rgba(229, 179, 56, 0.3)' : 'transparent'}`,
-                    transition: 'all 0.15s',
+                    background: selectedProfId === 'ALL' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                    transition: 'background 0.15s ease',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <input
-                    type="radio"
-                    name="profFilter"
-                    checked={selectedProfId === 'ALL'}
-                    onChange={() => setSelectedProfId('ALL')}
-                    style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                    {/* Checkbox customizado estilo Teams */}
                     <div
                       style={{
-                        width: '10px',
-                        height: '10px',
-                        borderRadius: '50%',
-                        background: 'var(--primary)',
+                        width: '16px',
+                        height: '16px',
+                        borderRadius: '3px',
+                        flexShrink: 0,
+                        background: selectedProfId === 'ALL' ? 'var(--primary)' : 'transparent',
+                        border: selectedProfId === 'ALL' ? 'none' : '1.5px solid rgba(255, 255, 255, 0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
                       }}
-                    />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: selectedProfId === 'ALL' ? '#F3F4F6' : 'var(--text-muted)' }}>
+                    >
+                      {selectedProfId === 'ALL' && <Check size={12} color="#0B0F17" strokeWidth={3} />}
+                    </div>
+
+                    <span
+                      style={{
+                        fontSize: '0.84rem',
+                        fontWeight: selectedProfId === 'ALL' ? 700 : 500,
+                        color: selectedProfId === 'ALL' ? '#FFFFFF' : 'var(--text-muted)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
                       Todos os Profissionais
                     </span>
                   </div>
-                </label>
+
+                  {appointments.length > 0 && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '1px 6px',
+                        borderRadius: '10px',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        color: 'var(--text-dim)',
+                        fontWeight: 600,
+                        marginLeft: '6px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {appointments.length}
+                    </span>
+                  )}
+                </button>
 
                 {/* Lista de Profissionais */}
                 {professionals.map((p) => {
                   const isSelected = selectedProfId === p.id;
                   const profAppsCount = appointments.filter((a) => a.professional.id === p.id).length;
+                  const itemColor = p.color || 'var(--primary)';
 
                   return (
-                    <label
+                    <button
                       key={p.id}
+                      type="button"
+                      onClick={() => setSelectedProfId(p.id)}
                       style={{
+                        width: '100%',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '8px 10px',
                         borderRadius: '6px',
+                        border: 'none',
                         cursor: 'pointer',
-                        background: isSelected ? 'rgba(229, 179, 56, 0.12)' : 'transparent',
-                        border: `1px solid ${isSelected ? 'rgba(229, 179, 56, 0.3)' : 'transparent'}`,
-                        transition: 'all 0.15s',
+                        background: isSelected ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                        transition: 'background 0.15s ease',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) e.currentTarget.style.background = 'transparent';
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input
-                          type="radio"
-                          name="profFilter"
-                          checked={isSelected}
-                          onChange={() => setSelectedProfId(p.id)}
-                          style={{ accentColor: p.color || 'var(--primary)', cursor: 'pointer' }}
-                        />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div
-                            style={{
-                              width: '10px',
-                              height: '10px',
-                              borderRadius: '50%',
-                              background: p.color || 'var(--primary)',
-                            }}
-                          />
-                          <span style={{ fontSize: '0.85rem', fontWeight: 500, color: isSelected ? '#F3F4F6' : 'var(--text-muted)' }}>
-                            {p.name}
-                          </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                        {/* Checkbox customizado com a cor do barbeiro */}
+                        <div
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '3px',
+                            flexShrink: 0,
+                            background: isSelected ? itemColor : 'transparent',
+                            border: isSelected ? 'none' : '1.5px solid rgba(255, 255, 255, 0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {isSelected && <Check size={12} color="#0B0F17" strokeWidth={3} />}
                         </div>
+
+                        <span
+                          style={{
+                            fontSize: '0.84rem',
+                            fontWeight: isSelected ? 700 : 500,
+                            color: isSelected ? '#FFFFFF' : 'var(--text-muted)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {p.name}
+                        </span>
                       </div>
 
                       {profAppsCount > 0 && (
                         <span
                           style={{
                             fontSize: '0.72rem',
-                            padding: '2px 6px',
+                            padding: '1px 6px',
                             borderRadius: '10px',
                             background: 'rgba(255, 255, 255, 0.06)',
                             color: 'var(--text-dim)',
                             fontWeight: 600,
+                            marginLeft: '6px',
+                            flexShrink: 0,
                           }}
                         >
                           {profAppsCount}
                         </span>
                       )}
-                    </label>
+                    </button>
                   );
                 })}
               </div>
@@ -773,8 +835,28 @@ export default function CalendarPage() {
                 </h2>
               </div>
 
-              {/* Lado Direito: Seletor de Modo de Exibição (Semana / Semana de Trabalho / Dia) */}
+              {/* Lado Direito: Filtro de Profissionais + Seletor de Visão + Botão Novo */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {/* Filtro Rápido de Profissionais no Topo */}
+                <div style={{ width: '185px' }}>
+                  <Select
+                    value={selectedProfId}
+                    onChange={(e) => setSelectedProfId(e.target.value)}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '0.82rem',
+                      height: '34px',
+                    }}
+                  >
+                    <option value="ALL">Todos os Profissionais</option>
+                    {professionals.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
                 {/* Seletor de Visão (Teams Style) */}
                 <div
                   style={{
