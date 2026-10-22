@@ -1139,6 +1139,7 @@ export default function ProfessionalsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingId ? 'Editar Membro da Equipe & Permissões' : 'Novo Membro da Equipe'}
+        maxWidth="620px"
       >
         {errorMsg && (
           <div
@@ -1453,9 +1454,19 @@ export default function ProfessionalsPage() {
                 </div>
 
                 {/* 2. Credenciais de Acesso */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    padding: '16px',
+                    borderRadius: '10px',
+                    background: 'rgba(0, 0, 0, 0.22)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                  }}
+                >
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 500 }}>
                       E-mail de Login *
                     </label>
                     <input
@@ -1468,24 +1479,27 @@ export default function ProfessionalsPage() {
                   </div>
 
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '10px' }}>
+                      <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>
                         {existingHasLogin ? 'Nova Senha Provisória (opcional)' : 'Senha Provisória de Acesso *'}
                       </label>
                       <button
                         type="button"
                         onClick={generateRandomPassword}
                         style={{
-                          background: 'none',
-                          border: 'none',
+                          background: 'rgba(229, 179, 56, 0.1)',
+                          border: '1px solid rgba(229, 179, 56, 0.25)',
+                          borderRadius: '6px',
                           color: 'var(--primary)',
                           cursor: 'pointer',
                           fontSize: '0.74rem',
                           fontWeight: 600,
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
-                          padding: 0,
+                          gap: '5px',
+                          padding: '4px 9px',
+                          whiteSpace: 'nowrap',
+                          transition: 'all 0.15s ease',
                         }}
                       >
                         <Sparkles size={12} />
@@ -1496,7 +1510,7 @@ export default function ProfessionalsPage() {
                       <input
                         type={showPassword ? 'text' : 'password'}
                         required={hasLogin && !existingHasLogin}
-                        placeholder={existingHasLogin ? 'Deixe vazio para manter' : 'Senha temporária gerada'}
+                        placeholder={existingHasLogin ? 'Deixe vazio para manter a senha atual' : 'Senha temporária gerada'}
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
                         style={{ paddingRight: '40px' }}
@@ -1506,7 +1520,7 @@ export default function ProfessionalsPage() {
                         onClick={() => setShowPassword(!showPassword)}
                         style={{
                           position: 'absolute',
-                          right: '10px',
+                          right: '12px',
                           top: '50%',
                           transform: 'translateY(-50%)',
                           background: 'none',
@@ -1515,12 +1529,14 @@ export default function ProfessionalsPage() {
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
+                          padding: 0,
                         }}
+                        title={showPassword ? 'Ocultar senha' : 'Ver senha'}
                       >
                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                    <p style={{ fontSize: '0.73rem', color: 'var(--text-dim)', marginTop: '6px', lineHeight: 1.4 }}>
                       🔒 O colaborador será obrigado a cadastrar sua própria senha no primeiro login.
                     </p>
                   </div>
