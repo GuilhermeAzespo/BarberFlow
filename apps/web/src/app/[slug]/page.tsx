@@ -25,6 +25,8 @@ import {
   Star,
   X,
   Camera,
+  Flame,
+  Tag,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -34,6 +36,9 @@ interface Service {
   description?: string | null;
   durationMinutes: number;
   priceCents: number;
+  promoPriceCents?: number | null;
+  promoTitle?: string | null;
+  promoActive?: boolean;
 }
 
 interface Professional {
@@ -441,25 +446,6 @@ export default function TenantHomePage() {
         />
 
         <div style={{ maxWidth: '820px', width: '100%', textAlign: 'center', position: 'relative', zIndex: 2 }}>
-          {/* Badge */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 14px',
-              borderRadius: '24px',
-              background: 'rgba(229, 179, 56, 0.12)',
-              border: '1px solid rgba(229, 179, 56, 0.3)',
-              color: 'var(--primary)',
-              fontSize: '0.84rem',
-              fontWeight: 600,
-              marginBottom: '20px',
-            }}
-          >
-            <Sparkles size={15} />
-            <span>Barbearia & Estilo Masculino</span>
-          </div>
 
           <h1
             style={{
@@ -699,68 +685,152 @@ export default function TenantHomePage() {
             gap: '20px',
           }}
         >
-          {tenant.services.map((service) => (
-            <div
-              key={service.id}
-              className="glass-panel"
-              style={{
-                padding: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                transition: 'transform 0.2s, border-color 0.2s',
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
-                  <h3 style={{ fontSize: '1.18rem', fontWeight: 700, color: '#F9FAFB', margin: 0 }}>
-                    {service.name}
-                  </h3>
-                  <span
-                    style={{
-                      fontSize: '1.25rem',
-                      fontWeight: 800,
-                      color: 'var(--primary)',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {formatBRL(service.priceCents)}
-                  </span>
-                </div>
+          {tenant.services.map((service) => {
+            const isPromo = Boolean(service.promoActive && service.promoPriceCents && service.promoPriceCents < service.priceCents);
+            const discountPercent = isPromo
+              ? Math.round(((service.priceCents - service.promoPriceCents!) / service.priceCents) * 100)
+              : 0;
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-dim)', fontSize: '0.84rem', marginBottom: '12px' }}>
-                  <Clock size={14} color="var(--primary)" />
-                  <span>Duração média: {service.durationMinutes} minutos</span>
-                </div>
-
-                {service.description && (
-                  <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '18px' }}>
-                    {service.description}
-                  </p>
-                )}
-              </div>
-
-              <Link
-                href={`/${slug}/agendar?serviceId=${service.id}`}
-                className="gold-gradient-primary"
+            return (
+              <div
+                key={service.id}
+                className="glass-panel"
                 style={{
+                  padding: '24px',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '10px 16px',
-                  borderRadius: '8px',
-                  textDecoration: 'none',
-                  fontWeight: 700,
-                  fontSize: '0.88rem',
-                  marginTop: '12px',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  transition: 'transform 0.2s, border-color 0.2s',
+                  border: isPromo ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border-color)',
+                  background: isPromo
+                    ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.07) 0%, rgba(18, 24, 38, 0.7) 100%)'
+                    : undefined,
+                  boxShadow: isPromo ? '0 8px 24px rgba(245, 158, 11, 0.12)' : undefined,
                 }}
               >
-                <span>Agendar este Serviço</span>
-                <ArrowRight size={15} />
-              </Link>
-            </div>
-          ))}
+                <div>
+                  {/* Badges de Promoção na Vitrine */}
+                  {isPromo && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          color: '#F59E0B',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          border: '1px solid rgba(245, 158, 11, 0.35)',
+                        }}
+                      >
+                        <Flame size={12} />
+                        PROMOÇÃO
+                      </span>
+                      {discountPercent > 0 && (
+                        <span
+                          style={{
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#34D399',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                          }}
+                        >
+                          -{discountPercent}% OFF
+                        </span>
+                      )}
+                      {service.promoTitle && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            color: '#F59E0B',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Tag size={12} />
+                          {service.promoTitle}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+                    <h3 style={{ fontSize: '1.18rem', fontWeight: 700, color: '#F9FAFB', margin: 0 }}>
+                      {service.name}
+                    </h3>
+                    <div style={{ textAlign: 'right' }}>
+                      {isPromo ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span style={{ fontSize: '0.85rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                            {formatBRL(service.priceCents)}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '1.3rem',
+                              fontWeight: 800,
+                              color: '#10B981',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {formatBRL(service.promoPriceCents!)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '1.25rem',
+                            fontWeight: 800,
+                            color: 'var(--primary)',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {formatBRL(service.priceCents)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-dim)', fontSize: '0.84rem', marginBottom: '12px' }}>
+                    <Clock size={14} color="var(--primary)" />
+                    <span>Duração média: {service.durationMinutes} minutos</span>
+                  </div>
+
+                  {service.description && (
+                    <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: '18px' }}>
+                      {service.description}
+                    </p>
+                  )}
+                </div>
+
+                <Link
+                  href={`/${slug}/agendar?serviceId=${service.id}`}
+                  className="gold-gradient-primary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    textDecoration: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    marginTop: '12px',
+                  }}
+                >
+                  <span>{isPromo ? 'Agendar com Desconto' : 'Agendar este Serviço'}</span>
+                  <ArrowRight size={15} />
+                </Link>
+              </div>
+            );
+          })}
         </div>
       </section>
 

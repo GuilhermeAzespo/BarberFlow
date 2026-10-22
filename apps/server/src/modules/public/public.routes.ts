@@ -68,8 +68,17 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
       businessHours: { orderBy: { weekday: 'asc' } },
       services: {
         where: { isActive: true },
-        select: { id: true, name: true, description: true, durationMinutes: true, priceCents: true },
-        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          durationMinutes: true,
+          priceCents: true,
+          promoPriceCents: true,
+          promoTitle: true,
+          promoActive: true,
+        },
+        orderBy: [{ promoActive: 'desc' }, { name: 'asc' }],
       },
       professionals: {
         where: { isActive: true },

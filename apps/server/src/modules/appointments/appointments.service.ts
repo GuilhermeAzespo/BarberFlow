@@ -229,7 +229,11 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
           serviceId: service.id,
           startAt: start.toJSDate(),
           endAt: end.toJSDate(),
-          priceCents: input.priceCents ?? service.priceCents,
+          priceCents:
+            input.priceCents ??
+            (service.promoActive && service.promoPriceCents && service.promoPriceCents < service.priceCents
+              ? service.promoPriceCents
+              : service.priceCents),
           notes: input.notes ?? null,
           source: input.source,
         },

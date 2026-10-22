@@ -21,6 +21,8 @@ import {
   Globe,
   Share2,
   CalendarDays,
+  Flame,
+  Tag,
 } from 'lucide-react';
 import { api, ApiError } from '../../../lib/api';
 
@@ -30,6 +32,9 @@ interface Service {
   description?: string | null;
   durationMinutes: number;
   priceCents: number;
+  promoPriceCents?: number | null;
+  promoTitle?: string | null;
+  promoActive?: boolean;
 }
 
 interface Professional {
@@ -580,6 +585,10 @@ function PublicBookingContent() {
               ) : (
                 tenant.services.map((service) => {
                   const isSelected = selectedService?.id === service.id;
+                  const isPromo = Boolean(service.promoActive && service.promoPriceCents && service.promoPriceCents < service.priceCents);
+                  const discountPercent = isPromo
+                    ? Math.round(((service.priceCents - service.promoPriceCents!) / service.priceCents) * 100)
+                    : 0;
 
                   return (
                     <div
@@ -588,8 +597,16 @@ function PublicBookingContent() {
                       style={{
                         padding: '16px 20px',
                         borderRadius: '12px',
-                        background: isSelected ? 'rgba(229, 179, 56, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-                        border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: isSelected
+                          ? 'rgba(229, 179, 56, 0.12)'
+                          : isPromo
+                          ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)'
+                          : 'rgba(255, 255, 255, 0.03)',
+                        border: isSelected
+                          ? '2px solid var(--primary)'
+                          : isPromo
+                          ? '1px solid rgba(245, 158, 11, 0.35)'
+                          : '1px solid var(--border-color)',
                         boxShadow: isSelected ? '0 0 15px rgba(229, 179, 56, 0.25)' : 'none',
                         cursor: 'pointer',
                         display: 'flex',
@@ -605,20 +622,49 @@ function PublicBookingContent() {
                             width: '40px',
                             height: '40px',
                             borderRadius: '10px',
-                            background: isSelected ? 'var(--primary)' : 'rgba(255, 255, 255, 0.06)',
-                            color: isSelected ? '#0B0F17' : 'var(--primary)',
+                            background: isSelected
+                              ? 'var(--primary)'
+                              : isPromo
+                              ? 'rgba(245, 158, 11, 0.18)'
+                              : 'rgba(255, 255, 255, 0.06)',
+                            color: isSelected ? '#0B0F17' : isPromo ? '#F59E0B' : 'var(--primary)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             flexShrink: 0,
                           }}
                         >
-                          <Scissors size={20} />
+                          {isPromo ? <Flame size={20} /> : <Scissors size={20} />}
                         </div>
                         <div>
-                          <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 2px 0' }}>
-                            {service.name}
-                          </h3>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 2px 0' }}>
+                              {service.name}
+                            </h3>
+                            {isPromo && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  background: 'rgba(245, 158, 11, 0.18)',
+                                  color: '#F59E0B',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                PROMOÇÃO {discountPercent > 0 ? `-${discountPercent}%` : ''}
+                              </span>
+                            )}
+                          </div>
+                          {isPromo && service.promoTitle && (
+                            <span style={{ fontSize: '0.74rem', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                              <Tag size={11} />
+                              {service.promoTitle}
+                            </span>
+                          )}
                           {service.description && (
                             <p style={{ color: 'var(--text-dim)', fontSize: '0.8rem', margin: '0 0 4px 0' }}>
                               {service.description}
@@ -632,9 +678,20 @@ function PublicBookingContent() {
                       </div>
 
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)', display: 'block' }}>
-                          {formatBRL(service.priceCents)}
-                        </span>
+                        {isPromo ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginBottom: '2px' }}>
+                            <span style={{ fontSize: '0.78rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                              {formatBRL(service.priceCents)}
+                            </span>
+                            <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981', display: 'block' }}>
+                              {formatBRL(service.promoPriceCents!)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)', display: 'block' }}>
+                            {formatBRL(service.priceCents)}
+                          </span>
+                        )}
                         <span
                           style={{
                             fontSize: '0.75rem',
@@ -1067,9 +1124,22 @@ function PublicBookingContent() {
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary)', display: 'block' }}>
                   {selectedDate.split('-').reverse().join('/')} às {selectedTime}
                 </span>
-                <span style={{ fontSize: '1.15rem', fontWeight: 800 }}>
-                  {selectedService ? formatBRL(selectedService.priceCents) : ''}
-                </span>
+                {selectedService && (
+                  selectedService.promoActive && selectedService.promoPriceCents && selectedService.promoPriceCents < selectedService.priceCents ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                      <span style={{ fontSize: '0.78rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                        {formatBRL(selectedService.priceCents)}
+                      </span>
+                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981' }}>
+                        {formatBRL(selectedService.promoPriceCents)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '1.15rem', fontWeight: 800 }}>
+                      {formatBRL(selectedService.priceCents)}
+                    </span>
+                  )
+                )}
               </div>
             </div>
 
