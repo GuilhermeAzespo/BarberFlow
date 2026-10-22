@@ -11,9 +11,29 @@ import { requireRole } from '../../middlewares/auth.js';
 export const professionalsRouter = Router();
 
 const permissionsSchema = z.object({
+  preset: z.enum(['ADMIN', 'RECEPTION', 'BARBER', 'FINANCE', 'CUSTOM']).optional(),
+  roleTitle: z.string().trim().max(50).optional(),
   allowedMenus: z.array(z.string()).default(['calendar']),
   canViewAllAppointments: z.boolean().default(false),
+  canManageAppointments: z.boolean().default(false),
+  canManageCustomers: z.boolean().default(false),
+  canManageServices: z.boolean().default(false),
+  canViewFinancials: z.boolean().default(false),
+  canManageFinancials: z.boolean().default(false),
+  canManageTeam: z.boolean().default(false),
+  canManageSettings: z.boolean().default(false),
 });
+
+function determineUserRole(permissions?: z.infer<typeof permissionsSchema>): 'MANAGER' | 'PROFESSIONAL' {
+  if (!permissions) return 'PROFESSIONAL';
+  if (permissions.preset === 'ADMIN' || permissions.preset === 'RECEPTION' || permissions.preset === 'FINANCE') {
+    return 'MANAGER';
+  }
+  if (permissions.canManageTeam || permissions.canManageSettings || permissions.canManageServices) {
+    return 'MANAGER';
+  }
+  return 'PROFESSIONAL';
+}
 
 const professionalSchema = z.object({
   name: z.string().trim().min(2, 'Informe o nome').max(80),
@@ -45,7 +65,11 @@ function serialize(p: Prisma.ProfessionalGetPayload<{ include: typeof include }>
           email: user.email,
           role: user.role,
           isActive: user.isActive,
-          permissions: (user.permissions as any) || { allowedMenus: ['calendar'], canViewAllAppointments: false },
+          permissions: (user.permissions as any) || {
+            preset: user.role === 'MANAGER' ? 'ADMIN' : 'BARBER',
+            allowedMenus: ['calendar'],
+            canViewAllAppointments: false,
+          },
         }
       : null,
   };
@@ -90,14 +114,19 @@ professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) 
     if (existing) throw HttpError.conflict('Já existe um usuário cadastrado com este e-mail');
 
     const passwordHash = await bcrypt.hash(loginPassword, 12);
+    const assignedRole = determineUserRole(permissions);
     const user = await prisma.user.create({
       data: {
         tenantId,
         name: data.name,
         email: emailNorm,
         passwordHash,
-        role: 'PROFESSIONAL',
-        permissions: (permissions as any) || { allowedMenus: ['calendar'], canViewAllAppointments: false },
+        role: assignedRole,
+        permissions: (permissions as any) || {
+          preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
+          allowedMenus: ['calendar'],
+          canViewAllAppointments: false,
+        },
         isActive: data.isActive !== false,
       },
     });
@@ -115,6 +144,7 @@ professionalsRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) 
     },
     include,
   });
+
   res.status(201).json({ professional: serialize(professional) });
 });
 
@@ -149,6 +179,7 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
 
       if (permissions) {
         userUpdateData.permissions = permissions;
+        userUpdateData.role = determineUserRole(permissions);
       }
       if (loginPassword && loginPassword.trim().length >= 6) {
         userUpdateData.passwordHash = await bcrypt.hash(loginPassword, 12);
@@ -165,14 +196,19 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
       if (existing) throw HttpError.conflict('Já existe um usuário cadastrado com este e-mail');
 
       const passwordHash = await bcrypt.hash(loginPassword, 12);
+      const assignedRole = determineUserRole(permissions);
       const user = await prisma.user.create({
         data: {
           tenantId,
           name: data.name || current.name,
           email: emailNorm,
           passwordHash,
-          role: 'PROFESSIONAL',
-          permissions: (permissions as any) || { allowedMenus: ['calendar'], canViewAllAppointments: false },
+          role: assignedRole,
+          permissions: (permissions as any) || {
+            preset: assignedRole === 'MANAGER' ? 'ADMIN' : 'BARBER',
+            allowedMenus: ['calendar'],
+            canViewAllAppointments: false,
+          },
           isActive: data.isActive !== undefined ? data.isActive : true,
         },
       });

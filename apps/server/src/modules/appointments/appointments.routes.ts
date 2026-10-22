@@ -143,7 +143,7 @@ appointmentsRouter.get('/:id', async (req, res) => {
   });
   if (!appointment) throw HttpError.notFound('Agendamento não encontrado');
 
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true && req.auth.permissions?.canManageAppointments !== true) {
     const myProfId = await getProfessionalIdForUser(req);
     if (appointment.professionalId !== myProfId) {
       throw HttpError.forbidden('Você não tem permissão para visualizar agendamentos de outros profissionais');
@@ -158,7 +158,7 @@ appointmentsRouter.post('/', async (req, res) => {
   const data = createAppointmentSchema.parse(req.body);
 
   let targetProfessionalId = data.professionalId;
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true && req.auth.permissions?.canManageAppointments !== true) {
     const myProfId = await getProfessionalIdForUser(req);
     if (myProfId) {
       targetProfessionalId = myProfId;
@@ -193,7 +193,7 @@ appointmentsRouter.post('/', async (req, res) => {
 
 // Reagendar / Atualizar
 appointmentsRouter.patch('/:id', async (req, res) => {
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true && req.auth.permissions?.canManageAppointments !== true) {
     const myProfId = await getProfessionalIdForUser(req);
     const existing = await prisma.appointment.findFirst({
       where: { id: req.params.id as string, tenantId: req.tenantId! },
@@ -219,7 +219,7 @@ appointmentsRouter.patch('/:id', async (req, res) => {
 
 // Alterar status (ex: Concluir com método de pagamento, Cancelar com motivo)
 appointmentsRouter.patch('/:id/status', async (req, res) => {
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true && req.auth.permissions?.canManageAppointments !== true) {
     const myProfId = await getProfessionalIdForUser(req);
     const existing = await prisma.appointment.findFirst({
       where: { id: req.params.id as string, tenantId: req.tenantId! },
@@ -244,7 +244,7 @@ appointmentsRouter.patch('/:id/status', async (req, res) => {
 
 // Cancelar agendamento
 appointmentsRouter.delete('/:id', async (req, res) => {
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true && req.auth.permissions?.canManageAppointments !== true) {
     const myProfId = await getProfessionalIdForUser(req);
     const existing = await prisma.appointment.findFirst({
       where: { id: req.params.id as string, tenantId: req.tenantId! },

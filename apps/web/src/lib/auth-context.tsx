@@ -5,8 +5,17 @@ import { useRouter, usePathname } from 'next/navigation';
 import { api, ApiError } from './api';
 
 export interface UserPermissions {
+  preset?: 'ADMIN' | 'RECEPTION' | 'BARBER' | 'FINANCE' | 'CUSTOM';
+  roleTitle?: string;
   allowedMenus?: string[];
   canViewAllAppointments?: boolean;
+  canManageAppointments?: boolean;
+  canManageCustomers?: boolean;
+  canManageServices?: boolean;
+  canViewFinancials?: boolean;
+  canManageFinancials?: boolean;
+  canManageTeam?: boolean;
+  canManageSettings?: boolean;
 }
 
 export interface User {
@@ -65,6 +74,7 @@ interface AuthContextType {
   isImpersonated: boolean;
   loading: boolean;
   canAccessMenu: (menuKey: string) => boolean;
+  hasPermission: (key: keyof Omit<UserPermissions, 'allowedMenus' | 'preset' | 'roleTitle'>) => boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -78,6 +88,7 @@ const AuthContext = createContext<AuthContextType>({
   isImpersonated: false,
   loading: true,
   canAccessMenu: () => true,
+  hasPermission: () => true,
   refresh: async () => {},
   logout: async () => {},
   exitImpersonation: async () => {},
@@ -161,6 +172,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const hasPermission = useCallback(
+    (key: keyof Omit<UserPermissions, 'allowedMenus' | 'preset' | 'roleTitle'>): boolean => {
+      if (!user) return false;
+      if (user.role === 'SUPER_ADMIN' || user.role === 'OWNER') return true;
+      return Boolean(user.permissions?.[key]);
+    },
+    [user]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -171,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isImpersonated,
         loading,
         canAccessMenu,
+        hasPermission,
         refresh,
         logout,
         exitImpersonation,

@@ -1,8 +1,17 @@
 import type { UserRole } from '@prisma/client';
 
 export interface UserPermissions {
+  preset?: 'ADMIN' | 'RECEPTION' | 'BARBER' | 'FINANCE' | 'CUSTOM';
+  roleTitle?: string;
   allowedMenus?: string[];
   canViewAllAppointments?: boolean;
+  canManageAppointments?: boolean;
+  canManageCustomers?: boolean;
+  canManageServices?: boolean;
+  canViewFinancials?: boolean;
+  canManageFinancials?: boolean;
+  canManageTeam?: boolean;
+  canManageSettings?: boolean;
 }
 
 declare global {
