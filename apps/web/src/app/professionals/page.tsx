@@ -1604,72 +1604,84 @@ export default function ProfessionalsPage() {
                     {buildInviteText()}
                   </div>
 
-                  {/* Botões de Ação */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {/* Botões de Ação na mesma linha */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: editingId ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
+                      gap: '6px',
+                    }}
+                  >
                     <button
                       type="button"
                       onClick={() => handleOpenWhatsApp()}
+                      title="Enviar pelo WhatsApp Web / App"
                       style={{
-                        flex: '1 1 auto',
-                        padding: '8px 14px',
+                        padding: '8px 4px',
                         borderRadius: '7px',
                         background: '#25D366',
                         color: '#072711',
                         fontWeight: 600,
-                        fontSize: '0.8rem',
+                        fontSize: '0.75rem',
                         border: 'none',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 2px 8px rgba(37, 211, 102, 0.25)',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 2px 6px rgba(37, 211, 102, 0.2)',
                       }}
                     >
-                      <MessageSquare size={14} />
-                      <span>Enviar por WhatsApp</span>
+                      <MessageSquare size={13} />
+                      <span>WhatsApp</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleOpenEmail()}
+                      title="Enviar por E-mail"
                       style={{
-                        flex: '1 1 auto',
-                        padding: '8px 14px',
+                        padding: '8px 4px',
                         borderRadius: '7px',
                         background: 'rgba(56, 189, 248, 0.15)',
                         color: '#38BDF8',
                         fontWeight: 600,
-                        fontSize: '0.8rem',
+                        fontSize: '0.75rem',
                         border: '1px solid rgba(56, 189, 248, 0.3)',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        gap: '6px',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      <Mail size={14} />
-                      <span>Enviar por E-mail</span>
+                      <Mail size={13} />
+                      <span>E-mail</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleCopyInvite()}
+                      title="Copiar mensagem"
                       style={{
-                        padding: '8px 12px',
+                        padding: '8px 4px',
                         borderRadius: '7px',
                         background: 'rgba(255, 255, 255, 0.06)',
                         color: 'var(--text-main)',
-                        fontSize: '0.8rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 500,
                         border: '1px solid var(--border-color)',
                         cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: '6px',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      <Copy size={14} />
+                      <Copy size={13} />
                       <span>{inviteCopied ? 'Copiado!' : 'Copiar'}</span>
                     </button>
 
@@ -1678,23 +1690,25 @@ export default function ProfessionalsPage() {
                         type="button"
                         disabled={sendingBotInvite}
                         onClick={() => handleSendBotInvite(editingId)}
+                        title="Disparar mensagem pelo WhatsApp oficial da barbearia"
                         style={{
-                          padding: '8px 12px',
+                          padding: '8px 4px',
                           borderRadius: '7px',
                           background: 'rgba(229, 179, 56, 0.12)',
                           color: 'var(--primary)',
-                          fontSize: '0.8rem',
-                          fontWeight: 500,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
                           border: '1px solid rgba(229, 179, 56, 0.25)',
                           cursor: sendingBotInvite ? 'not-allowed' : 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px',
+                          justifyContent: 'center',
+                          gap: '5px',
+                          whiteSpace: 'nowrap',
                         }}
-                        title="Disparar mensagem pelo WhatsApp oficial da barbearia"
                       >
-                        <Send size={13} />
-                        <span>{sendingBotInvite ? 'Disparando...' : 'Via Bot do Salão'}</span>
+                        <Send size={12} />
+                        <span>{sendingBotInvite ? 'Enviando...' : 'Via Bot'}</span>
                       </button>
                     )}
                   </div>

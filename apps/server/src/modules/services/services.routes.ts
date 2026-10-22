@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { requireRole } from '../../middlewares/auth.js';
+import { whatsAppService } from '../whatsapp/whatsapp.service.js';
+import { sendEmail } from '../../lib/email.js';
+import { normalizePhone } from '../../lib/utils.js';
+import { logger } from '../../lib/logger.js';
 
 export const servicesRouter = Router();
 
@@ -11,7 +15,16 @@ const serviceSchema = z.object({
   description: z.string().trim().max(300).nullable().optional(),
   durationMinutes: z.number().int().min(5, 'Duração mínima de 5 minutos').max(480),
   priceCents: z.number().int().min(0),
+  promoPriceCents: z.number().int().min(0).nullable().optional(),
+  promoTitle: z.string().trim().max(100).nullable().optional(),
+  promoActive: z.boolean().optional(),
   isActive: z.boolean().optional(),
+});
+
+const broadcastPromoSchema = z.object({
+  channels: z.array(z.enum(['WHATSAPP_BOT', 'EMAIL'])).min(1),
+  customMessage: z.string().trim().optional(),
+  customSubject: z.string().trim().optional(),
 });
 
 servicesRouter.get('/', async (req, res) => {
@@ -21,6 +34,21 @@ servicesRouter.get('/', async (req, res) => {
     orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
   });
   res.json({ services });
+});
+
+servicesRouter.get('/promo-audience', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  const customers = await prisma.customer.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, phone: true, email: true },
+  });
+  const withPhone = customers.filter((c) => Boolean(c.phone)).length;
+  const withEmail = customers.filter((c) => Boolean(c.email && c.email.includes('@'))).length;
+  res.json({
+    totalCustomers: customers.length,
+    withPhone,
+    withEmail,
+  });
 });
 
 servicesRouter.post('/', requireRole('OWNER', 'MANAGER'), async (req, res) => {
@@ -49,4 +77,142 @@ servicesRouter.delete('/:id', requireRole('OWNER', 'MANAGER'), async (req, res) 
   }
   await prisma.service.delete({ where: { id: current.id } });
   res.json({ deleted: true, deactivated: false });
+});
+
+servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  const id = req.params.id as string;
+  const { channels, customMessage, customSubject } = broadcastPromoSchema.parse(req.body);
+
+  const [service, tenant] = await Promise.all([
+    prisma.service.findFirst({ where: { id, tenantId } }),
+    prisma.tenant.findUnique({ where: { id: tenantId } }),
+  ]);
+  if (!service) throw HttpError.notFound('Serviço não encontrado');
+  if (!tenant) throw HttpError.notFound('Barbearia não encontrada');
+
+  const customers = await prisma.customer.findMany({
+    where: { tenantId },
+    select: { id: true, name: true, phone: true, email: true },
+  });
+
+  const appUrl = (process.env.APP_URL || 'https://barberflow.azespo.com.br').replace(/\/$/, '');
+  const bookingUrl = `${appUrl}/salao/${tenant.slug}`;
+  const formatBRL = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
+
+  const originalPrice = formatBRL(service.priceCents);
+  const promoPrice = service.promoPriceCents ? formatBRL(service.promoPriceCents) : originalPrice;
+  const discountPercent = service.promoPriceCents
+    ? Math.round(((service.priceCents - service.promoPriceCents) / service.priceCents) * 100)
+    : 0;
+
+  let whatsappSent = 0;
+  let whatsappFailed = 0;
+  let emailSent = 0;
+  let emailFailed = 0;
+
+  // 1. Disparo via WhatsApp Bot
+  if (channels.includes('WHATSAPP_BOT')) {
+    const waCustomers = customers.filter((c) => Boolean(c.phone));
+    for (const c of waCustomers) {
+      const cleanPhone = normalizePhone(c.phone);
+      if (!cleanPhone) continue;
+
+      const firstName = c.name ? c.name.split(' ')[0] : 'Cliente';
+      const textToSend = customMessage
+        ? customMessage.replace(/\{NOME\}/gi, firstName)
+        : [
+            `✂️🔥 *SUPER PROMOÇÃO NO ${tenant.name.toUpperCase()}!* 🔥`,
+            ``,
+            `Olá, *${firstName}*! 👋`,
+            `Preparamos uma oferta especial para você renovar seu estilo:`,
+            ``,
+            `💈 *Serviço:* ${service.name}`,
+            service.promoPriceCents ? `❌ *De:* ~${originalPrice}~` : '',
+            service.promoPriceCents ? `✅ *Por Apenas:* *${promoPrice}*! (${discountPercent}% OFF)` : `💰 *Valor:* *${originalPrice}*`,
+            `⏱️ *Duração:* ${service.durationMinutes} minutos`,
+            service.promoTitle ? `🏷️ *Condição:* ${service.promoTitle}` : '',
+            ``,
+            `📅 *Garanta seu horário com desconto antes que esgote:*`,
+            `🔗 *Agende online em segundos:* ${bookingUrl}`,
+            ``,
+            `Esperamos por você! 💈✂️`,
+          ].filter(Boolean).join('\n');
+
+      try {
+        const sent = await whatsAppService.sendMessage(tenantId, cleanPhone, textToSend);
+        if (sent) whatsappSent++;
+        else whatsappFailed++;
+        await new Promise((r) => setTimeout(r, 120));
+      } catch (err) {
+        logger.warn({ err, phone: cleanPhone }, 'Falha ao disparar promoção WhatsApp para cliente');
+        whatsappFailed++;
+      }
+    }
+  }
+
+  // 2. Disparo via E-mail
+  if (channels.includes('EMAIL')) {
+    const mailCustomers = customers.filter((c) => Boolean(c.email && c.email.includes('@')));
+    const subject = customSubject || `🔥 Promoção Imperdível no ${tenant.name}: ${service.name}!`;
+
+    for (const c of mailCustomers) {
+      const firstName = c.name ? c.name.split(' ')[0] : 'Cliente';
+      const textPlain = customMessage
+        ? customMessage.replace(/\{NOME\}/gi, firstName)
+        : `Olá, ${firstName}! O ${tenant.name} preparou uma super promoção para você: ${service.name} por apenas ${promoPrice}! Agende agora: ${bookingUrl}`;
+
+      const htmlContent = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #0B0F17; color: #F3F4F6; padding: 32px; border-radius: 12px; border: 1px solid rgba(229,179,56,0.3);">
+          <h1 style="color: #E5B338; font-size: 24px; text-align: center; margin-bottom: 8px;">🔥 Super Promoção Especial!</h1>
+          <p style="text-align: center; color: #94A3B8; font-size: 16px; margin-top: 0;">${tenant.name}</p>
+          
+          <div style="background: rgba(255,255,255,0.04); border-radius: 8px; padding: 20px; margin: 24px 0; border: 1px solid rgba(255,255,255,0.08);">
+            <h2 style="color: #FFFFFF; font-size: 20px; margin-top: 0;">${service.name}</h2>
+            ${service.description ? `<p style="color: #94A3B8; font-size: 14px;">${service.description}</p>` : ''}
+            <div style="margin: 16px 0;">
+              ${service.promoPriceCents ? `<span style="text-decoration: line-through; color: #64748B; font-size: 16px; margin-right: 12px;">De: ${originalPrice}</span>` : ''}
+              <span style="color: #10B981; font-size: 26px; font-weight: bold;">Por: ${promoPrice}</span>
+              ${discountPercent > 0 ? `<span style="background: rgba(16,185,129,0.2); color: #34D399; font-size: 13px; font-weight: bold; padding: 4px 8px; border-radius: 6px; margin-left: 10px;">${discountPercent}% OFF</span>` : ''}
+            </div>
+            ${service.promoTitle ? `<p style="color: #E5B338; font-size: 14px; font-weight: 600;">🏷️ ${service.promoTitle}</p>` : ''}
+          </div>
+
+          <div style="text-align: center; margin-top: 28px;">
+            <a href="${bookingUrl}" style="background: linear-gradient(135deg, #E5B338 0%, #D4A017 100%); color: #0B0F17; padding: 14px 28px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 16px; display: inline-block;">
+              Agendar Meu Horário Agora
+            </a>
+          </div>
+          <p style="text-align: center; color: #64748B; font-size: 12px; margin-top: 30px;">
+            Enviado com carinho por ${tenant.name}.
+          </p>
+        </div>
+      `;
+
+      try {
+        const sent = await sendEmail({
+          to: c.email!,
+          subject,
+          html: htmlContent,
+          text: textPlain,
+        });
+        if (sent) emailSent++;
+        else emailFailed++;
+        await new Promise((r) => setTimeout(r, 100));
+      } catch (err) {
+        logger.warn({ err, email: c.email }, 'Falha ao disparar e-mail promocional');
+        emailFailed++;
+      }
+    }
+  }
+
+  res.json({
+    success: true,
+    totalCustomers: customers.length,
+    whatsappSent,
+    whatsappFailed,
+    emailSent,
+    emailFailed,
+    bookingUrl,
+  });
 });
