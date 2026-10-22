@@ -129,8 +129,12 @@ function layoutDayAppointments(apps: Appointment[]) {
 }
 
 export default function CalendarPage() {
-  const { tenant } = useAuth();
+  const { tenant, user } = useAuth();
   const timezone = tenant?.timezone || 'America/Sao_Paulo';
+
+  const isRestrictedProfessional =
+    user?.role === 'PROFESSIONAL' && user?.permissions?.canViewAllAppointments !== true;
+  const loggedInProfId = user?.professional?.id;
 
   const [selectedDate, setSelectedDate] = useState<DateTime>(DateTime.now().setZone(timezone));
   const [viewMode, setViewMode] = useState<CalendarViewMode>('week');
@@ -144,7 +148,9 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [selectedProfId, setSelectedProfId] = useState<string>('ALL');
+  const [selectedProfId, setSelectedProfId] = useState<string>(
+    isRestrictedProfessional && loggedInProfId ? loggedInProfId : 'ALL'
+  );
   const [loading, setLoading] = useState(true);
 
   // Modais
@@ -157,7 +163,7 @@ export default function CalendarPage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [newServiceId, setNewServiceId] = useState('');
-  const [newProfId, setNewProfId] = useState('');
+  const [newProfId, setNewProfId] = useState(isRestrictedProfessional && loggedInProfId ? loggedInProfId : '');
   const [newTime, setNewTime] = useState('10:00');
   const [newNotes, setNewNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -167,6 +173,13 @@ export default function CalendarPage() {
 
   // Dias da visão atual
   const visibleDays = useMemo(() => getDaysForView(selectedDate, viewMode), [selectedDate, viewMode]);
+
+  const visibleProfessionals = useMemo(() => {
+    if (isRestrictedProfessional && loggedInProfId) {
+      return professionals.filter((p) => p.id === loggedInProfId);
+    }
+    return professionals;
+  }, [professionals, isRestrictedProfessional, loggedInProfId]);
 
   // Carrega agendamentos para todo o período da visão ativa
   const loadData = async () => {
@@ -184,8 +197,17 @@ export default function CalendarPage() {
       ]);
 
       setAppointments(appsRes.appointments || []);
-      setProfessionals(profsRes.professionals || []);
+      const loadedProfs = profsRes.professionals || [];
+      setProfessionals(loadedProfs);
       setServices(servsRes.services || []);
+
+      if (isRestrictedProfessional && loggedInProfId) {
+        setSelectedProfId(loggedInProfId);
+        setNewProfId(loggedInProfId);
+      } else if (!newProfId && loadedProfs.length) {
+        setNewProfId(loadedProfs[0].id);
+      }
+
       if (servsRes.services?.length && !newServiceId) {
         setNewServiceId(servsRes.services[0].id);
       }
@@ -563,87 +585,89 @@ export default function CalendarPage() {
                     Profissionais
                   </span>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {professionals.length}
+                    {visibleProfessionals.length}
                   </span>
                 </div>
 
-                {/* Opção: Todos os Profissionais */}
-                <button
-                  type="button"
-                  onClick={() => setSelectedProfId('ALL')}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: selectedProfId === 'ALL' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                    transition: 'background 0.15s ease',
-                    textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                    {/* Checkbox customizado estilo Teams */}
-                    <div
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '3px',
-                        flexShrink: 0,
-                        background: selectedProfId === 'ALL' ? 'var(--primary)' : 'transparent',
-                        border: selectedProfId === 'ALL' ? 'none' : '1.5px solid rgba(255, 255, 255, 0.35)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {selectedProfId === 'ALL' && <Check size={12} color="#0B0F17" strokeWidth={3} />}
+                {/* Opção: Todos os Profissionais (Apenas para Dono ou Barbeiro com visão global) */}
+                {!isRestrictedProfessional && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProfId('ALL')}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: selectedProfId === 'ALL' ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+                      transition: 'background 0.15s ease',
+                      textAlign: 'left',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedProfId !== 'ALL') e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                      {/* Checkbox customizado estilo Teams */}
+                      <div
+                        style={{
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '3px',
+                          flexShrink: 0,
+                          background: selectedProfId === 'ALL' ? 'var(--primary)' : 'transparent',
+                          border: selectedProfId === 'ALL' ? 'none' : '1.5px solid rgba(255, 255, 255, 0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {selectedProfId === 'ALL' && <Check size={12} color="#0B0F17" strokeWidth={3} />}
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '0.84rem',
+                          fontWeight: selectedProfId === 'ALL' ? 700 : 500,
+                          color: selectedProfId === 'ALL' ? '#FFFFFF' : 'var(--text-muted)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        Todos os Profissionais
+                      </span>
                     </div>
 
-                    <span
-                      style={{
-                        fontSize: '0.84rem',
-                        fontWeight: selectedProfId === 'ALL' ? 700 : 500,
-                        color: selectedProfId === 'ALL' ? '#FFFFFF' : 'var(--text-muted)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      Todos os Profissionais
-                    </span>
-                  </div>
+                    {appointments.length > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          color: 'var(--text-dim)',
+                          fontWeight: 600,
+                          marginLeft: '6px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {appointments.length}
+                      </span>
+                    )}
+                  </button>
+                )}
 
-                  {appointments.length > 0 && (
-                    <span
-                      style={{
-                        fontSize: '0.72rem',
-                        padding: '1px 6px',
-                        borderRadius: '10px',
-                        background: 'rgba(255, 255, 255, 0.06)',
-                        color: 'var(--text-dim)',
-                        fontWeight: 600,
-                        marginLeft: '6px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {appointments.length}
-                    </span>
-                  )}
-                </button>
-
-                {/* Lista de Profissionais */}
-                {professionals.map((p) => {
+                {/* Lista de Profissionais Visíveis */}
+                {visibleProfessionals.map((p) => {
                   const isSelected = selectedProfId === p.id;
                   const profAppsCount = appointments.filter((a) => a.professional.id === p.id).length;
                   const itemColor = p.color || 'var(--primary)';
@@ -838,24 +862,44 @@ export default function CalendarPage() {
               {/* Lado Direito: Filtro de Profissionais + Seletor de Visão + Botão Novo */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {/* Filtro Rápido de Profissionais no Topo */}
-                <div style={{ width: '185px' }}>
-                  <Select
-                    value={selectedProfId}
-                    onChange={(e) => setSelectedProfId(e.target.value)}
+                {!isRestrictedProfessional ? (
+                  <div style={{ width: '185px' }}>
+                    <Select
+                      value={selectedProfId}
+                      onChange={(e) => setSelectedProfId(e.target.value)}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.82rem',
+                        height: '34px',
+                      }}
+                    >
+                      <option value="ALL">Todos os Profissionais</option>
+                      {professionals.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : (
+                  <div
                     style={{
-                      padding: '6px 12px',
+                      padding: '6px 14px',
+                      background: 'rgba(229, 179, 56, 0.1)',
+                      border: '1px solid rgba(229, 179, 56, 0.25)',
+                      borderRadius: '6px',
                       fontSize: '0.82rem',
-                      height: '34px',
+                      fontWeight: 600,
+                      color: 'var(--primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
                     }}
                   >
-                    <option value="ALL">Todos os Profissionais</option>
-                    {professionals.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
+                    <span>Sua Agenda:</span>
+                    <strong style={{ color: '#F3F4F6' }}>{user?.name}</strong>
+                  </div>
+                )}
 
                 {/* Seletor de Visão (Teams Style) */}
                 <div
@@ -1490,14 +1534,32 @@ export default function CalendarPage() {
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Profissional
               </label>
-              <Select value={newProfId} onChange={(e) => setNewProfId(e.target.value)}>
-                <option value="">Qualquer Disponível</option>
-                {professionals.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+              {isRestrictedProfessional ? (
+                <input
+                  type="text"
+                  disabled
+                  value={user?.name || 'Você'}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                    cursor: 'not-allowed',
+                  }}
+                />
+              ) : (
+                <Select value={newProfId} onChange={(e) => setNewProfId(e.target.value)}>
+                  <option value="">Qualquer Disponível</option>
+                  {professionals.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
           </div>
 

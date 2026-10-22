@@ -14,20 +14,23 @@ import {
   Settings,
   Sparkles,
 } from 'lucide-react';
+import { useAuth } from '../lib/auth-context';
 
-const menuItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Calendário & Agenda', href: '/calendar', icon: Calendar },
-  { label: 'Profissionais', href: '/professionals', icon: Users },
-  { label: 'Serviços & Preços', href: '/services', icon: Scissors },
-  { label: 'Clientes', href: '/customers', icon: UserCheck },
-  { label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
-  { label: 'Bot WhatsApp', href: '/whatsapp', icon: MessageSquare, highlight: true },
-  { label: 'Configurações', href: '/settings', icon: Settings },
+export const ALL_MENU_KEYS = [
+  { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { key: 'calendar', label: 'Calendário & Agenda', href: '/calendar', icon: Calendar },
+  { key: 'professionals', label: 'Profissionais', href: '/professionals', icon: Users },
+  { key: 'services', label: 'Serviços & Preços', href: '/services', icon: Scissors },
+  { key: 'customers', label: 'Clientes', href: '/customers', icon: UserCheck },
+  { key: 'finance', label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
+  { key: 'whatsapp', label: 'Bot WhatsApp', href: '/whatsapp', icon: MessageSquare, highlight: true },
+  { key: 'settings', label: 'Configurações', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { canAccessMenu } = useAuth();
+  const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
   return (
     <aside
@@ -81,7 +84,7 @@ export function Sidebar() {
 
         {/* Navigation links */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {menuItems.map((item) => {
+          {visibleMenuItems.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
 

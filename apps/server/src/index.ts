@@ -8,7 +8,7 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { DEFAULT_PLANS } from './lib/defaults.js';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler.js';
-import { requireAuth, requireSuperAdmin, requireTenant } from './middlewares/auth.js';
+import { requireAuth, requireSuperAdmin, requireTenant, requireMenuPermission } from './middlewares/auth.js';
 
 // Rotas dos módulos
 import { authRouter } from './modules/auth/auth.routes.js';
@@ -68,15 +68,15 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/public', publicRouter);
 app.use('/api/auth', authRouter);
 
-// Rotas do painel do salão (requer login + contexto do tenant)
+// Rotas do painel do salão (requer login + contexto do tenant + permissão granular de menu)
 app.use('/api/tenant', requireAuth, requireTenant, tenantRouter);
-app.use('/api/professionals', requireAuth, requireTenant, professionalsRouter);
+app.use('/api/professionals', requireAuth, requireTenant, requireMenuPermission('professionals'), professionalsRouter);
 app.use('/api/services', requireAuth, requireTenant, servicesRouter);
-app.use('/api/customers', requireAuth, requireTenant, customersRouter);
+app.use('/api/customers', requireAuth, requireTenant, requireMenuPermission('customers'), customersRouter);
 app.use('/api/appointments', requireAuth, requireTenant, appointmentsRouter);
-app.use('/api/finance', requireAuth, requireTenant, financeRouter);
-app.use('/api/whatsapp', requireAuth, requireTenant, whatsAppRouter);
-app.use('/api/dashboard', requireAuth, requireTenant, dashboardRouter);
+app.use('/api/finance', requireAuth, requireTenant, requireMenuPermission('finance'), financeRouter);
+app.use('/api/whatsapp', requireAuth, requireTenant, requireMenuPermission('whatsapp'), whatsAppRouter);
+app.use('/api/dashboard', requireAuth, requireTenant, requireMenuPermission('dashboard'), dashboardRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);

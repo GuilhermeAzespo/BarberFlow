@@ -1,12 +1,41 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Users, Plus, Edit2, Trash2, CheckCircle2, AlertCircle, Phone, Percent } from 'lucide-react';
+import {
+  Users,
+  Plus,
+  Edit2,
+  Trash2,
+  Phone,
+  Percent,
+  Shield,
+  ShieldCheck,
+  ShieldAlert,
+  Key,
+  Eye,
+  EyeOff,
+  Lock,
+  Calendar as CalendarIcon,
+  Check,
+} from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+
+interface UserPermissions {
+  allowedMenus?: string[];
+  canViewAllAppointments?: boolean;
+}
+
+interface ProfessionalUser {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  permissions?: UserPermissions | null;
+}
 
 interface Professional {
   id: string;
@@ -17,6 +46,7 @@ interface Professional {
   commissionPercent: number;
   isActive: boolean;
   serviceIds: string[];
+  user?: ProfessionalUser | null;
 }
 
 interface Service {
@@ -24,8 +54,19 @@ interface Service {
   name: string;
 }
 
+const AVAILABLE_MENUS: { key: string; label: string; description: string }[] = [
+  { key: 'dashboard', label: 'Dashboard', description: 'Visão geral e métricas' },
+  { key: 'calendar', label: 'Calendário & Agenda', description: 'Visualizar e criar agendamentos' },
+  { key: 'professionals', label: 'Profissionais', description: 'Gerenciar equipe e permissões' },
+  { key: 'services', label: 'Serviços & Preços', description: 'Catálogo de serviços e valores' },
+  { key: 'customers', label: 'Clientes', description: 'Base e histórico de clientes' },
+  { key: 'finance', label: 'Fluxo de Caixa', description: 'Receitas, despesas e faturamento' },
+  { key: 'whatsapp', label: 'Bot WhatsApp', description: 'QR Code e automações de mensagens' },
+  { key: 'settings', label: 'Configurações', description: 'Horários de funcionamento do salão' },
+];
+
 export default function ProfessionalsPage() {
-  const { subscription } = useAuth();
+  const { user: currentUser, subscription } = useAuth();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +81,15 @@ export default function ProfessionalsPage() {
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Segurança & Acesso
+  const [hasLogin, setHasLogin] = useState(false);
+  const [existingHasLogin, setExistingHasLogin] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [canViewAllAppointments, setCanViewAllAppointments] = useState(false);
+  const [allowedMenus, setAllowedMenus] = useState<string[]>(['calendar']);
 
   const loadData = async () => {
     setLoading(true);
@@ -68,6 +118,13 @@ export default function ProfessionalsPage() {
     setColor('#E5B338');
     setCommissionPercent(0);
     setSelectedServices(services.map((s) => s.id));
+    setHasLogin(false);
+    setExistingHasLogin(false);
+    setLoginEmail('');
+    setLoginPassword('');
+    setShowPassword(false);
+    setCanViewAllAppointments(false);
+    setAllowedMenus(['calendar']);
     setErrorMsg(null);
     setIsModalOpen(true);
   };
@@ -79,6 +136,21 @@ export default function ProfessionalsPage() {
     setColor(p.color || '#E5B338');
     setCommissionPercent(p.commissionPercent || 0);
     setSelectedServices(p.serviceIds || []);
+
+    const user = p.user;
+    const hasUser = !!(user && user.isActive);
+    setHasLogin(hasUser);
+    setExistingHasLogin(hasUser);
+    setLoginEmail(user?.email || p.email || '');
+    setLoginPassword('');
+    setShowPassword(false);
+    setCanViewAllAppointments(!!user?.permissions?.canViewAllAppointments);
+    setAllowedMenus(
+      user?.permissions?.allowedMenus && user.permissions.allowedMenus.length > 0
+        ? user.permissions.allowedMenus
+        : ['calendar']
+    );
+
     setErrorMsg(null);
     setIsModalOpen(true);
   };
@@ -86,15 +158,40 @@ export default function ProfessionalsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    if (hasLogin) {
+      if (!loginEmail.trim() || !loginEmail.includes('@')) {
+        setErrorMsg('Informe um e-mail válido para o acesso do profissional.');
+        return;
+      }
+      if (!existingHasLogin && (!loginPassword || loginPassword.length < 6)) {
+        setErrorMsg('Para habilitar o primeiro acesso, defina uma senha com no mínimo 6 caracteres.');
+        return;
+      }
+      if (allowedMenus.length === 0) {
+        setErrorMsg('Selecione ao menos 1 menu permitido para o profissional acessar.');
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         name,
         phone: phone || null,
         color,
         commissionPercent: Number(commissionPercent),
         serviceIds: selectedServices,
+        hasLogin,
+        loginEmail: hasLogin ? loginEmail.trim().toLowerCase() : undefined,
+        loginPassword: hasLogin && loginPassword ? loginPassword : undefined,
+        permissions: hasLogin
+          ? {
+              allowedMenus,
+              canViewAllAppointments,
+            }
+          : undefined,
       };
 
       if (editingId) {
@@ -248,6 +345,90 @@ export default function ProfessionalsPage() {
                         <span>Comissão: <strong>{p.commissionPercent}%</strong></span>
                       </div>
                     </div>
+
+                    {/* Status de Acesso & Segurança */}
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        paddingTop: '12px',
+                        borderTop: '1px solid var(--border-color)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        {p.user && p.user.isActive ? (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontSize: '0.76rem',
+                              color: '#10B981',
+                              background: 'rgba(16, 185, 129, 0.1)',
+                              border: '1px solid rgba(16, 185, 129, 0.25)',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            <ShieldCheck size={13} />
+                            <span style={{ fontWeight: 600 }}>Login Ativo</span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontSize: '0.76rem',
+                              color: 'var(--text-dim)',
+                              background: 'rgba(255, 255, 255, 0.04)',
+                              border: '1px solid var(--border-color)',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            <Lock size={13} />
+                            <span>Sem login</span>
+                          </div>
+                        )}
+
+                        {p.user && p.user.isActive && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                            <CalendarIcon size={12} color="var(--primary)" />
+                            <span>
+                              {p.user.permissions?.canViewAllAppointments ? 'Agenda de todos' : 'Apenas sua agenda'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {p.user && p.user.isActive && (
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Shield size={12} color="var(--primary)" />
+                          <span>
+                            {p.user.permissions?.allowedMenus && p.user.permissions.allowedMenus.length > 0
+                              ? `${p.user.permissions.allowedMenus.length} menu(s) liberado(s)`
+                              : 'Apenas Calendário'}
+                          </span>
+                          {p.user.email && (
+                            <span
+                              style={{
+                                marginLeft: 'auto',
+                                opacity: 0.75,
+                                maxWidth: '140px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {p.user.email}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -363,6 +544,249 @@ export default function ProfessionalsPage() {
                 );
               })}
             </div>
+          </div>
+
+          {/* Seção Segurança & Acesso ao Sistema */}
+          <div
+            className="glass-card"
+            style={{
+              padding: '16px',
+              borderRadius: '12px',
+              background: hasLogin ? 'rgba(229, 179, 56, 0.04)' : 'rgba(255, 255, 255, 0.02)',
+              border: hasLogin ? '1px solid rgba(229, 179, 56, 0.25)' : '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '8px',
+                    background: hasLogin ? 'rgba(229, 179, 56, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: hasLogin ? 'var(--primary)' : 'var(--text-dim)',
+                  }}
+                >
+                  <Shield size={18} />
+                </div>
+                <div>
+                  <h4 style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                    Acesso ao Sistema BarberFlow
+                  </h4>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Permita que este barbeiro acesse o sistema com usuário e permissões restritas.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle Switch */}
+              <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={hasLogin}
+                  onChange={(e) => setHasLogin(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+                <div
+                  style={{
+                    width: '44px',
+                    height: '24px',
+                    borderRadius: '24px',
+                    background: hasLogin ? 'var(--primary)' : 'rgba(255, 255, 255, 0.15)',
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '2px',
+                      left: hasLogin ? '22px' : '2px',
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      background: hasLogin ? '#0B0F17' : '#ffffff',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }}
+                  />
+                </div>
+              </label>
+            </div>
+
+            {hasLogin && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '10px', borderTop: '1px solid rgba(229, 179, 56, 0.15)' }}>
+                {/* Credenciais */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      E-mail de Login *
+                    </label>
+                    <input
+                      type="email"
+                      required={hasLogin}
+                      placeholder="barbeiro@exemplo.com"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      {existingHasLogin ? 'Nova Senha (opcional)' : 'Senha de Acesso *'}
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required={hasLogin && !existingHasLogin}
+                        placeholder={existingHasLogin ? 'Deixe vazio para manter' : 'Mínimo 6 caracteres'}
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        style={{ paddingRight: '40px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{
+                          position: 'absolute',
+                          right: '10px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visibilidade da Agenda */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    Visibilidade do Calendário & Agenda
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div
+                      onClick={() => setCanViewAllAppointments(false)}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        border: !canViewAllAppointments ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: !canViewAllAppointments ? 'rgba(229, 179, 56, 0.1)' : 'var(--bg-input)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: !canViewAllAppointments ? 'var(--primary)' : 'var(--text-main)' }}>
+                          Apenas sua própria agenda
+                        </span>
+                        {!canViewAllAppointments && <Check size={16} color="var(--primary)" />}
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                        Recomendado. O profissional só vê, cria e edita os horários dele próprio.
+                      </span>
+                    </div>
+
+                    <div
+                      onClick={() => setCanViewAllAppointments(true)}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        border: canViewAllAppointments ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: canViewAllAppointments ? 'rgba(229, 179, 56, 0.1)' : 'var(--bg-input)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: canViewAllAppointments ? 'var(--primary)' : 'var(--text-main)' }}>
+                          Toda a agenda do salão
+                        </span>
+                        {canViewAllAppointments && <Check size={16} color="var(--primary)" />}
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                        Permite ver os agendamentos e horários de todos os barbeiros da barbearia.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Menus e Telas Permitidas */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      Telas e Menus Permitidos
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                      Menus desmarcados ficarão bloqueados e ocultos
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px' }}>
+                    {AVAILABLE_MENUS.map((menu) => {
+                      const isChecked = allowedMenus.includes(menu.key);
+                      return (
+                        <div
+                          key={menu.key}
+                          onClick={() => {
+                            if (isChecked) {
+                              setAllowedMenus(allowedMenus.filter((k) => k !== menu.key));
+                            } else {
+                              setAllowedMenus([...allowedMenus, menu.key]);
+                            }
+                          }}
+                          style={{
+                            padding: '10px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            border: isChecked ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                            background: isChecked ? 'rgba(229, 179, 56, 0.08)' : 'var(--bg-input)',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '8px',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {}} // handled by parent onClick
+                            style={{ marginTop: '2px', cursor: 'pointer' }}
+                          />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                              {menu.label}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                              {menu.description}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>

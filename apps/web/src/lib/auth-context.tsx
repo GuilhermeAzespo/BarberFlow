@@ -4,12 +4,19 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useRouter, usePathname } from 'next/navigation';
 import { api, ApiError } from './api';
 
+export interface UserPermissions {
+  allowedMenus?: string[];
+  canViewAllAppointments?: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'PROFESSIONAL';
   tenantId?: string | null;
+  permissions?: UserPermissions | null;
+  professional?: { id: string; name: string; color?: string } | null;
 }
 
 export interface Tenant {
@@ -57,6 +64,7 @@ interface AuthContextType {
   access: AccessStatus | null;
   isImpersonated: boolean;
   loading: boolean;
+  canAccessMenu: (menuKey: string) => boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -69,6 +77,7 @@ const AuthContext = createContext<AuthContextType>({
   access: null,
   isImpersonated: false,
   loading: true,
+  canAccessMenu: () => true,
   refresh: async () => {},
   logout: async () => {},
   exitImpersonation: async () => {},
@@ -141,6 +150,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const canAccessMenu = useCallback(
+    (menuKey: string): boolean => {
+      if (!user) return false;
+      if (user.role === 'SUPER_ADMIN' || user.role === 'OWNER') return true;
+      const allowed = user.permissions?.allowedMenus;
+      if (!allowed || !Array.isArray(allowed)) return false;
+      return allowed.includes(menuKey);
+    },
+    [user]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -150,6 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         access,
         isImpersonated,
         loading,
+        canAccessMenu,
         refresh,
         logout,
         exitImpersonation,

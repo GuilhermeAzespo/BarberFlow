@@ -130,7 +130,16 @@ authRouter.post('/logout', (_req, res) => {
 authRouter.get('/me', requireAuth, async (req, res) => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: req.auth!.userId },
-    select: { id: true, name: true, email: true, role: true, tenantId: true, lastLoginAt: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      permissions: true,
+      tenantId: true,
+      lastLoginAt: true,
+      professional: { select: { id: true, name: true, color: true } },
+    },
   });
 
   if (!user.tenantId) {

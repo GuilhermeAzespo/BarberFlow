@@ -27,7 +27,14 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, tenantId: true, role: true, isActive: true },
+    select: {
+      id: true,
+      tenantId: true,
+      role: true,
+      isActive: true,
+      permissions: true,
+      professional: { select: { id: true } },
+    },
   });
   if (!user || !user.isActive) throw HttpError.unauthorized('Usuário inválido ou desativado');
 
@@ -35,6 +42,8 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     userId: user.id,
     tenantId: user.tenantId,
     role: user.role,
+    permissions: (user.permissions as any) ?? null,
+    professionalId: user.professional?.id ?? null,
     impersonatedBy: payload.impersonatedBy ?? null,
   };
   next();
@@ -45,6 +54,25 @@ export function requireRole(...roles: UserRole[]) {
     if (!req.auth) throw HttpError.unauthorized();
     if (!roles.includes(req.auth.role)) throw HttpError.forbidden('Você não tem permissão para esta ação');
     next();
+  };
+}
+
+/**
+ * Valida se o usuário tem permissão para acessar o menu/recurso.
+ * Dono do salão (OWNER) e SUPER_ADMIN possuem acesso irrestrito.
+ */
+export function requireMenuPermission(menuKey: string) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.auth) throw HttpError.unauthorized();
+    if (req.auth.role === 'SUPER_ADMIN' || req.auth.role === 'OWNER') {
+      return next();
+    }
+    const allowed = req.auth.permissions?.allowedMenus;
+    // Se não houver restrição explícita ou o menu estiver nos permitidos
+    if (!allowed || allowed.includes(menuKey)) {
+      return next();
+    }
+    throw HttpError.forbidden('Você não tem permissão para acessar esta área');
   };
 }
 
