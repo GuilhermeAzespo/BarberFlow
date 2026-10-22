@@ -223,6 +223,13 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
     });
   }
 
+  if (data.isActive !== undefined && current.userId && hasLogin === undefined) {
+    await prisma.user.update({
+      where: { id: current.userId },
+      data: { isActive: data.isActive },
+    }).catch(() => {});
+  }
+
   const professional = await prisma.$transaction(async (tx) => {
     if (serviceIds) {
       await tx.professionalService.deleteMany({ where: { professionalId: current.id } });
@@ -244,25 +251,51 @@ professionalsRouter.patch('/:id', requireRole('OWNER', 'MANAGER'), async (req, r
   res.json({ professional: serialize(professional) });
 });
 
-/** Remove se não houver histórico; caso contrário apenas desativa (preserva relatórios). */
+/** Remove definitivamente (se force=true ou sem histórico) ou desativa da equipe (mantendo relatórios). */
 professionalsRouter.delete('/:id', requireRole('OWNER', 'MANAGER'), async (req, res) => {
   const tenantId = req.tenantId!;
   const id = req.params.id as string;
+  const force = req.query.force === 'true';
+
   const current = await prisma.professional.findFirst({ where: { id, tenantId } });
   if (!current) throw HttpError.notFound('Profissional não encontrado');
 
-  // Se tiver usuário vinculado, desativa o usuário
-  if (current.userId) {
-    await prisma.user.update({ where: { id: current.userId }, data: { isActive: false } }).catch(() => {});
+  const appointmentsCount = await prisma.appointment.count({ where: { professionalId: current.id } });
+
+  // Se o usuário solicitou exclusão definitiva (force=true) OU se o profissional não tem nenhum agendamento
+  if (force || appointmentsCount === 0) {
+    await prisma.$transaction(async (tx) => {
+      if (appointmentsCount > 0) {
+        await tx.appointment.deleteMany({ where: { professionalId: current.id, tenantId } });
+      }
+      await tx.professionalService.deleteMany({ where: { professionalId: current.id } });
+      await tx.professional.delete({ where: { id: current.id } });
+      if (current.userId) {
+        await tx.user.delete({ where: { id: current.userId } }).catch(() => {});
+      }
+    });
+
+    return res.json({
+      deleted: true,
+      deactivated: false,
+      message: 'Profissional e histórico excluídos definitivamente com sucesso.',
+    });
   }
 
-  const appointments = await prisma.appointment.count({ where: { professionalId: current.id } });
-  if (appointments > 0) {
-    await prisma.professional.update({ where: { id: current.id }, data: { isActive: false } });
-    return res.json({ deleted: false, deactivated: true });
-  }
-  await prisma.professional.delete({ where: { id: current.id } });
-  res.json({ deleted: true, deactivated: false });
+  // Caso tenha agendamentos e não forçou exclusão: desativa para preservar relatórios e libera vaga no plano
+  await prisma.$transaction(async (tx) => {
+    await tx.professional.update({ where: { id: current.id }, data: { isActive: false } });
+    if (current.userId) {
+      await tx.user.update({ where: { id: current.userId }, data: { isActive: false } }).catch(() => {});
+    }
+  });
+
+  return res.json({
+    deleted: false,
+    deactivated: true,
+    appointmentsCount,
+    message: 'Profissional desativado da equipe para preservar o histórico.',
+  });
 });
 
 const sendInviteSchema = z.object({

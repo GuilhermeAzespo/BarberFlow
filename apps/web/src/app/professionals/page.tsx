@@ -28,6 +28,9 @@ import {
   Send,
   Key,
   ExternalLink,
+  RotateCcw,
+  AlertTriangle,
+  UserX,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -258,6 +261,12 @@ export default function ProfessionalsPage() {
   const [inviteCopied, setInviteCopied] = useState(false);
   const [sendingBotInvite, setSendingBotInvite] = useState(false);
   const [botInviteSuccess, setBotInviteSuccess] = useState<string | null>(null);
+
+  // Filter tab & Deletion modal states
+  const [filterTab, setFilterTab] = useState<'active' | 'inactive' | 'all'>('active');
+  const [deleteTarget, setDeleteTarget] = useState<Professional | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
 
   // Role preset & Granular permissions
   const [preset, setPreset] = useState<PresetType>('BARBER');
@@ -571,18 +580,58 @@ export default function ProfessionalsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente remover/desativar este membro da equipe?')) return;
+  const showActionSuccess = (msg: string) => {
+    setActionSuccessMsg(msg);
+    setTimeout(() => setActionSuccessMsg(null), 4500);
+  };
+
+  const handleReactivate = async (p: Professional) => {
     try {
-      await api.delete(`/api/professionals/${id}`);
+      await api.patch(`/api/professionals/${p.id}`, { isActive: true });
+      showActionSuccess(`Profissional "${p.name}" foi reativado na equipe com sucesso!`);
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao remover.');
+      alert(err instanceof ApiError ? err.message : 'Falha ao reativar profissional.');
+    }
+  };
+
+  const executeDeactivate = async (id: string) => {
+    setIsDeleting(true);
+    try {
+      await api.delete(`/api/professionals/${id}`);
+      setDeleteTarget(null);
+      showActionSuccess('Profissional desativado da equipe. O histórico financeiro foi mantido.');
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof ApiError ? err.message : 'Falha ao desativar profissional.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const executeForceDelete = async (id: string) => {
+    setIsDeleting(true);
+    try {
+      await api.delete(`/api/professionals/${id}?force=true`);
+      setDeleteTarget(null);
+      showActionSuccess('Profissional e histórico excluídos definitivamente do sistema.');
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof ApiError ? err.message : 'Falha ao excluir profissional.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const maxProfs = subscription?.limits.maxProfessionals;
   const activeCount = professionals.filter((p) => p.isActive).length;
+  const inactiveCount = professionals.filter((p) => !p.isActive).length;
+
+  const filteredProfessionals = professionals.filter((p) => {
+    if (filterTab === 'active') return p.isActive;
+    if (filterTab === 'inactive') return !p.isActive;
+    return true;
+  });
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -623,18 +672,103 @@ export default function ProfessionalsPage() {
             </div>
           </div>
 
+          {/* Action Success Toast Banner */}
+          {actionSuccessMsg && (
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                color: '#10B981',
+                fontSize: '0.85rem',
+                fontWeight: 500,
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <Check size={16} />
+              <span>{actionSuccessMsg}</span>
+            </div>
+          )}
+
           {/* List of Professionals & Team Members */}
           <div className="glass-panel" style={{ padding: '24px' }}>
+            {/* Filter Tabs */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.03)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('active')}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: filterTab === 'active' ? 600 : 500,
+                    background: filterTab === 'active' ? 'var(--primary)' : 'transparent',
+                    color: filterTab === 'active' ? '#0B0F17' : 'var(--text-muted)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Ativos ({activeCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('inactive')}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: filterTab === 'inactive' ? 600 : 500,
+                    background: filterTab === 'inactive' ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
+                    color: filterTab === 'inactive' ? '#EF4444' : 'var(--text-muted)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Inativos ({inactiveCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilterTab('all')}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    fontSize: '0.82rem',
+                    fontWeight: filterTab === 'all' ? 600 : 500,
+                    background: filterTab === 'all' ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+                    color: filterTab === 'all' ? 'var(--text-main)' : 'var(--text-muted)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Todos ({professionals.length})
+                </button>
+              </div>
+            </div>
+
             {loading ? (
               <p style={{ color: 'var(--text-dim)', textAlign: 'center', padding: '30px' }}>Carregando equipe...</p>
-            ) : professionals.length === 0 ? (
+            ) : filteredProfessionals.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                 <Users size={40} color="var(--text-dim)" style={{ marginBottom: '12px' }} />
-                <p>Nenhum profissional ou membro cadastrado.</p>
+                <p>
+                  {filterTab === 'active'
+                    ? 'Nenhum profissional ativo na equipe.'
+                    : filterTab === 'inactive'
+                    ? 'Nenhum membro desativado.'
+                    : 'Nenhum profissional ou membro cadastrado.'}
+                </p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '18px' }}>
-                {professionals.map((p) => {
+                {filteredProfessionals.map((p) => {
                   const userPerms = p.user?.permissions;
                   const cardPresetId = userPerms?.preset || (p.user?.role === 'MANAGER' ? 'ADMIN' : 'BARBER');
                   const presetDef = ROLE_PRESETS.find((r) => r.id === cardPresetId) || ROLE_PRESETS[4];
@@ -711,12 +845,32 @@ export default function ProfessionalsPage() {
                                 >
                                   {isWorker ? 'Corta cabelo' : 'Apoio Administrativo'}
                                 </span>
+
+                                {!p.isActive && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      fontWeight: 600,
+                                      padding: '2px 7px',
+                                      borderRadius: '5px',
+                                      background: 'rgba(239, 68, 68, 0.12)',
+                                      color: '#EF4444',
+                                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                    }}
+                                  >
+                                    <UserX size={11} />
+                                    <span>Desativado</span>
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            {p.user && p.user.isActive && (
+                            {p.isActive && p.user && p.user.isActive && (
                               <>
                                 <button
                                   type="button"
@@ -774,34 +928,79 @@ export default function ProfessionalsPage() {
                                 </button>
                               </>
                             )}
-                            <button
-                              onClick={() => openEditModal(p)}
-                              title="Editar e Permissões"
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer',
-                                padding: '6px',
-                                borderRadius: '6px',
-                              }}
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(p.id)}
-                              title="Remover"
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#FB7185',
-                                cursor: 'pointer',
-                                padding: '6px',
-                                borderRadius: '6px',
-                              }}
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {p.isActive ? (
+                              <>
+                                <button
+                                  onClick={() => openEditModal(p)}
+                                  title="Editar e Permissões"
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => setDeleteTarget(p)}
+                                  title="Remover / Desativar"
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#FB7185',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                  }}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReactivate(p)}
+                                  title="Reativar Membro na Equipe"
+                                  style={{
+                                    background: 'rgba(16, 185, 129, 0.12)',
+                                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                                    color: '#10B981',
+                                    cursor: 'pointer',
+                                    padding: '5px 9px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    fontSize: '0.76rem',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  <RotateCcw size={13} />
+                                  <span>Reativar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget(p)}
+                                  title="Excluir Definitivamente"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                                    color: '#EF4444',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                  }}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -834,7 +1033,24 @@ export default function ProfessionalsPage() {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                          {p.user && p.user.isActive ? (
+                          {!p.isActive ? (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '0.76rem',
+                                color: '#EF4444',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <UserX size={13} />
+                              <span style={{ fontWeight: 600 }}>Equipe Inativa</span>
+                            </div>
+                          ) : p.user && p.user.isActive ? (
                             <div
                               style={{
                                 display: 'flex',
@@ -1807,6 +2023,182 @@ export default function ProfessionalsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: Remover ou Desativar Membro da Equipe */}
+      <Modal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => !isDeleting && setDeleteTarget(null)}
+        title={deleteTarget?.isActive ? 'Remover Membro da Equipe' : 'Excluir Profissional'}
+      >
+        {deleteTarget && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#EF4444',
+                  flexShrink: 0,
+                }}
+              >
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                  {deleteTarget.name}
+                </h4>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
+                  {deleteTarget.isActive
+                    ? 'Como você deseja prosseguir com a remoção deste membro da equipe?'
+                    : 'Este profissional já está desativado da equipe. Você pode reativá-lo ou excluí-lo permanentemente do sistema.'}
+                </p>
+              </div>
+            </div>
+
+            {deleteTarget.isActive ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Opção 1: Desativar (Recomendado) */}
+                <div
+                  onClick={() => !isDeleting && executeDeactivate(deleteTarget.id)}
+                  className="glass-card"
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    background: 'rgba(229, 179, 56, 0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--primary)' }}>
+                      🟡 Desativar da Equipe (Recomendado)
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Preserva histórico</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    Remove o profissional da tela ativa, da agenda pública e libera a vaga no seu plano, mantendo intactos todos os relatórios financeiros e atendimentos passados.
+                  </p>
+                </div>
+
+                {/* Opção 2: Excluir Definitivamente */}
+                <div
+                  onClick={() => !isDeleting && executeForceDelete(deleteTarget.id)}
+                  className="glass-card"
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    background: 'rgba(239, 68, 68, 0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#EF4444' }}>
+                      🔴 Excluir Definitivamente (Apagar Tudo)
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: '#EF4444' }}>Ação irreversível</span>
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                    Apaga permanentemente o cadastro do profissional, credenciais de login e quaisquer agendamentos de teste vinculados a ele do banco de dados.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    color: '#F87171',
+                    fontSize: '0.82rem',
+                    lineHeight: '1.45',
+                  }}
+                >
+                  Atenção: A exclusão permanente apagará todos os dados, serviços vinculados e agendamentos deste profissional. Esta ação não pode ser desfeita.
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => executeForceDelete(deleteTarget.id)}
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    background: '#EF4444',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    border: 'none',
+                    cursor: isDeleting ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <Trash2 size={16} />
+                  <span>{isDeleting ? 'Excluindo permanentemente...' : 'Excluir Permanentemente do Sistema'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => {
+                    const t = deleteTarget;
+                    setDeleteTarget(null);
+                    handleReactivate(t);
+                  }}
+                  className="glass-card"
+                  style={{
+                    padding: '12px',
+                    borderRadius: '8px',
+                    color: '#10B981',
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <RotateCcw size={16} />
+                  <span>Reativar Membro na Equipe</span>
+                </button>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px' }}>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteTarget(null)}
+                className="glass-card"
+                style={{ padding: '8px 16px', fontSize: '0.85rem', fontWeight: 500 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
