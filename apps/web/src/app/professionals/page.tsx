@@ -199,6 +199,29 @@ const AVAILABLE_MENUS: { key: string; label: string; description: string }[] = [
   { key: 'settings', label: 'Configurações', description: 'Horários de funcionamento do salão' },
 ];
 
+function CustomCheckbox({ checked }: { checked: boolean }) {
+  return (
+    <div
+      style={{
+        width: '18px',
+        height: '18px',
+        minWidth: '18px',
+        minHeight: '18px',
+        borderRadius: '5px',
+        border: checked ? '1.5px solid var(--primary)' : '1px solid var(--border-color)',
+        background: checked ? 'var(--primary)' : 'rgba(255, 255, 255, 0.04)',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        transition: 'all 0.15s ease',
+      }}
+    >
+      {checked && <Check size={12} color="#0B0F17" strokeWidth={3} />}
+    </div>
+  );
+}
+
 export default function ProfessionalsPage() {
   const { subscription } = useAuth();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -1079,7 +1102,7 @@ export default function ProfessionalsPage() {
                     </span>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '8px' }}>
                     {AVAILABLE_MENUS.map((menu) => {
                       const isChecked = allowedMenus.includes(menu.key);
                       return (
@@ -1094,28 +1117,24 @@ export default function ProfessionalsPage() {
                             }
                           }}
                           style={{
-                            padding: '10px',
+                            padding: '10px 12px',
                             borderRadius: '8px',
                             cursor: 'pointer',
                             border: isChecked ? '1px solid var(--primary)' : '1px solid var(--border-color)',
                             background: isChecked ? 'rgba(229, 179, 56, 0.08)' : 'var(--bg-input)',
                             display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: '8px',
+                            alignItems: 'center',
+                            gap: '12px',
                             transition: 'all 0.15s ease',
+                            userSelect: 'none',
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {}}
-                            style={{ marginTop: '2px', cursor: 'pointer' }}
-                          />
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                          <CustomCheckbox checked={isChecked} />
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1 }}>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>
                               {menu.label}
                             </span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', lineHeight: 1.25 }}>
                               {menu.description}
                             </span>
                           </div>
@@ -1138,131 +1157,239 @@ export default function ProfessionalsPage() {
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
                     {/* Agenda */}
-                    <div className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <CalendarIcon size={14} />
+                    <div className="glass-card" style={{ padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid var(--border-color)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '6px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <CalendarIcon size={15} />
                         <span>Agenda & Atendimentos</span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canViewAllAppointments}
-                          onChange={(e) => {
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanViewAllAppointments(e.target.checked);
+                            setCanViewAllAppointments(!canViewAllAppointments);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Ver a agenda de <strong>todos os barbeiros</strong> (se desmarcado, vê apenas a sua)</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageAppointments}
-                          onChange={(e) => {
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canViewAllAppointments ? 'rgba(229, 179, 56, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canViewAllAppointments} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canViewAllAppointments ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Ver a agenda de <strong>todos os barbeiros</strong> (se desmarcado, vê apenas a sua)
+                          </span>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageAppointments(e.target.checked);
+                            setCanManageAppointments(!canManageAppointments);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Criar, reagendar e cancelar horários para <strong>outros profissionais</strong></span>
-                      </label>
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageAppointments ? 'rgba(229, 179, 56, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageAppointments} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageAppointments ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Criar, reagendar e cancelar horários para <strong>outros profissionais</strong>
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Financeiro */}
-                    <div className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#34D399', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <DollarSign size={14} />
+                    <div className="glass-card" style={{ padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid var(--border-color)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#34D399', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '6px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <DollarSign size={15} />
                         <span>Financeiro & Caixa</span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canViewFinancials}
-                          onChange={(e) => {
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanViewFinancials(e.target.checked);
+                            setCanViewFinancials(!canViewFinancials);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Visualizar faturamento total e relatórios financeiros</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageFinancials}
-                          onChange={(e) => {
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canViewFinancials ? 'rgba(52, 211, 153, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canViewFinancials} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canViewFinancials ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Visualizar faturamento total e relatórios financeiros
+                          </span>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageFinancials(e.target.checked);
+                            setCanManageFinancials(!canManageFinancials);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Lançar receitas, despesas manuais e fechar caixa</span>
-                      </label>
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageFinancials ? 'rgba(52, 211, 153, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageFinancials} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageFinancials ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Lançar receitas, despesas manuais e fechar caixa
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Gestão de Clientes e Serviços */}
-                    <div className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <UserCheck size={14} />
+                    <div className="glass-card" style={{ padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid var(--border-color)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '6px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <UserCheck size={15} />
                         <span>Clientes & Serviços</span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageCustomers}
-                          onChange={(e) => {
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageCustomers(e.target.checked);
+                            setCanManageCustomers(!canManageCustomers);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Cadastrar, editar ou remover dados de clientes</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageServices}
-                          onChange={(e) => {
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageCustomers ? 'rgba(56, 189, 248, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageCustomers} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageCustomers ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Cadastrar, editar ou remover dados de clientes
+                          </span>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageServices(e.target.checked);
+                            setCanManageServices(!canManageServices);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Criar e alterar tabela de preços de serviços</span>
-                      </label>
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageServices ? 'rgba(56, 189, 248, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageServices} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageServices ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Criar e alterar tabela de preços de serviços
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Equipe & Barbearia */}
-                    <div className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Settings size={14} />
+                    <div className="glass-card" style={{ padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px', border: '1px solid var(--border-color)', background: 'rgba(255, 255, 255, 0.02)' }}>
+                      <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '8px', paddingBottom: '6px', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <Settings size={15} />
                         <span>Administração & Sistema</span>
                       </div>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageTeam}
-                          onChange={(e) => {
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageTeam(e.target.checked);
+                            setCanManageTeam(!canManageTeam);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Gerenciar outros membros da equipe e acessos</span>
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.78rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={canManageSettings}
-                          onChange={(e) => {
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageTeam ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageTeam} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageTeam ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Gerenciar outros membros da equipe e acessos
+                          </span>
+                        </div>
+
+                        <div
+                          onClick={() => {
                             if (preset !== 'CUSTOM') setPreset('CUSTOM');
-                            setCanManageSettings(e.target.checked);
+                            setCanManageSettings(!canManageSettings);
                           }}
-                          style={{ marginTop: '2px' }}
-                        />
-                        <span>Alterar horários de funcionamento do salão</span>
-                      </label>
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '12px',
+                            padding: '8px 10px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            background: canManageSettings ? 'rgba(245, 158, 11, 0.06)' : 'transparent',
+                            transition: 'background 0.15s ease',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <div style={{ marginTop: '2px' }}>
+                            <CustomCheckbox checked={canManageSettings} />
+                          </div>
+                          <span style={{ fontSize: '0.81rem', color: canManageSettings ? 'var(--text-main)' : 'var(--text-muted)', lineHeight: '1.4', flex: 1 }}>
+                            Alterar horários de funcionamento do salão
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
