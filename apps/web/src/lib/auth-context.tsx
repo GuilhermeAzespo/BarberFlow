@@ -26,7 +26,7 @@ export interface User {
   role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'PROFESSIONAL';
   tenantId?: string | null;
   permissions?: UserPermissions | null;
-  professional?: { id: string; name: string; color?: string } | null;
+  professional?: { id: string; name: string; color?: string; serviceIds?: string[] } | null;
 }
 
 export interface Tenant {

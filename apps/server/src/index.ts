@@ -70,7 +70,7 @@ app.use('/api/auth', authRouter);
 
 // Rotas do painel do salão (requer login + contexto do tenant + permissão granular de menu)
 app.use('/api/tenant', requireAuth, requireTenant, tenantRouter);
-app.use('/api/professionals', requireAuth, requireTenant, requireMenuPermission('professionals'), professionalsRouter);
+app.use('/api/professionals', requireAuth, requireTenant, professionalsRouter);
 app.use('/api/services', requireAuth, requireTenant, servicesRouter);
 app.use('/api/customers', requireAuth, requireTenant, requireMenuPermission('customers'), customersRouter);
 app.use('/api/appointments', requireAuth, requireTenant, appointmentsRouter);

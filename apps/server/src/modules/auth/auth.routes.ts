@@ -106,7 +106,19 @@ authRouter.post('/register', authLimiter, async (req, res) => {
 
 authRouter.post('/login', authLimiter, async (req, res) => {
   const data = loginSchema.parse(req.body);
-  const user = await prisma.user.findUnique({ where: { email: data.email } });
+  const user = await prisma.user.findUnique({
+    where: { email: data.email },
+    include: {
+      professional: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          services: { select: { serviceId: true } },
+        },
+      },
+    },
+  });
 
   // Hash fictício para manter tempo de resposta constante e evitar enumeração de e-mails
   const valid = await bcrypt.compare(data.password, user?.passwordHash ?? '$2a$12$C6UzMDM.H6dfI/f/IKcEeO6zE8bQ1lQx8eXvBPRb6dQyYw5Wm1h2e');
@@ -125,6 +137,14 @@ authRouter.post('/login', authLimiter, async (req, res) => {
       email: user.email,
       role: user.role,
       permissions: user.permissions as any,
+      professional: user.professional
+        ? {
+            id: user.professional.id,
+            name: user.professional.name,
+            color: user.professional.color,
+            serviceIds: user.professional.services.map((s) => s.serviceId),
+          }
+        : null,
     },
     mustChangePassword: Boolean((user.permissions as any)?.mustChangePassword),
   });
@@ -148,12 +168,31 @@ authRouter.get('/me', requireAuth, async (req, res) => {
       permissions: true,
       tenantId: true,
       lastLoginAt: true,
-      professional: { select: { id: true, name: true, color: true } },
+      professional: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          services: { select: { serviceId: true } },
+        },
+      },
     },
   });
 
+  const formattedUser = {
+    ...user,
+    professional: user.professional
+      ? {
+          id: user.professional.id,
+          name: user.professional.name,
+          color: user.professional.color,
+          serviceIds: user.professional.services.map((s) => s.serviceId),
+        }
+      : null,
+  };
+
   if (!user.tenantId) {
-    return res.json({ user, tenant: null, access: { allowed: true, code: 'OK', message: 'OK' } });
+    return res.json({ user: formattedUser, tenant: null, access: { allowed: true, code: 'OK', message: 'OK' } });
   }
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
@@ -164,7 +203,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   const sub = tenant.subscription;
 
   res.json({
-    user,
+    user: formattedUser,
     tenant: {
       id: tenant.id,
       name: tenant.name,

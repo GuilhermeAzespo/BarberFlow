@@ -31,6 +31,7 @@ interface Professional {
   id: string;
   name: string;
   color: string;
+  serviceIds?: string[];
 }
 
 interface Service {
@@ -188,7 +189,7 @@ export default function CalendarPage() {
       const startDate = visibleDays[0].startOf('day').toISO()!;
       const endDate = visibleDays[visibleDays.length - 1].endOf('day').toISO()!;
 
-      const [appsRes, profsRes, servsRes] = await Promise.all([
+      const [appsRes, profsRes, servsRes] = await Promise.allSettled([
         api.get<{ appointments: Appointment[] }>(
           `/api/appointments?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`
         ),
@@ -196,10 +197,13 @@ export default function CalendarPage() {
         api.get<{ services: Service[] }>('/api/services?active=true'),
       ]);
 
-      setAppointments(appsRes.appointments || []);
-      const loadedProfs = profsRes.professionals || [];
+      const loadedApps = appsRes.status === 'fulfilled' ? appsRes.value.appointments || [] : [];
+      const loadedProfs = profsRes.status === 'fulfilled' ? profsRes.value.professionals || [] : [];
+      const loadedServs = servsRes.status === 'fulfilled' ? servsRes.value.services || [] : [];
+
+      setAppointments(loadedApps);
       setProfessionals(loadedProfs);
-      setServices(servsRes.services || []);
+      setServices(loadedServs);
 
       if (isRestrictedProfessional && loggedInProfId) {
         setSelectedProfId(loggedInProfId);
@@ -207,16 +211,46 @@ export default function CalendarPage() {
       } else if (!newProfId && loadedProfs.length) {
         setNewProfId(loadedProfs[0].id);
       }
-
-      if (servsRes.services?.length && !newServiceId) {
-        setNewServiceId(servsRes.services[0].id);
-      }
     } catch {
       // Ignora erro
     } finally {
       setLoading(false);
     }
   };
+
+  // Serviços disponíveis para o agendamento de acordo com o profissional selecionado
+  const availableServices = useMemo(() => {
+    const targetProfId = isRestrictedProfessional && loggedInProfId ? loggedInProfId : newProfId;
+    if (!targetProfId) {
+      return services;
+    }
+
+    const prof = professionals.find((p) => p.id === targetProfId);
+    if (prof && prof.serviceIds && prof.serviceIds.length > 0) {
+      const filtered = services.filter((s) => prof.serviceIds!.includes(s.id));
+      if (filtered.length > 0) return filtered;
+    }
+
+    // Se o usuário logado for barbeiro e seus serviceIds vierem do context
+    if (isRestrictedProfessional && user?.professional?.serviceIds && user.professional.serviceIds.length > 0) {
+      const filtered = services.filter((s) => user.professional!.serviceIds!.includes(s.id));
+      if (filtered.length > 0) return filtered;
+    }
+
+    return services;
+  }, [services, professionals, isRestrictedProfessional, loggedInProfId, newProfId, user]);
+
+  // Sincroniza o serviço selecionado quando a lista de serviços disponíveis mudar
+  useEffect(() => {
+    if (availableServices.length > 0) {
+      const exists = availableServices.some((s) => s.id === newServiceId);
+      if (!exists) {
+        setNewServiceId(availableServices[0].id);
+      }
+    } else {
+      setNewServiceId('');
+    }
+  }, [availableServices, newServiceId]);
 
   useEffect(() => {
     loadData();
@@ -270,6 +304,23 @@ export default function CalendarPage() {
   const handleCellClick = (day: DateTime, hour: number) => {
     setSelectedDate(day);
     setNewTime(`${String(hour).padStart(2, '0')}:00`);
+    if (isRestrictedProfessional && loggedInProfId) {
+      setNewProfId(loggedInProfId);
+    } else if (selectedProfId !== 'ALL') {
+      setNewProfId(selectedProfId);
+    }
+    setErrorMsg(null);
+    setIsNewModalOpen(true);
+  };
+
+  const handleOpenNewModal = () => {
+    setSelectedDate(DateTime.now().setZone(timezone));
+    if (isRestrictedProfessional && loggedInProfId) {
+      setNewProfId(loggedInProfId);
+    } else if (selectedProfId !== 'ALL') {
+      setNewProfId(selectedProfId);
+    }
+    setErrorMsg(null);
     setIsNewModalOpen(true);
   };
 
@@ -417,10 +468,7 @@ export default function CalendarPage() {
               {/* Botão Novo Agendamento no Painel */}
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedDate(DateTime.now().setZone(timezone));
-                  setIsNewModalOpen(true);
-                }}
+                onClick={handleOpenNewModal}
                 className="gold-gradient-primary gold-glow"
                 style={{
                   width: '100%',
@@ -968,10 +1016,7 @@ export default function CalendarPage() {
                 {/* Botão Novo Agendamento no topo */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedDate(DateTime.now().setZone(timezone));
-                    setIsNewModalOpen(true);
-                  }}
+                  onClick={handleOpenNewModal}
                   className="gold-gradient-primary"
                   style={{
                     padding: '7px 14px',
@@ -1521,12 +1566,23 @@ export default function CalendarPage() {
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Serviço *
               </label>
-              <Select required value={newServiceId} onChange={(e) => setNewServiceId(e.target.value)}>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.durationMinutes} min - {formatBRL(s.priceCents)})
+              <Select
+                required
+                value={newServiceId}
+                onChange={(e) => setNewServiceId(e.target.value)}
+                placeholder={availableServices.length === 0 ? 'Nenhum serviço disponível' : 'Selecione...'}
+              >
+                {availableServices.length === 0 ? (
+                  <option value="" disabled>
+                    Nenhum serviço atendido por este profissional
                   </option>
-                ))}
+                ) : (
+                  availableServices.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.durationMinutes} min - {formatBRL(s.priceCents)})
+                    </option>
+                  ))
+                )}
               </Select>
             </div>
 
