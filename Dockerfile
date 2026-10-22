@@ -13,13 +13,16 @@ RUN apt-get update \
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1 \
     PRISMA_HIDE_UPDATE_MESSAGE=1
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000
 
 # ───────────────────── 1. Build do Backend ─────────────────────
 FROM base AS server-builder
 WORKDIR /app/server
 ARG GIT_SHA
 COPY apps/server/package.json apps/server/package-lock.json ./
-RUN npm ci --no-audit --no-fund --prefer-offline
+RUN npm ci --no-audit --no-fund --prefer-offline || npm ci --no-audit --no-fund
 COPY apps/server/tsconfig.json ./
 COPY apps/server/prisma ./prisma
 COPY apps/server/src ./src
@@ -31,7 +34,7 @@ WORKDIR /app/server
 ARG GIT_SHA
 COPY apps/server/package.json apps/server/package-lock.json ./
 COPY apps/server/prisma ./prisma
-RUN npm ci --omit=dev --no-audit --no-fund --prefer-offline \
+RUN (npm ci --omit=dev --no-audit --no-fund --prefer-offline || npm ci --omit=dev --no-audit --no-fund) \
   && npx prisma generate \
   && npm cache clean --force
 
@@ -40,7 +43,7 @@ FROM base AS web-builder
 WORKDIR /app/web
 ARG GIT_SHA
 COPY apps/web/package.json apps/web/package-lock.json ./
-RUN npm ci --no-audit --no-fund --prefer-offline
+RUN npm ci --no-audit --no-fund --prefer-offline || npm ci --no-audit --no-fund
 COPY apps/web ./
 RUN mkdir -p public && npm run build
 
