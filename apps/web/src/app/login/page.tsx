@@ -23,13 +23,32 @@ export default function LoginPage() {
     try {
       const res = await api.post<{
         token: string;
-        user: { id: string; name: string; email: string; role: string };
+        user: {
+          id: string;
+          name: string;
+          email: string;
+          role: string;
+          permissions?: { allowedMenus?: string[] } | null;
+        };
       }>('/api/auth/login', { email, password });
       await refresh();
       if (res.user.role === 'SUPER_ADMIN') {
         router.push('/admin');
       } else {
-        router.push('/dashboard');
+        const allowed = res.user.permissions?.allowedMenus;
+        if (allowed && Array.isArray(allowed)) {
+          if (allowed.includes('dashboard')) {
+            router.push('/dashboard');
+          } else if (allowed.includes('calendar')) {
+            router.push('/calendar');
+          } else if (allowed.length > 0) {
+            router.push(`/${allowed[0]}`);
+          } else {
+            router.push('/calendar');
+          }
+        } else {
+          router.push('/dashboard');
+        }
       }
     } catch (err: unknown) {
       if (err instanceof ApiError) {

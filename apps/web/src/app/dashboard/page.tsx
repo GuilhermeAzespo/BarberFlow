@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   DollarSign,
   Calendar,
@@ -52,11 +53,18 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
-  const { tenant } = useAuth();
+  const { tenant, canAccessMenu, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [origin, setOrigin] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading && !canAccessMenu('dashboard')) {
+      router.replace('/calendar');
+    }
+  }, [authLoading, canAccessMenu, router]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {

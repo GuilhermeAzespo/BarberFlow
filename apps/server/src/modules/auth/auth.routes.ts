@@ -117,7 +117,16 @@ authRouter.post('/login', authLimiter, async (req, res) => {
 
   const token = signToken({ sub: user.id, tid: user.tenantId, role: user.role });
   res.cookie(AUTH_COOKIE, token, authCookieOptions());
-  res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      permissions: user.permissions as any,
+    },
+  });
 });
 
 authRouter.post('/logout', (_req, res) => {

@@ -7,6 +7,7 @@ import { prisma } from '../../lib/prisma.js';
 import { assertProfessionalLimit } from '../../lib/tenant-access.js';
 import { normalizePhone } from '../../lib/utils.js';
 import { requireRole } from '../../middlewares/auth.js';
+import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 
 export const professionalsRouter = Router();
 
@@ -263,3 +264,68 @@ professionalsRouter.delete('/:id', requireRole('OWNER', 'MANAGER'), async (req, 
   await prisma.professional.delete({ where: { id: current.id } });
   res.json({ deleted: true, deactivated: false });
 });
+
+const sendInviteSchema = z.object({
+  channel: z.enum(['WHATSAPP_BOT', 'WHATSAPP_LINK', 'EMAIL']),
+  tempPassword: z.string().optional(),
+});
+
+professionalsRouter.post('/:id/send-invite', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  const id = req.params.id as string;
+  const { channel, tempPassword } = sendInviteSchema.parse(req.body);
+
+  const prof = await prisma.professional.findFirst({
+    where: { id, tenantId },
+    include: {
+      user: true,
+      tenant: { select: { name: true, slug: true } },
+    },
+  });
+
+  if (!prof) throw HttpError.notFound('Profissional não encontrado');
+  if (!prof.user || !prof.user.isActive) {
+    throw HttpError.badRequest('Este membro da equipe ainda não possui login ativo no sistema');
+  }
+
+  const phone = prof.phone ? normalizePhone(prof.phone) : null;
+  const email = prof.user.email || prof.email;
+  const salonName = prof.tenant.name;
+  const appUrl = req.headers.origin || 'https://barberflow.com.br';
+  const loginUrl = `${appUrl}/login`;
+
+  const inviteText = [
+    `✂️ Olá, *${prof.name}*!`,
+    ``,
+    `Você recebeu acesso ao painel do *BarberFlow* na barbearia *${salonName}*.`,
+    ``,
+    `🔐 *Seus dados de acesso:*`,
+    `🌐 *Link do Painel:* ${loginUrl}`,
+    `📧 *E-mail:* ${email}`,
+    tempPassword ? `🔑 *Senha provisória:* ${tempPassword}` : `🔑 *Senha:* (a senha cadastrada pela administração)`,
+    ``,
+    `Acesse o link acima para visualizar sua agenda e gerenciar seus atendimentos!`,
+  ].join('\n');
+
+  if (channel === 'WHATSAPP_BOT') {
+    if (!phone) throw HttpError.badRequest('O profissional não possui telefone/WhatsApp cadastrado');
+    const sent = await whatsAppService.sendMessage(tenantId, phone, inviteText);
+    if (!sent) {
+      throw HttpError.badRequest('Não foi possível enviar via bot. Verifique se o WhatsApp da barbearia está conectado.');
+    }
+    return res.json({ success: true, message: 'Convite enviado com sucesso pelo WhatsApp do salão!' });
+  }
+
+  // Link do WhatsApp
+  const waDigits = phone ? phone.replace(/\D/g, '') : '';
+  const waUrl = waDigits ? `https://wa.me/55${waDigits}?text=${encodeURIComponent(inviteText)}` : null;
+
+  res.json({
+    success: true,
+    message: inviteText,
+    whatsappUrl: waUrl,
+    loginUrl,
+    email,
+  });
+});
+

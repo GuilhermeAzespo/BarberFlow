@@ -22,6 +22,12 @@ import {
   Settings,
   HelpCircle,
   Briefcase,
+  MessageSquare,
+  Mail,
+  Copy,
+  Send,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -223,10 +229,11 @@ function CustomCheckbox({ checked }: { checked: boolean }) {
 }
 
 export default function ProfessionalsPage() {
-  const { subscription } = useAuth();
+  const { subscription, tenant } = useAuth();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
+  const [origin, setOrigin] = useState('');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -246,6 +253,11 @@ export default function ProfessionalsPage() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Invite states
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [sendingBotInvite, setSendingBotInvite] = useState(false);
+  const [botInviteSuccess, setBotInviteSuccess] = useState<string | null>(null);
 
   // Role preset & Granular permissions
   const [preset, setPreset] = useState<PresetType>('BARBER');
@@ -278,7 +290,130 @@ export default function ProfessionalsPage() {
 
   useEffect(() => {
     loadData();
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+    }
   }, []);
+
+  const getCleanPhone = (rawPhone?: string | null) => {
+    if (!rawPhone) return '';
+    const digits = rawPhone.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 10 || digits.length === 11) {
+      return `55${digits}`;
+    }
+    return digits;
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$';
+    let pass = '';
+    const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lowers = 'abcdefghijkmnpqrstuvwxyz';
+    const nums = '23456789';
+    const specs = '!@#$';
+    pass += uppers[Math.floor(Math.random() * uppers.length)];
+    pass += lowers[Math.floor(Math.random() * lowers.length)];
+    pass += lowers[Math.floor(Math.random() * lowers.length)];
+    pass += nums[Math.floor(Math.random() * nums.length)];
+    pass += nums[Math.floor(Math.random() * nums.length)];
+    pass += specs[Math.floor(Math.random() * specs.length)];
+    for (let i = 0; i < 3; i++) {
+      pass += chars[Math.floor(Math.random() * chars.length)];
+    }
+    setLoginPassword(pass);
+    setShowPassword(true);
+  };
+
+  const buildInviteText = (opts?: {
+    targetName?: string;
+    targetEmail?: string;
+    targetRole?: string;
+    password?: string;
+  }) => {
+    const targetName = opts?.targetName || name || 'Membro da Equipe';
+    const targetEmail = opts?.targetEmail || loginEmail || 'seu-email@barberflow.com';
+    const targetRole = opts?.targetRole || roleTitle || 'Profissional';
+    const pwd = opts?.password !== undefined ? opts.password : loginPassword;
+    const salonName = tenant?.name || 'BarberFlow';
+    const loginUrl = `${origin || (typeof window !== 'undefined' ? window.location.origin : '')}/login`;
+
+    let text = `Olá, *${targetName}*! 👋\n\n`;
+    text += `Seu acesso ao sistema *BarberFlow* da *${salonName}* foi liberado com sucesso.\n\n`;
+    text += `👤 *Cargo / Função:* ${targetRole}\n`;
+    text += `🔗 *Link de Acesso:* ${loginUrl}\n`;
+    text += `✉️ *E-mail de Login:* ${targetEmail}\n`;
+    if (pwd) {
+      text += `🔑 *Senha provisória:* ${pwd}\n\n`;
+      text += `Recomendamos trocar sua senha após o primeiro acesso.\n\n`;
+    } else {
+      text += `🔑 *Senha:* Utilize a senha informada pela gerência.\n\n`;
+    }
+    text += `Acesse pelo seu celular ou computador para consultar sua agenda e atendimentos! 💈✂️`;
+    return text;
+  };
+
+  const handleOpenWhatsApp = (targetPhone?: string | null, inviteMessage?: string) => {
+    const p = targetPhone || phone;
+    const digits = getCleanPhone(p);
+    const msg = inviteMessage || buildInviteText();
+    const url = digits
+      ? `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  };
+
+  const handleOpenEmail = (targetEmail?: string | null, inviteMessage?: string) => {
+    const target = targetEmail || loginEmail;
+    if (!target) {
+      alert('Informe o e-mail de login para enviar o convite.');
+      return;
+    }
+    const salonName = tenant?.name || 'BarberFlow';
+    const subject = `Seus dados de acesso ao BarberFlow - ${salonName}`;
+    const body = inviteMessage || buildInviteText();
+    window.location.href = `mailto:${target}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const handleCopyInvite = (customText?: string) => {
+    const text = customText || buildInviteText();
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      textArea.remove();
+    }
+    setInviteCopied(true);
+    setTimeout(() => setInviteCopied(false), 2500);
+  };
+
+  const handleSendBotInvite = async (profId: string) => {
+    if (!profId) return;
+    setSendingBotInvite(true);
+    setBotInviteSuccess(null);
+    try {
+      const res = await api.post<{ success: boolean; message: string; channel: string }>(
+        `/api/professionals/${profId}/send-invite`,
+        {
+          channel: 'WHATSAPP_BOT',
+          tempPassword: loginPassword || undefined,
+        }
+      );
+      setBotInviteSuccess(res.message || 'Convite enviado com sucesso via WhatsApp!');
+      setTimeout(() => setBotInviteSuccess(null), 4000);
+    } catch (err: unknown) {
+      alert(err instanceof ApiError ? err.message : 'Falha ao disparar pelo bot do salão.');
+    } finally {
+      setSendingBotInvite(false);
+    }
+  };
 
   const applyPreset = (p: PresetType, keepServiceWorkerSetting = false) => {
     setPreset(p);
@@ -311,6 +446,8 @@ export default function ProfessionalsPage() {
     setLoginEmail('');
     setLoginPassword('');
     setShowPassword(false);
+    setInviteCopied(false);
+    setBotInviteSuccess(null);
     setErrorMsg(null);
     applyPreset(initialPreset);
     setIsModalOpen(true);
@@ -331,6 +468,8 @@ export default function ProfessionalsPage() {
     setLoginEmail(user?.email || p.email || '');
     setLoginPassword('');
     setShowPassword(false);
+    setInviteCopied(false);
+    setBotInviteSuccess(null);
 
     const perms = user?.permissions;
     const detectedPreset: PresetType =
@@ -576,7 +715,65 @@ export default function ProfessionalsPage() {
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {p.user && p.user.isActive && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const msg = buildInviteText({
+                                      targetName: p.name,
+                                      targetEmail: p.user?.email || p.email || '',
+                                      targetRole: p.user?.permissions?.roleTitle || presetDef.badgeLabel,
+                                      password: '',
+                                    });
+                                    handleOpenWhatsApp(p.phone, msg);
+                                  }}
+                                  title="Enviar dados de acesso via WhatsApp"
+                                  style={{
+                                    background: 'rgba(37, 211, 102, 0.1)',
+                                    border: '1px solid rgba(37, 211, 102, 0.25)',
+                                    color: '#25D366',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <MessageSquare size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const msg = buildInviteText({
+                                      targetName: p.name,
+                                      targetEmail: p.user?.email || p.email || '',
+                                      targetRole: p.user?.permissions?.roleTitle || presetDef.badgeLabel,
+                                      password: '',
+                                    });
+                                    handleCopyInvite(msg);
+                                  }}
+                                  title="Copiar dados de acesso"
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Copy size={15} />
+                                </button>
+                              </>
+                            )}
                             <button
                               onClick={() => openEditModal(p)}
                               title="Editar e Permissões"
@@ -1057,9 +1254,30 @@ export default function ProfessionalsPage() {
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      {existingHasLogin ? 'Nova Senha (opcional)' : 'Senha de Acesso *'}
-                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {existingHasLogin ? 'Nova Senha (opcional)' : 'Senha de Acesso *'}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={generateRandomPassword}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary)',
+                          cursor: 'pointer',
+                          fontSize: '0.74rem',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: 0,
+                        }}
+                      >
+                        <Sparkles size={12} />
+                        <span>Gerar Senha</span>
+                      </button>
+                    </div>
                     <div style={{ position: 'relative' }}>
                       <input
                         type={showPassword ? 'text' : 'password'}
@@ -1089,6 +1307,179 @@ export default function ProfessionalsPage() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Envio de Convite por WhatsApp e E-mail */}
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '10px',
+                    background: 'rgba(37, 211, 102, 0.05)',
+                    border: '1px solid rgba(37, 211, 102, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '7px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#25D366',
+                        }}
+                      >
+                        <Send size={14} />
+                      </div>
+                      <div>
+                        <h5 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                          Enviar Convite com Dados de Acesso
+                        </h5>
+                        <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          Compartilhe o link da plataforma, e-mail e senha diretamente com o colaborador.
+                        </p>
+                      </div>
+                    </div>
+                    {inviteCopied && (
+                      <span style={{ fontSize: '0.74rem', color: '#10B981', fontWeight: 600 }}>
+                        ✓ Mensagem copiada!
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Prévia da mensagem formatada */}
+                  <div
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.25)',
+                      borderRadius: '8px',
+                      padding: '10px 12px',
+                      fontSize: '0.75rem',
+                      color: 'var(--text-muted)',
+                      lineHeight: '1.45',
+                      whiteSpace: 'pre-line',
+                      maxHeight: '110px',
+                      overflowY: 'auto',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
+                    {buildInviteText()}
+                  </div>
+
+                  {/* Botões de Ação */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenWhatsApp()}
+                      style={{
+                        flex: '1 1 auto',
+                        padding: '8px 14px',
+                        borderRadius: '7px',
+                        background: '#25D366',
+                        color: '#072711',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(37, 211, 102, 0.25)',
+                      }}
+                    >
+                      <MessageSquare size={14} />
+                      <span>Enviar por WhatsApp</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEmail()}
+                      style={{
+                        flex: '1 1 auto',
+                        padding: '8px 14px',
+                        borderRadius: '7px',
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        color: '#38BDF8',
+                        fontWeight: 600,
+                        fontSize: '0.8rem',
+                        border: '1px solid rgba(56, 189, 248, 0.3)',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Mail size={14} />
+                      <span>Enviar por E-mail</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyInvite()}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '7px',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.8rem',
+                        border: '1px solid var(--border-color)',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Copy size={14} />
+                      <span>{inviteCopied ? 'Copiado!' : 'Copiar'}</span>
+                    </button>
+
+                    {editingId && (
+                      <button
+                        type="button"
+                        disabled={sendingBotInvite}
+                        onClick={() => handleSendBotInvite(editingId)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '7px',
+                          background: 'rgba(229, 179, 56, 0.12)',
+                          color: 'var(--primary)',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          border: '1px solid rgba(229, 179, 56, 0.25)',
+                          cursor: sendingBotInvite ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        title="Disparar mensagem pelo WhatsApp oficial da barbearia"
+                      >
+                        <Send size={13} />
+                        <span>{sendingBotInvite ? 'Disparando...' : 'Via Bot do Salão'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {botInviteSuccess && (
+                    <div
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#10B981',
+                        fontSize: '0.75rem',
+                      }}
+                    >
+                      ✓ {botInviteSuccess}
+                    </div>
+                  )}
                 </div>
 
                 {/* 3. Menus e Telas Permitidos */}
