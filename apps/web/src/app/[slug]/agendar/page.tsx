@@ -35,6 +35,7 @@ interface Service {
   promoPriceCents?: number | null;
   promoTitle?: string | null;
   promoActive?: boolean;
+  promoExpiresAt?: string | null;
 }
 
 interface Professional {
@@ -585,10 +586,20 @@ function PublicBookingContent() {
               ) : (
                 tenant.services.map((service) => {
                   const isSelected = selectedService?.id === service.id;
-                  const isPromo = Boolean(service.promoActive && service.promoPriceCents && service.promoPriceCents < service.priceCents);
+                  const isPromo = Boolean(
+                    service.promoActive &&
+                    service.promoPriceCents &&
+                    service.promoPriceCents < service.priceCents &&
+                    (!service.promoExpiresAt || new Date(service.promoExpiresAt) > new Date())
+                  );
                   const discountPercent = isPromo
                     ? Math.round(((service.priceCents - service.promoPriceCents!) / service.priceCents) * 100)
                     : 0;
+
+                  const expiresDate = isPromo && service.promoExpiresAt ? new Date(service.promoExpiresAt) : null;
+                  const formattedExpires = expiresDate
+                    ? `${String(expiresDate.getDate()).padStart(2, '0')}/${String(expiresDate.getMonth() + 1).padStart(2, '0')} às ${String(expiresDate.getHours()).padStart(2, '0')}:${String(expiresDate.getMinutes()).padStart(2, '0')}`
+                    : null;
 
                   return (
                     <div
@@ -663,6 +674,12 @@ function PublicBookingContent() {
                             <span style={{ fontSize: '0.74rem', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                               <Tag size={11} />
                               {service.promoTitle}
+                            </span>
+                          )}
+                          {formattedExpires && (
+                            <span style={{ fontSize: '0.72rem', color: '#F87171', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                              <Clock size={11} />
+                              Válido até {formattedExpires}
                             </span>
                           )}
                           {service.description && (
@@ -1125,7 +1142,10 @@ function PublicBookingContent() {
                   {selectedDate.split('-').reverse().join('/')} às {selectedTime}
                 </span>
                 {selectedService && (
-                  selectedService.promoActive && selectedService.promoPriceCents && selectedService.promoPriceCents < selectedService.priceCents ? (
+                  selectedService.promoActive &&
+                  selectedService.promoPriceCents &&
+                  selectedService.promoPriceCents < selectedService.priceCents &&
+                  (!selectedService.promoExpiresAt || new Date(selectedService.promoExpiresAt) > new Date()) ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                       <span style={{ fontSize: '0.78rem', color: '#94A3B8', textDecoration: 'line-through' }}>
                         {formatBRL(selectedService.priceCents)}

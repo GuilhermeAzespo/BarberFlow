@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { DateTime } from 'luxon';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { requireRole } from '../../middlewares/auth.js';
@@ -18,6 +19,17 @@ const serviceSchema = z.object({
   promoPriceCents: z.number().int().min(0).nullable().optional(),
   promoTitle: z.string().trim().max(100).nullable().optional(),
   promoActive: z.boolean().optional(),
+  promoExpiresAt: z
+    .preprocess((arg) => {
+      if (!arg || arg === '') return null;
+      if (arg instanceof Date) return arg;
+      if (typeof arg === 'string') {
+        const d = new Date(arg);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      return null;
+    }, z.date().nullable())
+    .optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -29,10 +41,32 @@ const broadcastPromoSchema = z.object({
 
 servicesRouter.get('/', async (req, res) => {
   const onlyActive = req.query.active === 'true';
-  const services = await prisma.service.findMany({
+  const now = new Date();
+  const rawServices = await prisma.service.findMany({
     where: { tenantId: req.tenantId!, ...(onlyActive ? { isActive: true } : {}) },
     orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
   });
+
+  const expiredIds: string[] = [];
+  const services = rawServices.map((s) => {
+    const isExpired = Boolean(s.promoActive && s.promoExpiresAt && new Date(s.promoExpiresAt) <= now);
+    if (isExpired) expiredIds.push(s.id);
+    return {
+      ...s,
+      promoActive: isExpired ? false : s.promoActive,
+      isPromoExpired: isExpired,
+    };
+  });
+
+  if (expiredIds.length > 0) {
+    prisma.service
+      .updateMany({
+        where: { id: { in: expiredIds } },
+        data: { promoActive: false },
+      })
+      .catch(() => {});
+  }
+
   res.json({ services });
 });
 
@@ -106,6 +140,10 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
     ? Math.round(((service.priceCents - service.promoPriceCents) / service.priceCents) * 100)
     : 0;
 
+  const expiresAtFormatted = service.promoExpiresAt
+    ? DateTime.fromJSDate(service.promoExpiresAt).setZone(tenant.timezone).toFormat("dd/MM 'às' HH:mm")
+    : null;
+
   let whatsappSent = 0;
   let whatsappFailed = 0;
   let emailSent = 0;
@@ -132,6 +170,7 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
             service.promoPriceCents ? `✅ *Por Apenas:* *${promoPrice}*! (${discountPercent}% OFF)` : `💰 *Valor:* *${originalPrice}*`,
             `⏱️ *Duração:* ${service.durationMinutes} minutos`,
             service.promoTitle ? `🏷️ *Condição:* ${service.promoTitle}` : '',
+            expiresAtFormatted ? `⏳ *Oferta por tempo limitado:* Válida até ${expiresAtFormatted}` : '',
             ``,
             `📅 *Garanta seu horário com desconto antes que esgote:*`,
             `🔗 *Agende online em segundos:* ${bookingUrl}`,
@@ -176,6 +215,7 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
               ${discountPercent > 0 ? `<span style="background: rgba(16,185,129,0.2); color: #34D399; font-size: 13px; font-weight: bold; padding: 4px 8px; border-radius: 6px; margin-left: 10px;">${discountPercent}% OFF</span>` : ''}
             </div>
             ${service.promoTitle ? `<p style="color: #E5B338; font-size: 14px; font-weight: 600;">🏷️ ${service.promoTitle}</p>` : ''}
+            ${expiresAtFormatted ? `<p style="color: #F59E0B; font-size: 13px; font-weight: 600; margin-top: 6px;">⏳ Oferta por tempo limitado! Válida até ${expiresAtFormatted}</p>` : ''}
           </div>
 
           <div style="text-align: center; margin-top: 28px;">

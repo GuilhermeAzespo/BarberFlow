@@ -39,6 +39,7 @@ interface Service {
   promoPriceCents?: number | null;
   promoTitle?: string | null;
   promoActive?: boolean;
+  promoExpiresAt?: string | null;
 }
 
 interface Professional {
@@ -428,23 +429,9 @@ export default function TenantHomePage() {
           minHeight: '480px',
           background: tenant.coverUrl
             ? `linear-gradient(180deg, rgba(11, 15, 23, 0.72) 0%, rgba(11, 15, 23, 0.95) 100%), url(${tenant.coverUrl}) center/cover no-repeat`
-            : 'radial-gradient(ellipse at top center, rgba(229, 179, 56, 0.12) 0%, #0B0F17 70%)',
+            : 'linear-gradient(180deg, #111827 0%, #0B0F17 100%)',
         }}
       >
-        {/* Glow Decorator */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '-40px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: '600px',
-            height: '240px',
-            background: 'radial-gradient(circle, rgba(229, 179, 56, 0.18) 0%, transparent 70%)',
-            pointerEvents: 'none',
-          }}
-        />
-
         <div style={{ maxWidth: '820px', width: '100%', textAlign: 'center', position: 'relative', zIndex: 2 }}>
 
           <h1
@@ -686,10 +673,20 @@ export default function TenantHomePage() {
           }}
         >
           {tenant.services.map((service) => {
-            const isPromo = Boolean(service.promoActive && service.promoPriceCents && service.promoPriceCents < service.priceCents);
+            const isPromo = Boolean(
+              service.promoActive &&
+              service.promoPriceCents &&
+              service.promoPriceCents < service.priceCents &&
+              (!service.promoExpiresAt || new Date(service.promoExpiresAt) > new Date())
+            );
             const discountPercent = isPromo
               ? Math.round(((service.priceCents - service.promoPriceCents!) / service.priceCents) * 100)
               : 0;
+
+            const expiresDate = service.promoExpiresAt ? new Date(service.promoExpiresAt) : null;
+            const formattedExpires = expiresDate
+              ? `${String(expiresDate.getDate()).padStart(2, '0')}/${String(expiresDate.getMonth() + 1).padStart(2, '0')} às ${String(expiresDate.getHours()).padStart(2, '0')}:${String(expiresDate.getMinutes()).padStart(2, '0')}`
+              : null;
 
             return (
               <div
@@ -756,6 +753,25 @@ export default function TenantHomePage() {
                         >
                           <Tag size={12} />
                           {service.promoTitle}
+                        </span>
+                      )}
+                      {formattedExpires && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            color: '#F87171',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Clock size={11} />
+                          Válido até {formattedExpires}
                         </span>
                       )}
                     </div>

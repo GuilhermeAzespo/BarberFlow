@@ -77,6 +77,7 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
           promoPriceCents: true,
           promoTitle: true,
           promoActive: true,
+          promoExpiresAt: true,
         },
         orderBy: [{ promoActive: 'desc' }, { name: 'asc' }],
       },
@@ -94,7 +95,20 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   });
 
   if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia não encontrada ou inativa');
-  const { status: _status, galleryImages, ...publicData } = tenant;
+  const { status: _status, galleryImages, services: rawServices, ...publicData } = tenant;
+  const now = new Date();
+  const services = rawServices.map((s) => {
+    const isExpired = Boolean(s.promoActive && s.promoExpiresAt && new Date(s.promoExpiresAt) <= now);
+    if (isExpired) {
+      return {
+        ...s,
+        promoActive: false,
+        promoPriceCents: null,
+      };
+    }
+    return s;
+  });
+
   const gallery = galleryImages.map((img) => ({
     id: img.id,
     title: img.title,
@@ -105,6 +119,7 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   res.json({
     tenant: {
       ...publicData,
+      services,
       gallery,
     },
   });

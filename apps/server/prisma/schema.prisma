@@ -280,8 +280,9 @@ model Service {
   priceCents      Int
   promoPriceCents Int?
   promoTitle      String?
-  promoActive     Boolean  @default(false)
-  isActive        Boolean  @default(true)
+  promoActive     Boolean   @default(false)
+  promoExpiresAt  DateTime?
+  isActive        Boolean   @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
