@@ -30,6 +30,7 @@ const serviceSchema = z.object({
       return null;
     }, z.date().nullable())
     .optional(),
+  promoDaysOfWeek: z.array(z.number().int().min(0).max(6)).optional().default([]),
   isActive: z.boolean().optional(),
 });
 
@@ -39,22 +40,75 @@ const broadcastPromoSchema = z.object({
   customSubject: z.string().trim().optional(),
 });
 
+export const WEEKDAY_NAMES_PT = [
+  'Domingo',
+  'Segunda-feira',
+  'Terça-feira',
+  'Quarta-feira',
+  'Quinta-feira',
+  'Sexta-feira',
+  'Sábado',
+];
+
+export function formatRecurringDays(days?: number[] | null): string {
+  if (!days || days.length === 0 || days.length === 7) return 'Todos os dias';
+  if (days.length === 1) return `Toda ${WEEKDAY_NAMES_PT[days[0]]}`;
+  return days.map((d) => WEEKDAY_NAMES_PT[d]).join(', ');
+}
+
+export function isPromoActiveForDate(
+  service: {
+    promoActive: boolean;
+    promoPriceCents?: number | null;
+    priceCents: number;
+    promoExpiresAt?: Date | string | null;
+    promoDaysOfWeek?: number[] | null;
+  },
+  date: Date = new Date(),
+  timezone: string = 'America/Sao_Paulo'
+): boolean {
+  if (!service.promoActive || !service.promoPriceCents || service.promoPriceCents >= service.priceCents) {
+    return false;
+  }
+  if (service.promoExpiresAt) {
+    const exp = service.promoExpiresAt instanceof Date ? service.promoExpiresAt : new Date(service.promoExpiresAt);
+    if (!isNaN(exp.getTime()) && exp <= new Date()) {
+      return false;
+    }
+  }
+  if (service.promoDaysOfWeek && service.promoDaysOfWeek.length > 0) {
+    const dt = DateTime.fromJSDate(date).setZone(timezone);
+    const jsWeekday = dt.weekday === 7 ? 0 : dt.weekday;
+    if (!service.promoDaysOfWeek.includes(jsWeekday)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 servicesRouter.get('/', async (req, res) => {
   const onlyActive = req.query.active === 'true';
+  const tenantId = req.tenantId!;
+  const [tenant, rawServices] = await Promise.all([
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } }),
+    prisma.service.findMany({
+      where: { tenantId, ...(onlyActive ? { isActive: true } : {}) },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+    }),
+  ]);
+  const timezone = tenant?.timezone || 'America/Sao_Paulo';
   const now = new Date();
-  const rawServices = await prisma.service.findMany({
-    where: { tenantId: req.tenantId!, ...(onlyActive ? { isActive: true } : {}) },
-    orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-  });
 
   const expiredIds: string[] = [];
   const services = rawServices.map((s) => {
     const isExpired = Boolean(s.promoActive && s.promoExpiresAt && new Date(s.promoExpiresAt) <= now);
     if (isExpired) expiredIds.push(s.id);
+    const isPromoToday = isPromoActiveForDate(s, now, timezone);
     return {
       ...s,
       promoActive: isExpired ? false : s.promoActive,
       isPromoExpired: isExpired,
+      isPromoActiveToday: isPromoToday,
     };
   });
 
@@ -144,6 +198,11 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
     ? DateTime.fromJSDate(service.promoExpiresAt).setZone(tenant.timezone).toFormat("dd/MM 'às' HH:mm")
     : null;
 
+  const recurringDaysText =
+    service.promoDaysOfWeek && service.promoDaysOfWeek.length > 0
+      ? formatRecurringDays(service.promoDaysOfWeek)
+      : null;
+
   let whatsappSent = 0;
   let whatsappFailed = 0;
   let emailSent = 0;
@@ -170,6 +229,7 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
             service.promoPriceCents ? `✅ *Por Apenas:* *${promoPrice}*! (${discountPercent}% OFF)` : `💰 *Valor:* *${originalPrice}*`,
             `⏱️ *Duração:* ${service.durationMinutes} minutos`,
             service.promoTitle ? `🏷️ *Condição:* ${service.promoTitle}` : '',
+            recurringDaysText ? `🗓️ *Válida:* ${recurringDaysText}` : '',
             expiresAtFormatted ? `⏳ *Oferta por tempo limitado:* Válida até ${expiresAtFormatted}` : '',
             ``,
             `📅 *Garanta seu horário com desconto antes que esgote:*`,
@@ -215,6 +275,7 @@ servicesRouter.post('/:id/broadcast-promo', requireRole('OWNER', 'MANAGER'), asy
               ${discountPercent > 0 ? `<span style="background: rgba(16,185,129,0.2); color: #34D399; font-size: 13px; font-weight: bold; padding: 4px 8px; border-radius: 6px; margin-left: 10px;">${discountPercent}% OFF</span>` : ''}
             </div>
             ${service.promoTitle ? `<p style="color: #E5B338; font-size: 14px; font-weight: 600;">🏷️ ${service.promoTitle}</p>` : ''}
+            ${recurringDaysText ? `<p style="color: #38BDF8; font-size: 13px; font-weight: 600; margin-top: 6px;">🗓️ Válida: ${recurringDaysText}</p>` : ''}
             ${expiresAtFormatted ? `<p style="color: #F59E0B; font-size: 13px; font-weight: 600; margin-top: 6px;">⏳ Oferta por tempo limitado! Válida até ${expiresAtFormatted}</p>` : ''}
           </div>
 

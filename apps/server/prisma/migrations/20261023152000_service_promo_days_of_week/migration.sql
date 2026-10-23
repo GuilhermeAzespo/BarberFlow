@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Service" ADD COLUMN IF NOT EXISTS "promoDaysOfWeek" INTEGER[] DEFAULT ARRAY[]::INTEGER[];

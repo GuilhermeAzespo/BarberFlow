@@ -229,14 +229,23 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
           serviceId: service.id,
           startAt: start.toJSDate(),
           endAt: end.toJSDate(),
-          priceCents:
-            input.priceCents ??
-            (service.promoActive &&
-            service.promoPriceCents &&
-            service.promoPriceCents < service.priceCents &&
-            (!service.promoExpiresAt || new Date(service.promoExpiresAt) > new Date())
-              ? service.promoPriceCents
-              : service.priceCents),
+          priceCents: (() => {
+            if (input.priceCents !== undefined && input.priceCents !== null) return input.priceCents;
+            const appointmentJsWeekday = start.weekday === 7 ? 0 : start.weekday;
+            const isPromoDay =
+              !service.promoDaysOfWeek ||
+              service.promoDaysOfWeek.length === 0 ||
+              service.promoDaysOfWeek.includes(appointmentJsWeekday);
+
+            const isPromoActive = Boolean(
+              service.promoActive &&
+              service.promoPriceCents &&
+              service.promoPriceCents < service.priceCents &&
+              (!service.promoExpiresAt || new Date(service.promoExpiresAt) > new Date()) &&
+              isPromoDay
+            );
+            return isPromoActive ? service.promoPriceCents! : service.priceCents;
+          })(),
           notes: input.notes ?? null,
           source: input.source,
         },

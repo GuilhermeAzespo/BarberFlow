@@ -21,6 +21,8 @@ import {
   ExternalLink,
   Megaphone,
   Percent,
+  Calendar,
+  Repeat,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
@@ -37,7 +39,9 @@ interface Service {
   promoTitle?: string | null;
   promoActive?: boolean;
   promoExpiresAt?: string | null;
+  promoDaysOfWeek?: number[];
   isPromoExpired?: boolean;
+  isPromoActiveToday?: boolean;
   isActive: boolean;
 }
 
@@ -57,17 +61,36 @@ interface BroadcastResult {
   bookingUrl: string;
 }
 
-const formatForInput = (isoString?: string | null) => {
-  if (!isoString) return '';
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return '';
+const WEEKDAY_OPTIONS = [
+  { day: 1, short: 'Seg', label: 'Segunda-feira' },
+  { day: 2, short: 'Ter', label: 'Terça-feira' },
+  { day: 3, short: 'Qua', label: 'Quarta-feira' },
+  { day: 4, short: 'Qui', label: 'Quinta-feira' },
+  { day: 5, short: 'Sex', label: 'Sexta-feira' },
+  { day: 6, short: 'Sáb', label: 'Sábado' },
+  { day: 0, short: 'Dom', label: 'Domingo' },
+];
+
+const formatDaysList = (days?: number[] | null): string => {
+  if (!days || days.length === 0 || days.length === 7) return 'Todos os dias';
+  if (days.length === 1) {
+    const opt = WEEKDAY_OPTIONS.find((w) => w.day === days[0]);
+    return `Toda ${opt?.label || 'semana'}`;
+  }
+  return days
+    .map((d) => WEEKDAY_OPTIONS.find((w) => w.day === d)?.short)
+    .filter(Boolean)
+    .join(', ');
+};
+
+const formatDateOnly = (d: Date) => {
   const pad = (n: number) => String(n).padStart(2, '0');
-  const year = d.getFullYear();
-  const month = pad(d.getMonth() + 1);
-  const day = pad(d.getDate());
-  const hours = pad(d.getHours());
-  const minutes = pad(d.getMinutes());
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const formatTimeOnly = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 const formatExpirationDisplay = (isoString?: string | null) => {
@@ -94,8 +117,11 @@ export default function ServicesPage() {
   const [promoActive, setPromoActive] = useState(false);
   const [promoPriceCents, setPromoPriceCents] = useState<number | null>(null);
   const [promoTitle, setPromoTitle] = useState('');
+  const [promoIsRecurring, setPromoIsRecurring] = useState(false);
+  const [promoDaysOfWeek, setPromoDaysOfWeek] = useState<number[]>([]);
   const [promoHasExpiration, setPromoHasExpiration] = useState(false);
-  const [promoExpiresAt, setPromoExpiresAt] = useState('');
+  const [promoExpireDate, setPromoExpireDate] = useState('');
+  const [promoExpireTime, setPromoExpireTime] = useState('23:59');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -139,8 +165,11 @@ export default function ServicesPage() {
     setPromoActive(false);
     setPromoPriceCents(null);
     setPromoTitle('');
+    setPromoIsRecurring(false);
+    setPromoDaysOfWeek([]);
     setPromoHasExpiration(false);
-    setPromoExpiresAt('');
+    setPromoExpireDate('');
+    setPromoExpireTime('23:59');
     setErrorMsg(null);
     setIsModalOpen(true);
   };
@@ -154,10 +183,30 @@ export default function ServicesPage() {
     setPromoActive(Boolean(s.promoActive));
     setPromoPriceCents(s.promoPriceCents ?? null);
     setPromoTitle(s.promoTitle || '');
-    setPromoHasExpiration(Boolean(s.promoExpiresAt));
-    setPromoExpiresAt(s.promoExpiresAt ? formatForInput(s.promoExpiresAt) : '');
+
+    const hasDays = Boolean(s.promoDaysOfWeek && s.promoDaysOfWeek.length > 0);
+    setPromoIsRecurring(hasDays);
+    setPromoDaysOfWeek(s.promoDaysOfWeek || []);
+
+    if (s.promoExpiresAt) {
+      const d = new Date(s.promoExpiresAt);
+      setPromoHasExpiration(true);
+      setPromoExpireDate(formatDateOnly(d));
+      setPromoExpireTime(formatTimeOnly(d));
+    } else {
+      setPromoHasExpiration(false);
+      setPromoExpireDate('');
+      setPromoExpireTime('23:59');
+    }
+
     setErrorMsg(null);
     setIsModalOpen(true);
+  };
+
+  const toggleDayOfWeek = (day: number) => {
+    setPromoDaysOfWeek((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort()
+    );
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -169,12 +218,19 @@ export default function ServicesPage() {
       return;
     }
 
-    if (promoActive && promoHasExpiration && promoExpiresAt) {
-      const expDate = new Date(promoExpiresAt);
+    if (promoActive && promoIsRecurring && promoDaysOfWeek.length === 0) {
+      setErrorMsg('Selecione ao menos um dia da semana para a promoção recorrente ou desmarque a opção.');
+      return;
+    }
+
+    let finalExpiresIso: string | null = null;
+    if (promoActive && promoHasExpiration && promoExpireDate) {
+      const expDate = new Date(`${promoExpireDate}T${promoExpireTime || '23:59'}:00`);
       if (isNaN(expDate.getTime()) || expDate <= new Date()) {
         setErrorMsg('A data e horário de término da promoção devem ser futuros.');
         return;
       }
+      finalExpiresIso = expDate.toISOString();
     }
 
     setSubmitting(true);
@@ -188,7 +244,8 @@ export default function ServicesPage() {
         promoActive: Boolean(promoActive),
         promoPriceCents: promoActive && promoPriceCents ? Number(promoPriceCents) : null,
         promoTitle: promoActive && promoTitle.trim() ? promoTitle.trim() : null,
-        promoExpiresAt: promoActive && promoHasExpiration && promoExpiresAt ? new Date(promoExpiresAt).toISOString() : null,
+        promoExpiresAt: promoActive && promoHasExpiration ? finalExpiresIso : null,
+        promoDaysOfWeek: promoActive && promoIsRecurring ? promoDaysOfWeek : [],
       };
 
       if (editingId) {
@@ -259,6 +316,10 @@ export default function ServicesPage() {
     const promo = service.promoPriceCents ? formatBRL(service.promoPriceCents) : original;
     const discount = calculateDiscount(service.priceCents, service.promoPriceCents);
     const expiresFormatted = service.promoExpiresAt ? formatExpirationDisplay(service.promoExpiresAt) : null;
+    const recurringText =
+      service.promoDaysOfWeek && service.promoDaysOfWeek.length > 0
+        ? formatDaysList(service.promoDaysOfWeek)
+        : null;
 
     return [
       `✂️🔥 *SUPER PROMOÇÃO NO SALÃO!* 🔥`,
@@ -271,6 +332,9 @@ export default function ServicesPage() {
       service.promoPriceCents ? `✅ *Por Apenas:* *${promo}*! (${discount}% OFF)` : `💰 *Valor:* *${original}*`,
       `⏱️ *Duração:* ${service.durationMinutes} minutos`,
       service.promoTitle ? `🏷️ *Oferta:* ${service.promoTitle}` : '',
+      recurringText
+        ? `🗓️ *Válida:* ${recurringText} (demais dias, valor normal de ${original})`
+        : '',
       expiresFormatted ? `⏳ *Oferta por tempo limitado:* Válida até ${expiresFormatted}` : '',
       ``,
       `📅 *Garanta seu horário com desconto antes que esgote:*`,
@@ -451,6 +515,10 @@ export default function ServicesPage() {
                   );
                   const discountPercent = isPromo ? calculateDiscount(s.priceCents, s.promoPriceCents) : 0;
                   const expiresFormatted = s.promoExpiresAt ? formatExpirationDisplay(s.promoExpiresAt) : null;
+                  const recurringText =
+                    s.promoDaysOfWeek && s.promoDaysOfWeek.length > 0
+                      ? formatDaysList(s.promoDaysOfWeek)
+                      : null;
 
                   return (
                     <div
@@ -516,6 +584,38 @@ export default function ServicesPage() {
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: '#F59E0B', marginBottom: '4px' }}>
                                 <Tag size={12} />
                                 <span>{s.promoTitle}</span>
+                              </div>
+                            )}
+
+                            {isPromo && recurringText && (
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.72rem',
+                                  color: '#FCD34D',
+                                  background: 'rgba(245, 158, 11, 0.12)',
+                                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  marginBottom: '6px',
+                                  marginRight: '6px',
+                                }}
+                              >
+                                <Repeat size={11} />
+                                <span>{recurringText}</span>
+                                {s.isPromoActiveToday !== undefined && (
+                                  <span
+                                    style={{
+                                      marginLeft: '3px',
+                                      fontWeight: 700,
+                                      color: s.isPromoActiveToday ? '#34D399' : '#94A3B8',
+                                    }}
+                                  >
+                                    • {s.isPromoActiveToday ? '🔥 Ativa Hoje!' : 'Normal hoje'}
+                                  </span>
+                                )}
                               </div>
                             )}
 
@@ -591,14 +691,25 @@ export default function ServicesPage() {
 
                           <div style={{ textAlign: 'right' }}>
                             {isPromo ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                <span style={{ fontSize: '0.8rem', color: '#94A3B8', textDecoration: 'line-through' }}>
-                                  {formatBRL(s.priceCents)}
-                                </span>
-                                <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981' }}>
-                                  {formatBRL(s.promoPriceCents!)}
-                                </span>
-                              </div>
+                              s.isPromoActiveToday === false ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                  <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)' }}>
+                                    {formatBRL(s.priceCents)}
+                                  </span>
+                                  <span style={{ fontSize: '0.74rem', color: '#F59E0B', fontWeight: 600 }}>
+                                    {formatBRL(s.promoPriceCents!)} ({recurringText})
+                                  </span>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                  <span style={{ fontSize: '0.8rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                                    {formatBRL(s.priceCents)}
+                                  </span>
+                                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981' }}>
+                                    {formatBRL(s.promoPriceCents!)}
+                                  </span>
+                                </div>
+                              )
                             ) : (
                               <span style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary)' }}>
                                 {formatBRL(s.priceCents)}
@@ -856,13 +967,13 @@ export default function ServicesPage() {
                   </div>
                 )}
 
-                {/* Promoção por Tempo Limitado (com término automático) */}
+                {/* Promoção Recorrente por Dia da Semana */}
                 <div
                   style={{
-                    padding: '12px 14px',
+                    padding: '14px',
                     borderRadius: '8px',
                     background: 'rgba(0, 0, 0, 0.25)',
-                    border: promoHasExpiration ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+                    border: promoIsRecurring ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '10px',
@@ -875,7 +986,162 @@ export default function ServicesPage() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        fontSize: '0.82rem',
+                        fontSize: '0.84rem',
+                        fontWeight: 600,
+                        color: promoIsRecurring ? '#F59E0B' : 'var(--text-main)',
+                        cursor: 'pointer',
+                        margin: 0,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={promoIsRecurring}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setPromoIsRecurring(checked);
+                          if (checked && promoDaysOfWeek.length === 0) {
+                            setPromoDaysOfWeek([3]); // Sugere Quarta-feira
+                          }
+                        }}
+                      />
+                      <Repeat size={16} color={promoIsRecurring ? '#F59E0B' : 'var(--text-dim)'} />
+                      <span>Desconto Recorrente por Dia da Semana (Ex: Toda Quarta)</span>
+                    </label>
+                  </div>
+
+                  {promoIsRecurring && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '2px' }}>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                        Selecione os dias em que o desconto será aplicado automaticamente:
+                      </span>
+
+                      {/* Botões dos 7 dias da semana */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                        {WEEKDAY_OPTIONS.map((w) => {
+                          const isSelected = promoDaysOfWeek.includes(w.day);
+                          return (
+                            <button
+                              key={w.day}
+                              type="button"
+                              onClick={() => toggleDayOfWeek(w.day)}
+                              style={{
+                                padding: '8px 2px',
+                                borderRadius: '7px',
+                                fontSize: '0.8rem',
+                                fontWeight: isSelected ? 700 : 500,
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                border: isSelected ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.12)',
+                                background: isSelected
+                                  ? 'linear-gradient(135deg, #F59E0B, #D97706)'
+                                  : 'rgba(255, 255, 255, 0.04)',
+                                color: isSelected ? '#0B0F17' : 'var(--text-main)',
+                                boxShadow: isSelected ? '0 0 10px rgba(245, 158, 11, 0.35)' : 'none',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {w.short}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Atalhos para seleção rápida de dias */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Atalhos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setPromoDaysOfWeek([3])}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Toda Quarta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPromoDaysOfWeek([2, 3])}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Terça e Quarta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPromoDaysOfWeek([1, 2, 3, 4])}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Segunda a Quinta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPromoDaysOfWeek([1, 2, 3, 4, 5])}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Segunda a Sexta
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPromoDaysOfWeek([6, 0])}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Fim de Semana
+                        </button>
+                      </div>
+
+                      {/* Resumo da Regra Recorrente */}
+                      <div
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: '6px',
+                          background: 'rgba(245, 158, 11, 0.08)',
+                          border: '1px solid rgba(245, 158, 11, 0.2)',
+                          fontSize: '0.76rem',
+                          lineHeight: 1.45,
+                          color: '#FCD34D',
+                        }}
+                      >
+                        {promoDaysOfWeek.length > 0 ? (
+                          <>
+                            <div>
+                              🗓️ <strong>Dias com desconto:</strong> {formatDaysList(promoDaysOfWeek)} cobrará o valor de{' '}
+                              <strong>{formatBRL(promoPriceCents || 0)}</strong>.
+                            </div>
+                            <div style={{ marginTop: '3px', color: '#94A3B8' }}>
+                              ✅ <strong>Demais dias da semana:</strong> voltam automaticamente para o valor normal de{' '}
+                              <strong>{formatBRL(priceCents)}</strong>.
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ color: '#FB7185' }}>⚠️ Selecione ao menos um dia da semana para ativar a recorrência.</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Promoção por Tempo Limitado (com término automático e calendário escuro) */}
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: '8px',
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    border: promoHasExpiration ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontSize: '0.84rem',
                         fontWeight: 600,
                         color: promoHasExpiration ? '#F59E0B' : 'var(--text-main)',
                         cursor: 'pointer',
@@ -888,36 +1154,63 @@ export default function ServicesPage() {
                         onChange={(e) => {
                           const checked = e.target.checked;
                           setPromoHasExpiration(checked);
-                          if (checked && !promoExpiresAt) {
+                          if (checked && !promoExpireDate) {
                             const today = new Date();
-                            today.setHours(23, 59, 0, 0);
-                            setPromoExpiresAt(formatForInput(today.toISOString()));
+                            setPromoExpireDate(formatDateOnly(today));
+                            setPromoExpireTime('23:59');
                           }
                         }}
                       />
-                      <Clock size={15} color={promoHasExpiration ? '#F59E0B' : 'var(--text-dim)'} />
-                      <span>Promoção por Tempo Limitado (com término automático)</span>
+                      <Calendar size={16} color={promoHasExpiration ? '#F59E0B' : 'var(--text-dim)'} />
+                      <span>Definir Data Limite de Término (Encerramento Automático)</span>
                     </label>
                   </div>
 
                   {promoHasExpiration && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '3px' }}>
-                          Válido até a data e horário de término:
-                        </label>
-                        <input
-                          type="datetime-local"
-                          required={promoHasExpiration}
-                          value={promoExpiresAt}
-                          onChange={(e) => setPromoExpiresAt(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            fontSize: '0.82rem',
-                            borderColor: 'rgba(245, 158, 11, 0.4)',
-                          }}
-                        />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '2px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '10px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            Data de Término
+                          </label>
+                          <input
+                            type="date"
+                            required={promoHasExpiration}
+                            value={promoExpireDate}
+                            onChange={(e) => setPromoExpireDate(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              fontSize: '0.84rem',
+                              colorScheme: 'dark',
+                              backgroundColor: '#0B0F17',
+                              borderColor: 'rgba(245, 158, 11, 0.4)',
+                              color: '#F3F4F6',
+                              borderRadius: '7px',
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            Horário
+                          </label>
+                          <input
+                            type="time"
+                            required={promoHasExpiration}
+                            value={promoExpireTime}
+                            onChange={(e) => setPromoExpireTime(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '8px 10px',
+                              fontSize: '0.84rem',
+                              colorScheme: 'dark',
+                              backgroundColor: '#0B0F17',
+                              borderColor: 'rgba(245, 158, 11, 0.4)',
+                              color: '#F3F4F6',
+                              borderRadius: '7px',
+                            }}
+                          />
+                        </div>
                       </div>
 
                       {/* Chips de Atalho Rápido */}
@@ -927,8 +1220,8 @@ export default function ServicesPage() {
                           type="button"
                           onClick={() => {
                             const d = new Date();
-                            d.setHours(23, 59, 0, 0);
-                            setPromoExpiresAt(formatForInput(d.toISOString()));
+                            setPromoExpireDate(formatDateOnly(d));
+                            setPromoExpireTime('23:59');
                           }}
                           className="glass-card"
                           style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
@@ -940,8 +1233,8 @@ export default function ServicesPage() {
                           onClick={() => {
                             const d = new Date();
                             d.setDate(d.getDate() + 1);
-                            d.setHours(23, 59, 0, 0);
-                            setPromoExpiresAt(formatForInput(d.toISOString()));
+                            setPromoExpireDate(formatDateOnly(d));
+                            setPromoExpireTime('23:59');
                           }}
                           className="glass-card"
                           style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
@@ -955,8 +1248,8 @@ export default function ServicesPage() {
                             const dayOfWeek = d.getDay();
                             const diff = (7 - dayOfWeek) % 7 || 7;
                             d.setDate(d.getDate() + diff);
-                            d.setHours(23, 59, 0, 0);
-                            setPromoExpiresAt(formatForInput(d.toISOString()));
+                            setPromoExpireDate(formatDateOnly(d));
+                            setPromoExpireTime('23:59');
                           }}
                           className="glass-card"
                           style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
@@ -968,18 +1261,44 @@ export default function ServicesPage() {
                           onClick={() => {
                             const d = new Date();
                             d.setDate(d.getDate() + 7);
-                            d.setHours(23, 59, 0, 0);
-                            setPromoExpiresAt(formatForInput(d.toISOString()));
+                            setPromoExpireDate(formatDateOnly(d));
+                            setPromoExpireTime('23:59');
                           }}
                           className="glass-card"
                           style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
                         >
                           +7 Dias
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() + 15);
+                            setPromoExpireDate(formatDateOnly(d));
+                            setPromoExpireTime('23:59');
+                          }}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          +15 Dias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+                            setPromoExpireDate(formatDateOnly(lastDay));
+                            setPromoExpireTime('23:59');
+                          }}
+                          className="glass-card"
+                          style={{ padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer', borderRadius: '4px' }}
+                        >
+                          Fim do Mês
+                        </button>
                       </div>
 
                       <p style={{ fontSize: '0.74rem', color: '#94A3B8', margin: '4px 0 0 0', lineHeight: 1.4 }}>
-                        ⏳ Após esse período, a promoção será desativada e o valor{' '}
+                        ⏳ Após essa data e horário, a promoção será desativada e o valor{' '}
                         <strong style={{ color: 'var(--primary)' }}>voltará automaticamente para o preço original de {formatBRL(priceCents)}</strong>.
                       </p>
                     </div>

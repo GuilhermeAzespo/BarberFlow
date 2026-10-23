@@ -78,6 +78,7 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
           promoTitle: true,
           promoActive: true,
           promoExpiresAt: true,
+          promoDaysOfWeek: true,
         },
         orderBy: [{ promoActive: 'desc' }, { name: 'asc' }],
       },
@@ -97,16 +98,22 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia não encontrada ou inativa');
   const { status: _status, galleryImages, services: rawServices, ...publicData } = tenant;
   const now = new Date();
+  const dt = DateTime.fromJSDate(now).setZone(tenant.timezone);
+  const jsWeekday = dt.weekday === 7 ? 0 : dt.weekday;
+
   const services = rawServices.map((s) => {
     const isExpired = Boolean(s.promoActive && s.promoExpiresAt && new Date(s.promoExpiresAt) <= now);
-    if (isExpired) {
-      return {
-        ...s,
-        promoActive: false,
-        promoPriceCents: null,
-      };
-    }
-    return s;
+    const isTodayPromoDay =
+      !s.promoDaysOfWeek || s.promoDaysOfWeek.length === 0 || s.promoDaysOfWeek.includes(jsWeekday);
+
+    const isPromoActiveToday = !isExpired && s.promoActive && isTodayPromoDay;
+
+    return {
+      ...s,
+      promoActive: !isExpired && s.promoActive,
+      isPromoActiveToday,
+      promoDaysOfWeek: s.promoDaysOfWeek || [],
+    };
   });
 
   const gallery = galleryImages.map((img) => ({

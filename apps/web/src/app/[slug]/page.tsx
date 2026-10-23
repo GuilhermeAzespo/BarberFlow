@@ -27,6 +27,7 @@ import {
   Camera,
   Flame,
   Tag,
+  Repeat,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -40,6 +41,8 @@ interface Service {
   promoTitle?: string | null;
   promoActive?: boolean;
   promoExpiresAt?: string | null;
+  promoDaysOfWeek?: number[];
+  isPromoActiveToday?: boolean;
 }
 
 interface Professional {
@@ -683,6 +686,17 @@ export default function TenantHomePage() {
               ? Math.round(((service.priceCents - service.promoPriceCents!) / service.priceCents) * 100)
               : 0;
 
+            const hasRecurring = Boolean(service.promoDaysOfWeek && service.promoDaysOfWeek.length > 0);
+            const recurringWeekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+            const recurringFullDays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+            const recurringText = hasRecurring
+              ? service.promoDaysOfWeek!.length === 1
+                ? `Toda ${recurringFullDays[service.promoDaysOfWeek![0]]}`
+                : service.promoDaysOfWeek!.map((d) => recurringWeekdays[d]).join(', ')
+              : null;
+
+            const isPromoToday = isPromo && (service.isPromoActiveToday ?? true);
+
             const expiresDate = service.promoExpiresAt ? new Date(service.promoExpiresAt) : null;
             const formattedExpires = expiresDate
               ? `${String(expiresDate.getDate()).padStart(2, '0')}/${String(expiresDate.getMonth() + 1).padStart(2, '0')} às ${String(expiresDate.getHours()).padStart(2, '0')}:${String(expiresDate.getMinutes()).padStart(2, '0')}`
@@ -755,6 +769,36 @@ export default function TenantHomePage() {
                           {service.promoTitle}
                         </span>
                       )}
+                      {recurringText && (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#FCD34D',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          <Repeat size={11} />
+                          <span>{recurringText}</span>
+                          {service.isPromoActiveToday !== undefined && (
+                            <span
+                              style={{
+                                marginLeft: '3px',
+                                fontWeight: 700,
+                                color: service.isPromoActiveToday ? '#34D399' : '#94A3B8',
+                              }}
+                            >
+                              • {service.isPromoActiveToday ? 'Ativa Hoje!' : 'Normal hoje'}
+                            </span>
+                          )}
+                        </span>
+                      )}
                       {formattedExpires && (
                         <span
                           style={{
@@ -783,21 +827,39 @@ export default function TenantHomePage() {
                     </h3>
                     <div style={{ textAlign: 'right' }}>
                       {isPromo ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                          <span style={{ fontSize: '0.85rem', color: '#94A3B8', textDecoration: 'line-through' }}>
-                            {formatBRL(service.priceCents)}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: '1.3rem',
-                              fontWeight: 800,
-                              color: '#10B981',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {formatBRL(service.promoPriceCents!)}
-                          </span>
-                        </div>
+                        !isPromoToday ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <span
+                              style={{
+                                fontSize: '1.25rem',
+                                fontWeight: 800,
+                                color: 'var(--primary)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {formatBRL(service.priceCents)}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: '#F59E0B', fontWeight: 600 }}>
+                              {formatBRL(service.promoPriceCents!)} ({recurringText})
+                            </span>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                            <span style={{ fontSize: '0.85rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                              {formatBRL(service.priceCents)}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '1.3rem',
+                                fontWeight: 800,
+                                color: '#10B981',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {formatBRL(service.promoPriceCents!)}
+                            </span>
+                          </div>
+                        )
                       ) : (
                         <span
                           style={{

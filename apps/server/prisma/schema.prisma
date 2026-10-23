@@ -282,6 +282,7 @@ model Service {
   promoTitle      String?
   promoActive     Boolean   @default(false)
   promoExpiresAt  DateTime?
+  promoDaysOfWeek Int[]     @default([])
   isActive        Boolean   @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

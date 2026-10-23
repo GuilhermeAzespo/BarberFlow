@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Flame,
   Tag,
+  Repeat,
 } from 'lucide-react';
 import { api, ApiError } from '../../../lib/api';
 
@@ -36,6 +37,8 @@ interface Service {
   promoTitle?: string | null;
   promoActive?: boolean;
   promoExpiresAt?: string | null;
+  promoDaysOfWeek?: number[];
+  isPromoActiveToday?: boolean;
 }
 
 interface Professional {
@@ -669,6 +672,29 @@ function PublicBookingContent() {
                                 PROMOÇÃO {discountPercent > 0 ? `-${discountPercent}%` : ''}
                               </span>
                             )}
+                            {isPromo && service.promoDaysOfWeek && service.promoDaysOfWeek.length > 0 && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px',
+                                  background: 'rgba(245, 158, 11, 0.15)',
+                                  color: '#FCD34D',
+                                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <Repeat size={10} />
+                                <span>
+                                  {service.promoDaysOfWeek.length === 1
+                                    ? `Toda ${['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'][service.promoDaysOfWeek[0]]}`
+                                    : service.promoDaysOfWeek.map((d) => ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d]).join(', ')}
+                                </span>
+                              </span>
+                            )}
                           </div>
                           {isPromo && service.promoTitle && (
                             <span style={{ fontSize: '0.74rem', color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
@@ -1141,25 +1167,53 @@ function PublicBookingContent() {
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary)', display: 'block' }}>
                   {selectedDate.split('-').reverse().join('/')} às {selectedTime}
                 </span>
-                {selectedService && (
-                  selectedService.promoActive &&
-                  selectedService.promoPriceCents &&
-                  selectedService.promoPriceCents < selectedService.priceCents &&
-                  (!selectedService.promoExpiresAt || new Date(selectedService.promoExpiresAt) > new Date()) ? (
+                {selectedService && (() => {
+                  const appointmentDate = selectedDate ? new Date(`${selectedDate}T12:00:00`) : new Date();
+                  const appointmentWeekday = appointmentDate.getDay();
+                  const hasRecurring = Boolean(selectedService.promoDaysOfWeek && selectedService.promoDaysOfWeek.length > 0);
+                  const isPromoDay = !hasRecurring || selectedService.promoDaysOfWeek!.includes(appointmentWeekday);
+                  const isPromoActive = Boolean(
+                    selectedService.promoActive &&
+                    selectedService.promoPriceCents &&
+                    selectedService.promoPriceCents < selectedService.priceCents &&
+                    (!selectedService.promoExpiresAt || new Date(selectedService.promoExpiresAt) > new Date()) &&
+                    isPromoDay
+                  );
+
+                  if (isPromoActive) {
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                          {formatBRL(selectedService.priceCents)}
+                        </span>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981' }}>
+                          {formatBRL(selectedService.promoPriceCents!)}
+                        </span>
+                        {hasRecurring && (
+                          <span style={{ fontSize: '0.72rem', color: '#10B981', fontWeight: 700, marginTop: '2px' }}>
+                            🔥 Desconto de {WEEKDAY_NAMES[appointmentWeekday]} aplicado!
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                      <span style={{ fontSize: '0.78rem', color: '#94A3B8', textDecoration: 'line-through' }}>
+                      <span style={{ fontSize: '1.15rem', fontWeight: 800 }}>
                         {formatBRL(selectedService.priceCents)}
                       </span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10B981' }}>
-                        {formatBRL(selectedService.promoPriceCents)}
-                      </span>
+                      {hasRecurring && selectedService.promoActive && selectedService.promoPriceCents && (
+                        <span style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+                          Preço normal ({WEEKDAY_NAMES[appointmentWeekday]}) • Promoção às {(() => {
+                            const full = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            return selectedService.promoDaysOfWeek!.map((d) => full[d]).join(', ');
+                          })()}
+                        </span>
+                      )}
                     </div>
-                  ) : (
-                    <span style={{ fontSize: '1.15rem', fontWeight: 800 }}>
-                      {formatBRL(selectedService.priceCents)}
-                    </span>
-                  )
-                )}
+                  );
+                })()}
               </div>
             </div>
 
