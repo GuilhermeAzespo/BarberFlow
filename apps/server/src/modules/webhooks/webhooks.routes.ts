@@ -3,7 +3,7 @@ import { DateTime } from 'luxon';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { systemLog } from '../../lib/system-log.js';
-import { getMercadoPagoPayment } from '../../lib/mercadopago.js';
+import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mercadopago.js';
 
 export const webhooksRouter = Router();
 
@@ -13,21 +13,52 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
     const body = req.body || {};
     const query = req.query || {};
 
-    const type = body.type || body.topic || query.type || query.topic;
-    const paymentId =
+    const rawType = body.type || body.topic || query.type || query.topic || body.action || '';
+    const eventType = String(rawType).toLowerCase().replace(/\..*$/, ''); // ex: 'payment.created' -> 'payment'
+    const entityId =
       body.data?.id ||
       body.id ||
       query['data.id'] ||
       query.id;
 
-    logger.info({ type, paymentId }, 'Notificação de Webhook Mercado Pago recebida');
+    logger.info({ rawType, eventType, entityId }, 'Notificação de Webhook Mercado Pago recebida');
 
-    if (!paymentId || (type && type !== 'payment')) {
-      // Se for outro evento (ex: merchant_order), responde 200 para liberar o MP
+    if (!entityId) {
       return res.status(200).json({ received: true, ignored: true });
     }
 
-    const mpPayment = await getMercadoPagoPayment(String(paymentId));
+    let paymentId: string | null = null;
+
+    if (eventType === 'merchant_order' || eventType === 'order') {
+      try {
+        const config = await getActiveMercadoPagoConfig();
+        if (config.accessToken) {
+          const orderRes = await fetch(`https://api.mercadopago.com/merchant_orders/${entityId}`, {
+            headers: { Authorization: `Bearer ${config.accessToken}` },
+          });
+          if (orderRes.ok) {
+            const orderData = (await orderRes.json()) as any;
+            const approved =
+              orderData.payments?.find((p: any) => p.status === 'approved') ||
+              orderData.payments?.[orderData.payments.length - 1];
+            if (approved?.id) {
+              paymentId = String(approved.id);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Falha ao buscar detalhes da merchant_order no Mercado Pago');
+      }
+    } else {
+      // Por padrão considera que o entityId é o ID do pagamento
+      paymentId = String(entityId);
+    }
+
+    if (!paymentId) {
+      return res.status(200).json({ received: true, no_payment_found: true });
+    }
+
+    const mpPayment = await getMercadoPagoPayment(paymentId);
     if (!mpPayment) {
       return res.status(200).json({ received: true, not_found: true });
     }
