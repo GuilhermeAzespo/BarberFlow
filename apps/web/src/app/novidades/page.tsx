@@ -26,6 +26,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { useAuth } from '../../lib/auth-context';
+import { SYSTEM_VERSION } from '../../lib/constants';
 
 type CategoryFilter = 'ALL' | 'NEW' | 'IMPROVEMENT' | 'DESIGN' | 'WHATSAPP';
 
@@ -315,7 +316,7 @@ export default function NovidadesPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255, 255, 255, 0.04)', padding: '10px 16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }} />
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                    Versão Atual: <strong style={{ color: 'var(--primary)' }}>v2.5</strong>
+                    Versão Atual: <strong style={{ color: 'var(--primary)' }}>{SYSTEM_VERSION}</strong>
                   </span>
                 </div>
 
