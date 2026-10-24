@@ -28,6 +28,8 @@ import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { DatePicker } from '../../components/DatePicker';
+import { TimePicker } from '../../components/TimePicker';
 
 interface Service {
   id: string;
@@ -1173,42 +1175,20 @@ export default function ServicesPage() {
                           <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                             Data de Término
                           </label>
-                          <input
-                            type="date"
-                            required={promoHasExpiration}
+                          <DatePicker
                             value={promoExpireDate}
-                            onChange={(e) => setPromoExpireDate(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              fontSize: '0.84rem',
-                              colorScheme: 'dark',
-                              backgroundColor: '#0B0F17',
-                              borderColor: 'rgba(245, 158, 11, 0.4)',
-                              color: '#F3F4F6',
-                              borderRadius: '7px',
-                            }}
+                            onChange={(val) => setPromoExpireDate(val)}
+                            placeholder="DD/MM/AAAA"
                           />
                         </div>
                         <div>
                           <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                             Horário
                           </label>
-                          <input
-                            type="time"
-                            required={promoHasExpiration}
+                          <TimePicker
                             value={promoExpireTime}
-                            onChange={(e) => setPromoExpireTime(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              fontSize: '0.84rem',
-                              colorScheme: 'dark',
-                              backgroundColor: '#0B0F17',
-                              borderColor: 'rgba(245, 158, 11, 0.4)',
-                              color: '#F3F4F6',
-                              borderRadius: '7px',
-                            }}
+                            onChange={(val) => setPromoExpireTime(val)}
+                            placeholder="23:59"
                           />
                         </div>
                       </div>
