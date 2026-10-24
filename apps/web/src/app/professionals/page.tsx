@@ -39,6 +39,7 @@ import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { useToast } from '../../components/Toast';
 
 export type PresetType = 'ADMIN' | 'RECEPTION' | 'BARBER' | 'FINANCE' | 'CUSTOM';
 
@@ -236,6 +237,7 @@ function CustomCheckbox({ checked }: { checked: boolean }) {
 
 export default function ProfessionalsPage() {
   const { subscription, tenant } = useAuth();
+  const { toast, confirm } = useToast();
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -378,7 +380,7 @@ export default function ProfessionalsPage() {
   const handleOpenEmail = (targetEmail?: string | null, inviteMessage?: string) => {
     const target = targetEmail || loginEmail;
     if (!target) {
-      alert('Informe o e-mail de login para enviar o convite.');
+      toast.warning('Informe o e-mail de login para enviar o convite.');
       return;
     }
     const salonName = tenant?.name || 'BarberFlow';
@@ -403,6 +405,7 @@ export default function ProfessionalsPage() {
       textArea.remove();
     }
     setInviteCopied(true);
+    toast.success('Mensagem de convite copiada!');
     setTimeout(() => setInviteCopied(false), 2500);
   };
 
@@ -419,9 +422,10 @@ export default function ProfessionalsPage() {
         }
       );
       setBotInviteSuccess(res.message || 'Convite enviado com sucesso via WhatsApp!');
+      toast.success(res.message || 'Convite enviado via WhatsApp com sucesso!');
       setTimeout(() => setBotInviteSuccess(null), 4000);
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao disparar pelo bot do salão.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao disparar pelo bot do salão.');
     } finally {
       setSendingBotInvite(false);
     }
@@ -450,11 +454,11 @@ export default function ProfessionalsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      alert('Formato de foto inválido. Por favor, envie PNG, JPG ou WEBP.');
+      toast.error('Formato de foto inválido. Por favor, envie PNG, JPG ou WEBP.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      alert('A foto deve ter no máximo 5MB.');
+      toast.error('A foto deve ter no máximo 5MB.');
       return;
     }
     setAvatarFile(file);
@@ -464,20 +468,28 @@ export default function ProfessionalsPage() {
 
   const handleRemoveAvatar = async () => {
     if (editingId && avatarUrl) {
-      if (confirm('Deseja realmente remover a foto deste profissional?')) {
-        try {
-          setUploadingAvatar(true);
-          await api.delete(`/api/professionals/${editingId}/avatar`);
-          setAvatarUrl(null);
-          setAvatarPreview(null);
-          setAvatarFile(null);
-          await loadData();
-          showActionSuccess('Foto removida com sucesso!');
-        } catch (err: unknown) {
-          alert(err instanceof ApiError ? err.message : 'Falha ao remover foto.');
-        } finally {
-          setUploadingAvatar(false);
-        }
+      const ok = await confirm({
+        title: 'Remover Foto de Perfil',
+        message: 'Deseja realmente remover a foto deste profissional?',
+        confirmText: 'Remover Foto',
+        danger: true,
+        icon: 'trash',
+      });
+      if (!ok) return;
+
+      try {
+        setUploadingAvatar(true);
+        await api.delete(`/api/professionals/${editingId}/avatar`);
+        setAvatarUrl(null);
+        setAvatarPreview(null);
+        setAvatarFile(null);
+        await loadData();
+        showActionSuccess('Foto removida com sucesso!');
+        toast.success('Foto removida com sucesso!');
+      } catch (err: unknown) {
+        toast.error(err instanceof ApiError ? err.message : 'Falha ao remover foto.');
+      } finally {
+        setUploadingAvatar(false);
       }
     } else {
       setAvatarFile(null);
@@ -641,6 +653,7 @@ export default function ProfessionalsPage() {
 
   const showActionSuccess = (msg: string) => {
     setActionSuccessMsg(msg);
+    toast.success(msg);
     setTimeout(() => setActionSuccessMsg(null), 4500);
   };
 
@@ -650,7 +663,7 @@ export default function ProfessionalsPage() {
       showActionSuccess(`Profissional "${p.name}" foi reativado na equipe com sucesso!`);
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao reativar profissional.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao reativar profissional.');
     }
   };
 
@@ -662,7 +675,7 @@ export default function ProfessionalsPage() {
       showActionSuccess('Profissional desativado da equipe. O histórico financeiro foi mantido.');
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao desativar profissional.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao desativar profissional.');
     } finally {
       setIsDeleting(false);
     }
@@ -676,7 +689,7 @@ export default function ProfessionalsPage() {
       showActionSuccess('Profissional e histórico excluídos definitivamente do sistema.');
       await loadData();
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao excluir profissional.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao excluir profissional.');
     } finally {
       setIsDeleting(false);
     }

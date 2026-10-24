@@ -35,6 +35,7 @@ import { useAuth } from '../../lib/auth-context';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
+import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
 
 interface SuperAdminOverview {
@@ -80,8 +81,10 @@ interface TenantItem {
   createdAt: string;
   whatsAppStatus: string;
   subscription?: {
+    id: string;
+    planId: string;
     status: string;
-    plan: { name: string; priceCents: number };
+    plan: { id: string; name: string; slug: string; priceCents: number };
     maxProfessionalsOverride?: number | null;
   } | null;
   _count: {
@@ -132,6 +135,7 @@ interface SmtpConfigData {
 
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
+  const { toast, confirm } = useToast();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'logs'>('tenants');
@@ -153,8 +157,10 @@ export default function SuperAdminPage() {
   const [statusReason, setStatusReason] = useState('');
   const [updating, setUpdating] = useState(false);
 
-  // Modal Ajuste de Limites
+  // Modal Gerenciar Plano & Limites do Salão
   const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [selectedSubStatus, setSelectedSubStatus] = useState<string>('ACTIVE');
   const [profOverride, setProfOverride] = useState<string>('');
 
   // Modal Editar Plano
@@ -281,7 +287,13 @@ export default function SuperAdminPage() {
 
   // Impersonate / Acessar Salão com 1 clique
   const handleImpersonate = async (tenantId: string, tenantName: string) => {
-    if (!confirm(`Deseja entrar no painel do salão "${tenantName}" em modo suporte?`)) return;
+    const ok = await confirm({
+      title: 'Acessar Painel do Salão',
+      message: `Deseja entrar no painel do salão "${tenantName}" em modo suporte de atendimento?`,
+      confirmText: 'Acessar Salão',
+      icon: 'info',
+    });
+    if (!ok) return;
 
     setImpersonatingId(tenantId);
     try {
@@ -289,7 +301,7 @@ export default function SuperAdminPage() {
       await refresh();
       router.push(res.redirectUrl || '/dashboard');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao acessar o salão.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao acessar o salão.');
       setImpersonatingId(null);
     }
   };
@@ -308,14 +320,15 @@ export default function SuperAdminPage() {
 
       setIsStatusModalOpen(false);
       await Promise.all([loadOverview(), loadTenants(), loadLogs()]);
+      toast.success('Status da instância atualizado com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao atualizar status.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao atualizar status.');
     } finally {
       setUpdating(false);
     }
   };
 
-  // Ajustar Limites
+  // Ajustar Plano, Assinatura e Limites
   const handleUpdateLimits = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTenant) return;
@@ -323,19 +336,22 @@ export default function SuperAdminPage() {
 
     try {
       await api.patch(`/api/superadmin/tenants/${selectedTenant.id}/subscription`, {
+        planId: selectedPlanId || undefined,
+        status: selectedSubStatus as any,
         maxProfessionalsOverride: profOverride ? Number(profOverride) : null,
       });
 
       setIsLimitModalOpen(false);
-      await loadTenants();
+      await Promise.all([loadTenants(), loadOverview()]);
+      toast.success(`Plano e assinatura do salão "${selectedTenant.name}" atualizados com sucesso!`);
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao ajustar limites.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao atualizar plano e limites.');
     } finally {
       setUpdating(false);
     }
   };
 
-  // Abrir Modal de Edição de Plano
+  // Abrir Modal de Edição de Plano da Vitrine
   const openEditPlan = (plan: PlanItem) => {
     setSelectedPlan(plan);
     const features = Array.isArray(plan.features) ? plan.features.join('\n') : '';
@@ -354,7 +370,7 @@ export default function SuperAdminPage() {
     setIsPlanModalOpen(true);
   };
 
-  // Salvar Plano
+  // Salvar Plano da Vitrine
   const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlan) return;
@@ -382,9 +398,9 @@ export default function SuperAdminPage() {
 
       setIsPlanModalOpen(false);
       await Promise.all([loadPlans(), loadOverview()]);
-      alert('Plano atualizado com sucesso! As alterações já estão visíveis na página inicial.');
+      toast.success('Plano atualizado com sucesso! As alterações já estão visíveis na página inicial.');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao atualizar plano.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao atualizar plano.');
     } finally {
       setUpdating(false);
     }
@@ -400,9 +416,9 @@ export default function SuperAdminPage() {
         smtpPort: Number(smtpForm.smtpPort),
       });
       await loadSmtp();
-      alert('Configurações de SMTP salvas com sucesso!');
+      toast.success('Configurações de SMTP salvas com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao salvar SMTP.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar SMTP.');
     } finally {
       setSavingSmtp(false);
     }
@@ -411,7 +427,7 @@ export default function SuperAdminPage() {
   // Testar Envio de E-mail
   const handleTestEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testEmailTo) return alert('Informe o e-mail de destino para o teste.');
+    if (!testEmailTo) return toast.warning('Informe o e-mail de destino para o teste.');
     setSendingTest(true);
 
     try {
@@ -424,9 +440,9 @@ export default function SuperAdminPage() {
         smtpFrom: smtpForm.smtpFrom,
         smtpSecure: smtpForm.smtpSecure,
       });
-      alert(res.message);
+      toast.success(res.message || 'E-mail de teste enviado com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao enviar e-mail de teste.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao enviar e-mail de teste.');
     } finally {
       setSendingTest(false);
     }
@@ -436,18 +452,24 @@ export default function SuperAdminPage() {
   const handleBroadcastEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!broadcastForm.subject || !broadcastForm.message) {
-      return alert('Preencha o assunto e a mensagem do comunicado.');
+      return toast.warning('Preencha o assunto e a mensagem do comunicado.');
     }
 
-    if (!confirm('Deseja realmente disparar este comunicado para os salões selecionados?')) return;
+    const ok = await confirm({
+      title: 'Disparo de Comunicado em Massa',
+      message: 'Deseja realmente disparar este comunicado por e-mail para os salões selecionados?',
+      confirmText: 'Disparar E-mails',
+      icon: 'alert',
+    });
+    if (!ok) return;
 
     setSendingBroadcast(true);
     try {
       const res = await api.post<{ message: string }>('/api/superadmin/broadcast-email', broadcastForm);
-      alert(res.message);
+      toast.success(res.message || 'Comunicado disparado com sucesso!');
       setBroadcastForm({ subject: '', message: '', target: 'ALL' });
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao enviar comunicado.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao enviar comunicado.');
     } finally {
       setSendingBroadcast(false);
     }
@@ -809,15 +831,18 @@ export default function SuperAdminPage() {
                             <button
                               onClick={() => {
                                 setSelectedTenant(t);
+                                setSelectedPlanId(t.subscription?.planId || t.subscription?.plan?.id || plans[0]?.id || '');
+                                setSelectedSubStatus(t.subscription?.status || 'ACTIVE');
                                 setProfOverride(
                                   t.subscription?.maxProfessionalsOverride ? String(t.subscription.maxProfessionalsOverride) : '',
                                 );
                                 setIsLimitModalOpen(true);
                               }}
                               className="glass-card"
-                              style={{ padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600 }}
+                              style={{ padding: '6px 12px', fontSize: '0.78rem', fontWeight: 600, color: 'var(--primary)', borderColor: 'rgba(229, 179, 56, 0.3)' }}
+                              title="Modificar plano, status da assinatura e limites deste salão"
                             >
-                              Limites
+                              Plano & Limites
                             </button>
                           </div>
                         </td>
@@ -1374,27 +1399,69 @@ export default function SuperAdminPage() {
         )}
       </Modal>
 
-      {/* Modal: Ajuste de Limites */}
-      <Modal isOpen={isLimitModalOpen} onClose={() => setIsLimitModalOpen(false)} title="Ajuste de Limites da Conta">
+      {/* Modal: Gerenciamento de Plano e Assinatura */}
+      <Modal isOpen={isLimitModalOpen} onClose={() => setIsLimitModalOpen(false)} title="Gerenciar Plano & Assinatura do Salão">
         {selectedTenant && (
           <form onSubmit={handleUpdateLimits} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: '8px' }}>
-                Salão: <strong>{selectedTenant.name}</strong> (Plano {selectedTenant.subscription?.plan.name})
+            <div
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                padding: '12px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: '2px' }}>
+                Salão: <strong>{selectedTenant.name}</strong> ({selectedTenant.slug})
+              </p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Plano Atual: <strong style={{ color: 'var(--primary)' }}>{selectedTenant.subscription?.plan?.name || 'Sem plano'}</strong> &bull; Status:{' '}
+                <span style={{ textTransform: 'uppercase' }}>{selectedTenant.subscription?.status || 'Sem assinatura'}</span>
               </p>
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Limite Personalizado de Profissionais (deixe em branco para usar o padrão do plano)
+                Alterar Plano do Salão *
+              </label>
+              <Select value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {formatBRL(p.priceCents)}/mês ({p.slug.toUpperCase()})
+                  </option>
+                ))}
+              </Select>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                Ao alterar o plano, permissões como Domínio Próprio (DNS), limites e vitrines entram em vigor imediatamente.
+              </span>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Status da Assinatura *
+              </label>
+              <Select value={selectedSubStatus} onChange={(e) => setSelectedSubStatus(e.target.value)}>
+                <option value="ACTIVE">ACTIVE (Assinatura Ativa / Em dia)</option>
+                <option value="TRIALING">TRIALING (Período de Teste Gratuito)</option>
+                <option value="PAST_DUE">PAST_DUE (Pagamento Pendente / Em atraso)</option>
+                <option value="CANCELED">CANCELED (Assinatura Cancelada)</option>
+              </Select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Limite Personalizado de Profissionais (opcional)
               </label>
               <input
                 type="number"
                 min={1}
-                placeholder="Ex: 10"
+                placeholder="Deixe em branco para usar o limite padrão do plano"
                 value={profOverride}
                 onChange={(e) => setProfOverride(e.target.value)}
               />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                Permite conceder mais profissionais a este cliente sem alterar o plano global.
+              </span>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -1412,7 +1479,7 @@ export default function SuperAdminPage() {
                 className="gold-gradient-primary gold-glow"
                 style={{ flex: 1, padding: '12px', fontWeight: 600 }}
               >
-                {updating ? 'Salvando...' : 'Salvar Limite'}
+                {updating ? 'Salvando...' : 'Salvar Alterações do Plano'}
               </button>
             </div>
           </form>

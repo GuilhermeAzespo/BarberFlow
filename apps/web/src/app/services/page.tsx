@@ -30,6 +30,7 @@ import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { DatePicker } from '../../components/DatePicker';
 import { TimePicker } from '../../components/TimePicker';
+import { useToast } from '../../components/Toast';
 
 interface Service {
   id: string;
@@ -104,6 +105,7 @@ const formatExpirationDisplay = (isoString?: string | null) => {
 };
 
 export default function ServicesPage() {
+  const { toast, confirm } = useToast();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -266,12 +268,21 @@ export default function ServicesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente remover/desativar este serviço?')) return;
+    const ok = await confirm({
+      title: 'Remover Serviço',
+      message: 'Deseja realmente desativar/remover este serviço do cardápio da sua barbearia?',
+      confirmText: 'Remover Serviço',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
     try {
       await api.delete(`/api/services/${id}`);
       await loadServices();
+      toast.success('Serviço removido com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao remover serviço.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao remover serviço.');
     }
   };
 
@@ -363,8 +374,13 @@ export default function ServicesPage() {
       return;
     }
 
-    const confirmMsg = `Confirmar disparo da promoção de "${selectedService.name}" para a base de clientes?\nCanais: ${channels.join(' e ')}`;
-    if (!confirm(confirmMsg)) return;
+    const ok = await confirm({
+      title: 'Disparo de Campanha Promocional',
+      message: `Confirmar disparo da promoção de "${selectedService.name}" para a base de clientes através de ${channels.join(' e ')}?`,
+      confirmText: 'Disparar Promoção',
+      icon: 'alert',
+    });
+    if (!ok) return;
 
     setBroadcasting(true);
     setBroadcastError(null);
@@ -1406,7 +1422,7 @@ export default function ServicesPage() {
                 type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(broadcastResult.bookingUrl);
-                  alert('Link copiado!');
+                  toast.success('Link promocional copiado para a área de transferência!');
                 }}
                 className="glass-card"
                 style={{ padding: '6px 10px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}

@@ -33,6 +33,7 @@ export interface Tenant {
   id: string;
   name: string;
   slug: string;
+  customDomain?: string | null;
   logoUrl?: string | null;
   phone?: string | null;
   address?: string | null;

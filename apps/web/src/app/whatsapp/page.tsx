@@ -16,6 +16,7 @@ import {
 import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
+import { useToast } from '../../components/Toast';
 
 interface WhatsAppStatus {
   status: 'DISCONNECTED' | 'CONNECTING' | 'QR_PENDING' | 'CONNECTED';
@@ -38,6 +39,7 @@ interface WhatsAppConfig {
 }
 
 export default function WhatsAppHubPage() {
+  const { toast, confirm } = useToast();
   const [statusData, setStatusData] = useState<WhatsAppStatus | null>(null);
   const [config, setConfig] = useState<WhatsAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,20 +87,30 @@ export default function WhatsAppHubPage() {
     try {
       const res = await api.post<WhatsAppStatus>('/api/whatsapp/connect');
       setStatusData(res);
+      toast.info('Solicitação enviada. Escaneie o QR Code para conectar.');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao solicitar conexão.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao solicitar conexão.');
     } finally {
       setConnecting(false);
     }
   };
 
   const handleDisconnect = async () => {
-    if (!confirm('Deseja realmente desconectar este WhatsApp? O bot deixará de responder.')) return;
+    const ok = await confirm({
+      title: 'Desconectar WhatsApp',
+      message: 'Deseja realmente desconectar este WhatsApp? O bot automático e os avisos de agendamento deixarão de responder.',
+      confirmText: 'Desconectar',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
     try {
       await api.post('/api/whatsapp/disconnect');
       await loadStatus();
+      toast.success('WhatsApp desconectado com sucesso.');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao desconectar.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao desconectar.');
     }
   };
 
@@ -111,9 +123,10 @@ export default function WhatsAppHubPage() {
     try {
       await api.patch('/api/whatsapp/config', config);
       setSaveSuccess(true);
+      toast.success('Configurações do WhatsApp salvas com sucesso!');
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao salvar configurações.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar configurações.');
     } finally {
       setSavingConfig(false);
     }

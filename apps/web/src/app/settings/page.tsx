@@ -21,6 +21,9 @@ import {
   Sparkles,
   Calendar,
   Info,
+  Crown,
+  RefreshCw,
+  Link as LinkIcon,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -29,6 +32,7 @@ import { Header } from '../../components/Header';
 import { Select } from '../../components/Select';
 import { AddressAutocomplete } from '../../components/AddressAutocomplete';
 import { TimePicker } from '../../components/TimePicker';
+import { useToast } from '../../components/Toast';
 
 interface BusinessHour {
   weekday: number;
@@ -74,7 +78,26 @@ function getHourStats(hour: BusinessHour, slotInterval: number) {
 }
 
 export default function SettingsPage() {
-  const { tenant, refresh } = useAuth();
+  const { tenant, subscription, user, refresh } = useAuth();
+  const { toast, confirm } = useToast();
+
+  const isPremium =
+    subscription?.plan?.slug === 'premium' ||
+    subscription?.plan?.slug === 'master' ||
+    user?.role === 'SUPER_ADMIN';
+
+  // Domínio Próprio & DNS Personalizado
+  const [customDomainInput, setCustomDomainInput] = useState('');
+  const [currentCustomDomain, setCurrentCustomDomain] = useState<string | null>(null);
+  const [dnsStatus, setDnsStatus] = useState<{ verified: boolean; message: string } | null>(null);
+  const [dnsInstructions, setDnsInstructions] = useState<{ type: string; name: string; target: string }>({
+    type: 'CNAME',
+    name: 'agendar',
+    target: 'barberflow.azespo.com.br',
+  });
+  const [loadingDns, setLoadingDns] = useState(false);
+  const [savingDns, setSavingDns] = useState(false);
+  const [copiedDnsTarget, setCopiedDnsTarget] = useState(false);
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -119,6 +142,85 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const loadCustomDomain = async () => {
+    try {
+      setLoadingDns(true);
+      const res = await api.get<{
+        customDomain: string | null;
+        isPremium: boolean;
+        dnsInstructions: { type: string; name: string; target: string };
+        dnsStatus: { verified: boolean; message: string };
+      }>('/api/tenant/custom-domain');
+      setCurrentCustomDomain(res.customDomain);
+      setCustomDomainInput(res.customDomain || '');
+      setDnsStatus(res.dnsStatus);
+      if (res.dnsInstructions) setDnsInstructions(res.dnsInstructions);
+    } catch {
+      // Silencioso se não for premium
+    } finally {
+      setLoadingDns(false);
+    }
+  };
+
+  const handleSaveCustomDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customDomainInput.trim()) {
+      return toast.warning('Informe o domínio desejado (ex: agendar.minhabarbearia.com.br).');
+    }
+    setSavingDns(true);
+    try {
+      const res = await api.patch<{ customDomain: string; dnsStatus: { verified: boolean; message: string } }>(
+        '/api/tenant/custom-domain',
+        { customDomain: customDomainInput.trim() },
+      );
+      setCurrentCustomDomain(res.customDomain);
+      setDnsStatus(res.dnsStatus);
+      toast.success('Domínio próprio salvo! Crie o apontamento CNAME em sua zona DNS.');
+      await refresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar domínio personalizado.');
+    } finally {
+      setSavingDns(false);
+    }
+  };
+
+  const handleRemoveCustomDomain = async () => {
+    const ok = await confirm({
+      title: 'Desvincular Domínio Próprio',
+      message: 'Deseja realmente remover seu domínio próprio? Sua vitrine continuará acessível pelo link padrão do BarberFlow.',
+      confirmText: 'Desvincular Domínio',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
+    setSavingDns(true);
+    try {
+      await api.delete('/api/tenant/custom-domain');
+      setCurrentCustomDomain(null);
+      setCustomDomainInput('');
+      setDnsStatus(null);
+      toast.success('Domínio próprio desvinculado com sucesso.');
+      await refresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao desvincular domínio.');
+    } finally {
+      setSavingDns(false);
+    }
+  };
+
+  const handleCheckDns = async () => {
+    await loadCustomDomain();
+    toast.info('Verificação de apontamento DNS atualizada.');
+  };
+
+  const copyDnsTarget = (target: string) => {
+    navigator.clipboard.writeText(target);
+    setCopiedDnsTarget(true);
+    toast.success('Valor CNAME copiado para a área de transferência!');
+    setTimeout(() => setCopiedDnsTarget(false), 2500);
+  };
 
   const loadSettings = async () => {
     try {
@@ -177,6 +279,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
+    loadCustomDomain();
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin);
     }
@@ -618,6 +721,356 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Domínio Próprio & DNS Personalizado (Exclusivo Plano Premium) */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '26px 28px',
+              marginBottom: '28px',
+              border: isPremium ? '1px solid rgba(229, 179, 56, 0.4)' : '1px solid rgba(139, 92, 246, 0.35)',
+              background: isPremium
+                ? 'radial-gradient(ellipse at top left, rgba(229, 179, 56, 0.08) 0%, rgba(15, 23, 42, 0.6) 100%)'
+                : 'radial-gradient(ellipse at top left, rgba(139, 92, 246, 0.08) 0%, rgba(15, 23, 42, 0.6) 100%)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    background: isPremium ? 'rgba(229, 179, 56, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                    border: isPremium ? '1px solid rgba(229, 179, 56, 0.3)' : '1px solid rgba(139, 92, 246, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isPremium ? 'var(--primary)' : '#A78BFA',
+                  }}
+                >
+                  <Crown size={20} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '1.18rem', fontWeight: 600 }}>Domínio Próprio & DNS</h3>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: isPremium ? 'rgba(229, 179, 56, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                        color: isPremium ? 'var(--primary)' : '#C4B5FD',
+                        border: isPremium ? '1px solid rgba(229, 179, 56, 0.3)' : '1px solid rgba(139, 92, 246, 0.3)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {isPremium ? '💎 PLANO PREMIUM' : 'EXCLUSIVO PREMIUM'}
+                    </span>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', marginTop: '2px' }}>
+                    Conecte o endereço da sua própria barbearia (ex: <code>agendar.minhabarbearia.com.br</code>) diretamente à sua vitrine oficial.
+                  </p>
+                </div>
+              </div>
+
+              {isPremium && currentCustomDomain && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handleCheckDns}
+                    disabled={loadingDns}
+                    className="glass-card"
+                    style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Consultar servidores DNS para verificar propagação"
+                  >
+                    <RefreshCw size={13} className={loadingDns ? 'animate-spin' : undefined} />
+                    <span>{loadingDns ? 'Checando...' : 'Verificar DNS'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {!isPremium ? (
+              /* Banner de Bloqueio para Planos Não-Premium com Benefícios e Botão de Upgrade */
+              <div
+                style={{
+                  backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                  borderRadius: '14px',
+                  padding: '22px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '18px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                  <div
+                    style={{
+                      padding: '10px',
+                      borderRadius: '12px',
+                      backgroundColor: 'rgba(229, 179, 56, 0.12)',
+                      border: '1px solid rgba(229, 179, 56, 0.25)',
+                      color: 'var(--primary)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Sparkles size={24} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ fontSize: '1.05rem', fontWeight: 600, color: '#FFFFFF', marginBottom: '6px' }}>
+                      Tenha seu próprio link profissional sem menção a barberflow na URL
+                    </h4>
+                    <p style={{ fontSize: '0.86rem', color: '#94A3B8', lineHeight: '1.5', maxWidth: '780px' }}>
+                      O recurso de Domínio Próprio e Apontamento DNS permite que seus clientes acessem seu catálogo, serviços e agendamentos diretamente em <strong>agendar.suabarbearia.com.br</strong> ou no seu próprio domínio, transmitindo o mais alto nível de sofisticação, autoridade e confiança.
+                    </p>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                        gap: '12px',
+                        marginTop: '16px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#E2E8F0' }}>
+                        <CheckCircle2 size={16} color="#10B981" />
+                        <span>Domínio 100% exclusivo do seu salão</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#E2E8F0' }}>
+                        <CheckCircle2 size={16} color="#10B981" />
+                        <span>Certificado SSL (HTTPS) incluso</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#E2E8F0' }}>
+                        <CheckCircle2 size={16} color="#10B981" />
+                        <span>Mais autoridade no Google e Instagram</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#E2E8F0' }}>
+                        <CheckCircle2 size={16} color="#10B981" />
+                        <span>Suporte prioritário na configuração</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                    paddingTop: '16px',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                  }}
+                >
+                  <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                    Seu plano atual: <strong style={{ color: '#FFFFFF' }}>{subscription?.plan?.name || 'Starter'}</strong>
+                  </span>
+                  <a
+                    href="/planos"
+                    className="gold-gradient-primary gold-glow"
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      fontSize: '0.88rem',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <Crown size={16} />
+                    <span>Fazer Upgrade para o Plano Premium</span>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              /* Painel de Configuração DNS do Salão Premium */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {currentCustomDomain ? (
+                  <div
+                    style={{
+                      backgroundColor: dnsStatus?.verified ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                      border: dnsStatus?.verified ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(245, 158, 11, 0.3)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '14px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        {dnsStatus?.verified ? (
+                          <CheckCircle2 size={18} color="#10B981" />
+                        ) : (
+                          <Clock size={18} color="#F59E0B" />
+                        )}
+                        <strong style={{ fontSize: '0.98rem', color: dnsStatus?.verified ? '#34D399' : '#FBBF24' }}>
+                          {dnsStatus?.verified ? 'Domínio Ativo e Validado' : 'Aguardando Propagação DNS'}
+                        </strong>
+                      </div>
+                      <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                        {dnsStatus?.message || 'Apontamento CNAME registrado.'}
+                      </p>
+                      <div style={{ marginTop: '8px' }}>
+                        <a
+                          href={`https://${currentCustomDomain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontSize: '0.9rem',
+                            fontWeight: 600,
+                            color: 'var(--primary)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          <Globe size={14} />
+                          <span>https://{currentCustomDomain}</span>
+                          <ExternalLink size={13} />
+                        </a>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRemoveCustomDomain}
+                      disabled={savingDns}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(244, 63, 94, 0.4)',
+                        backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                        color: '#FB7185',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {savingDns ? 'Removendo...' : 'Desvincular Domínio'}
+                    </button>
+                  </div>
+                ) : null}
+
+                {/* Tabela de Instruções de Apontamento DNS */}
+                <div
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '12px',
+                    padding: '18px 20px',
+                  }}
+                >
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '8px', color: '#FFFFFF' }}>
+                    Instruções para Apontamento DNS (no seu Registro.br, Cloudflare ou Provedor)
+                  </h4>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: '1.4' }}>
+                    Acesse a zona DNS do seu domínio e adicione o seguinte registro <strong>CNAME</strong> apontando para o BarberFlow:
+                  </p>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', color: 'var(--text-dim)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px' }}>Tipo</th>
+                          <th style={{ padding: '8px 10px' }}>Nome / Host</th>
+                          <th style={{ padding: '8px 10px' }}>Destino / Aponta Para</th>
+                          <th style={{ padding: '8px 10px' }}>TTL</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Ação</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '10px', fontWeight: 600, color: 'var(--primary)' }}>
+                            {dnsInstructions.type || 'CNAME'}
+                          </td>
+                          <td style={{ padding: '10px', fontFamily: 'monospace', color: '#E2E8F0' }}>
+                            {currentCustomDomain && currentCustomDomain.includes('.')
+                              ? currentCustomDomain.split('.')[0]
+                              : dnsInstructions.name || 'agendar'}
+                          </td>
+                          <td style={{ padding: '10px', fontFamily: 'monospace', color: '#38BDF8' }}>
+                            {dnsInstructions.target || 'barberflow.azespo.com.br'}
+                          </td>
+                          <td style={{ padding: '10px', color: 'var(--text-muted)' }}>Auto / 3600</td>
+                          <td style={{ padding: '10px', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => copyDnsTarget(dnsInstructions.target || 'barberflow.azespo.com.br')}
+                              className="glass-card"
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '0.75rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                color: copiedDnsTarget ? '#10B981' : 'var(--text-main)',
+                              }}
+                            >
+                              {copiedDnsTarget ? <Check size={12} /> : <Copy size={12} />}
+                              <span>{copiedDnsTarget ? 'Copiado!' : 'Copiar Destino'}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Formulário para definir/alterar domínio */}
+                <form
+                  onSubmit={handleSaveCustomDomain}
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '12px',
+                    padding: '18px 20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <label style={{ fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                    {currentCustomDomain ? 'Alterar Domínio Cadastrado' : 'Cadastrar Domínio Próprio'}
+                  </label>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: '260px' }}>
+                      <input
+                        type="text"
+                        placeholder="Ex: agendar.minhabarbearia.com.br"
+                        value={customDomainInput}
+                        onChange={(e) => setCustomDomainInput(e.target.value.toLowerCase())}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={savingDns}
+                      className="gold-gradient-primary gold-glow"
+                      style={{ padding: '10px 22px', fontSize: '0.88rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                    >
+                      <Save size={16} />
+                      <span>{savingDns ? 'Salvando...' : currentCustomDomain ? 'Atualizar Domínio' : 'Salvar Domínio'}</span>
+                    </button>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>
+                    Recomendamos usar um subdomínio como <code>agendar.seusite.com.br</code> ou <code>marcar.seusite.com.br</code> para não conflitar com seu site institucional.
+                  </span>
+                </form>
+              </div>
+            )}
           </div>
 
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>

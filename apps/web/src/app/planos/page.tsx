@@ -96,6 +96,7 @@ const DEFAULT_PLANS: PublicPlan[] = [
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
     features: [
+      'Domínio Próprio & DNS Personalizado (ex: agendar.seusite.com.br)',
       'Barbeiros 100% Ilimitados',
       'Agendamentos Ilimitados sem teto',
       'Múltiplas cadeiras e pontos de atendimento',
@@ -189,6 +190,14 @@ const COMPARISON_TABLE: ComparisonFeature[] = [
     starter: true,
     pro: true,
     premium: true,
+  },
+  {
+    name: 'Domínio Próprio & DNS (ex: agendar.suabarbearia.com.br)',
+    category: 'Vitrine & Agendamento',
+    tooltip: 'Conecte o endereço exclusivo da sua barbearia com SSL HTTPS incluso, sem menção a barberflow na URL.',
+    starter: false,
+    pro: false,
+    premium: 'Incluso (Exclusivo)',
   },
 
   // Categoria: WhatsApp & Automação

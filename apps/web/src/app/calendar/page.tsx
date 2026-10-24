@@ -25,6 +25,7 @@ import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { TimePicker } from '../../components/TimePicker';
+import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
 
 interface Professional {
@@ -131,6 +132,7 @@ function layoutDayAppointments(apps: Appointment[]) {
 
 export default function CalendarPage() {
   const { tenant, user } = useAuth();
+  const { toast, confirm } = useToast();
   const timezone = tenant?.timezone || 'America/Sao_Paulo';
 
   const isRestrictedProfessional =
@@ -364,21 +366,31 @@ export default function CalendarPage() {
       setIsStatusModalOpen(false);
       setSelectedApp(null);
       await loadData();
+      toast.success('Agendamento concluído com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao concluir agendamento.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao concluir agendamento.');
     }
   };
 
   const handleCancelAppointment = async () => {
     if (!selectedApp) return;
-    if (!confirm('Deseja realmente cancelar este agendamento?')) return;
+    const ok = await confirm({
+      title: 'Cancelar Agendamento',
+      message: `Deseja realmente cancelar o agendamento de "${selectedApp.customer?.name || 'Cliente'}"?`,
+      confirmText: 'Cancelar Agendamento',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
     try {
       await api.delete(`/api/appointments/${selectedApp.id}`);
       setIsStatusModalOpen(false);
       setSelectedApp(null);
       await loadData();
+      toast.success('Agendamento cancelado com sucesso.');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao cancelar agendamento.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao cancelar agendamento.');
     }
   };
 

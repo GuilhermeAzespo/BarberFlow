@@ -251,7 +251,7 @@ export function Sidebar() {
             Versão do Sistema:
           </span>
           <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#10B981', background: 'rgba(16, 185, 129, 0.15)', padding: '1px 7px', borderRadius: '4px' }}>
-            v2.5
+            v2.6
           </span>
         </div>
       </Link>

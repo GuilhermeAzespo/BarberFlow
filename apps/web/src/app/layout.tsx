@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
+import { ToastProvider } from '../components/Toast';
 
 export const metadata: Metadata = {
   title: 'BarberFlow — Gestão Inteligente para Barbearias e Salões',
@@ -26,7 +27,9 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <ToastProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );

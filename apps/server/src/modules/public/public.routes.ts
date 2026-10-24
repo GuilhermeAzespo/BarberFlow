@@ -54,65 +54,61 @@ publicRouter.get('/professionals/:id/avatar', async (req, res) => {
   res.send(Buffer.from(avatar.data));
 });
 
-/** Dados públicos do salão (vitrine/link de agendamento web). */
-publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
-  const tenant = await prisma.tenant.findUnique({
-    where: { slug: String(req.params.slug) },
+const publicTenantSelect = {
+  id: true,
+  name: true,
+  slug: true,
+  customDomain: true,
+  logoUrl: true,
+  coverUrl: true,
+  bio: true,
+  instagram: true,
+  phone: true,
+  address: true,
+  galleryImages: {
+    select: { id: true, title: true, sortOrder: true },
+    orderBy: { sortOrder: 'asc' as const },
+  },
+  timezone: true,
+  slotIntervalMinutes: true,
+  status: true,
+  businessHours: { orderBy: { weekday: 'asc' as const } },
+  services: {
+    where: { isActive: true },
     select: {
       id: true,
       name: true,
-      slug: true,
-      logoUrl: true,
-      coverUrl: true,
-      bio: true,
-      instagram: true,
-      phone: true,
-      address: true,
-      galleryImages: {
-        select: { id: true, title: true, sortOrder: true },
-        orderBy: { sortOrder: 'asc' },
-      },
-      timezone: true,
-      slotIntervalMinutes: true,
-      status: true,
-      businessHours: { orderBy: { weekday: 'asc' } },
-      services: {
-        where: { isActive: true },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          durationMinutes: true,
-          priceCents: true,
-          promoPriceCents: true,
-          promoTitle: true,
-          promoActive: true,
-          promoExpiresAt: true,
-          promoDaysOfWeek: true,
-        },
-        orderBy: [{ promoActive: 'desc' }, { name: 'asc' }],
-      },
-      professionals: {
-        where: { isActive: true },
-        select: {
-          id: true,
-          name: true,
-          color: true,
-          avatarUrl: true,
-          services: { select: { serviceId: true } },
-        },
-        orderBy: { name: 'asc' },
-      },
+      description: true,
+      durationMinutes: true,
+      priceCents: true,
+      promoPriceCents: true,
+      promoTitle: true,
+      promoActive: true,
+      promoExpiresAt: true,
+      promoDaysOfWeek: true,
     },
-  });
+    orderBy: [{ promoActive: 'desc' as const }, { name: 'asc' as const }],
+  },
+  professionals: {
+    where: { isActive: true },
+    select: {
+      id: true,
+      name: true,
+      color: true,
+      avatarUrl: true,
+      services: { select: { serviceId: true } },
+    },
+    orderBy: { name: 'asc' as const },
+  },
+};
 
-  if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia não encontrada ou inativa');
+function formatPublicTenant(tenant: any) {
   const { status: _status, galleryImages, services: rawServices, ...publicData } = tenant;
   const now = new Date();
   const dt = DateTime.fromJSDate(now).setZone(tenant.timezone);
   const jsWeekday = dt.weekday === 7 ? 0 : dt.weekday;
 
-  const services = rawServices.map((s) => {
+  const services = (rawServices || []).map((s: any) => {
     const isExpired = Boolean(s.promoActive && s.promoExpiresAt && new Date(s.promoExpiresAt) <= now);
     const isTodayPromoDay =
       !s.promoDaysOfWeek || s.promoDaysOfWeek.length === 0 || s.promoDaysOfWeek.includes(jsWeekday);
@@ -127,20 +123,46 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
     };
   });
 
-  const gallery = galleryImages.map((img) => ({
+  const gallery = (galleryImages || []).map((img: any) => ({
     id: img.id,
     title: img.title,
     sortOrder: img.sortOrder,
     url: `/api/public/tenants/gallery/${img.id}`,
   }));
 
-  res.json({
-    tenant: {
-      ...publicData,
-      services,
-      gallery,
-    },
+  return {
+    ...publicData,
+    services,
+    gallery,
+  };
+}
+
+/** Dados públicos do salão (vitrine/link de agendamento web) por slug. */
+publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
+  const tenant = await prisma.tenant.findUnique({
+    where: { slug: String(req.params.slug) },
+    select: publicTenantSelect,
   });
+
+  if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia não encontrada ou inativa');
+  res.json({ tenant: formatPublicTenant(tenant) });
+});
+
+/** Dados públicos do salão (vitrine/link de agendamento web) por Domínio Próprio / DNS. */
+publicRouter.get('/tenants/by-domain/:domain', async (req, res) => {
+  const cleanDomain = String(req.params.domain)
+    .toLowerCase()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .trim();
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { customDomain: cleanDomain },
+    select: publicTenantSelect,
+  });
+
+  if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Barbearia com este domínio não encontrada ou inativa');
+  res.json({ tenant: formatPublicTenant(tenant) });
 });
 
 /** Próximas datas com horários disponíveis para agendamento online */

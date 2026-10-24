@@ -45,6 +45,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v2-6',
+    version: 'v2.6',
+    date: '24 de Outubro de 2026',
+    title: 'Domínio Próprio & DNS para Premium, Gestão de Planos no Admin e Popups Luxury',
+    category: 'NEW',
+    categoryLabel: 'Grande Lançamento',
+    badgeColor: '#E5B338',
+    badgeBg: 'rgba(229, 179, 56, 0.15)',
+    summary:
+      'Suporte completo a Domínio Próprio e Apontamento DNS exclusivo para assinantes do Plano Premium, alteração de planos dos salões diretamente pelo Super Admin, e substituição global de alertas nativos por notificações Toast e Modais de Confirmação Dark & Gold Luxury.',
+    highlights: [
+      'Domínio Próprio & DNS (Exclusivo Premium): conecte o endereço oficial da sua barbearia (ex: agendar.minhabarbearia.com.br) diretamente à sua vitrine, com verificação de propagação CNAME em tempo real.',
+      'Bloqueio inteligente de DNS para planos Starter e Pro com apresentação interativa de vantagens e atalho para upgrade.',
+      'Modificação de Planos no Painel Admin: o Super Admin agora pode alternar planos de qualquer salão (Starter, Pro, Premium), gerenciar status e personalizar limites com 1 clique.',
+      'Varredura Completa de Popups: eliminação de 100% dos popups feios do navegador (alert e confirm), substituídos por Toasts flutuantes e Modais de Confirmação no tema Dark & Gold Luxury.',
+      'Resolução pública por domínio personalizado: clientes que acessarem pelo DNS próprio visualizam a vitrine do salão de forma transparente.',
+    ],
+    impact: 'Experiência ultra-premium em toda a plataforma, branding exclusivo para salões de alto nível e maior agilidade na operação administrativa.',
+  },
+  {
     id: 'v2-5',
     version: 'v2.5',
     date: '23 de Outubro de 2026',

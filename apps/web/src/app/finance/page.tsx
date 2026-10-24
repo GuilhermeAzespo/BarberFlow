@@ -18,6 +18,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
+import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
 
 interface FinanceReport {
@@ -48,6 +49,7 @@ interface Transaction {
 }
 
 export default function FinancePage() {
+  const { toast, confirm } = useToast();
   const [report, setReport] = useState<FinanceReport | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<{ income: string[]; expense: string[] }>({ income: [], expense: [] });
@@ -126,12 +128,21 @@ export default function FinancePage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja excluir este lançamento?')) return;
+    const ok = await confirm({
+      title: 'Excluir Lançamento',
+      message: 'Deseja realmente excluir este lançamento financeiro do fluxo de caixa?',
+      confirmText: 'Excluir Lançamento',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
     try {
       await api.delete(`/api/finance/transactions/${id}`);
       await loadFinance();
+      toast.success('Lançamento excluído com sucesso!');
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao excluir lançamento.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao excluir lançamento.');
     }
   };
 

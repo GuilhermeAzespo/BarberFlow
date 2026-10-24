@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import dns from 'node:dns/promises';
 import multer from 'multer';
 import { z } from 'zod';
 import { HttpError } from '../../lib/http-error.js';
@@ -10,6 +11,9 @@ import { requireRole } from '../../middlewares/auth.js';
 export const tenantRouter = Router();
 
 const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+const DOMAIN_REGEX = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$/;
+const RESERVED_DOMAINS = ['barberflow.azespo.com.br', 'azespo.com.br', 'localhost', 'vercel.app', 'ngrok.io'];
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -95,6 +99,7 @@ function serializeTenant(tenant: Awaited<ReturnType<typeof prisma.tenant.findUni
     id: tenant.id,
     name: tenant.name,
     slug: tenant.slug,
+    customDomain: tenant.customDomain,
     logoUrl: tenant.logoUrl,
     phone: tenant.phone,
     email: tenant.email,
@@ -253,3 +258,143 @@ tenantRouter.post('/onboarding/complete', requireRole('OWNER'), async (req, res)
   await systemLog({ tenantId, source: 'onboarding', message: 'Onboarding concluído' });
   res.json({ tenant: serializeTenant(tenant) });
 });
+
+/** Helper para testar propagação DNS */
+async function checkDnsPropagation(domain: string, targetCname: string) {
+  try {
+    const cnames = await dns.resolveCname(domain);
+    const matches = cnames.some((c) => c.toLowerCase().includes(targetCname.toLowerCase()));
+    if (matches) return { verified: true, message: 'Apontamento CNAME validado com sucesso! Domínio ativo.' };
+  } catch {
+    try {
+      const addresses = await dns.lookup(domain);
+      if (addresses?.address) {
+        return { verified: true, message: `Domínio resolvendo no servidor (IP: ${addresses.address}).` };
+      }
+    } catch {
+      // Ignora erro de lookup
+    }
+  }
+  return { verified: false, message: 'Aguardando propagação DNS ou apontamento CNAME ainda não detectado.' };
+}
+
+/** Garante que o salão tenha plano Premium */
+async function ensurePremiumSubscription(tenantId: string) {
+  const subscription = await prisma.subscription.findUnique({
+    where: { tenantId },
+    include: { plan: true },
+  });
+  const slug = subscription?.plan?.slug?.toLowerCase();
+  const isPremium = slug === 'premium' || slug === 'master';
+  if (!isPremium) {
+    throw HttpError.forbidden(
+      'A configuração de Domínio e DNS próprio é exclusiva para assinantes do Plano Premium.',
+      'PREMIUM_REQUIRED'
+    );
+  }
+  return subscription;
+}
+
+/** Consulta dados e status de verificação do DNS próprio */
+tenantRouter.get('/custom-domain', async (req, res) => {
+  const tenant = await prisma.tenant.findUniqueOrThrow({
+    where: { id: req.tenantId! },
+    include: { subscription: { include: { plan: true } } },
+  });
+
+  const slug = tenant.subscription?.plan?.slug?.toLowerCase();
+  const isPremium = slug === 'premium' || slug === 'master' || req.auth?.role === 'SUPER_ADMIN';
+  const targetHost = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+
+  let dnsStatus = { verified: false, message: 'Nenhum domínio próprio configurado.' };
+  if (tenant.customDomain) {
+    dnsStatus = await checkDnsPropagation(tenant.customDomain, targetHost);
+  }
+
+  res.json({
+    customDomain: tenant.customDomain,
+    isPremium,
+    currentPlan: tenant.subscription?.plan?.name || 'Starter',
+    dnsInstructions: {
+      type: 'CNAME',
+      name: tenant.customDomain ? (tenant.customDomain.includes('.') ? tenant.customDomain.split('.')[0] : 'agendar') : 'agendar',
+      target: targetHost,
+    },
+    dnsStatus,
+  });
+});
+
+/** Salva ou atualiza o domínio próprio do salão (Exclusivo Premium) */
+tenantRouter.patch('/custom-domain', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  if (req.auth?.role !== 'SUPER_ADMIN') {
+    await ensurePremiumSubscription(req.tenantId!);
+  }
+
+  const schema = z.object({
+    customDomain: z.string().trim().toLowerCase(),
+  });
+  const { customDomain: rawDomain } = schema.parse(req.body);
+
+  const cleanDomain = rawDomain
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .trim();
+
+  if (!DOMAIN_REGEX.test(cleanDomain)) {
+    throw HttpError.badRequest('Formato de domínio inválido. Exemplo: agendar.minhabarbearia.com.br');
+  }
+
+  if (RESERVED_DOMAINS.some((d) => cleanDomain === d || cleanDomain.endsWith(`.${d}`))) {
+    throw HttpError.badRequest('Este domínio ou subdomínio é reservado pelo sistema BarberFlow.');
+  }
+
+  // Verifica unicidade
+  const existing = await prisma.tenant.findUnique({
+    where: { customDomain: cleanDomain },
+  });
+  if (existing && existing.id !== req.tenantId) {
+    throw HttpError.conflict('Este domínio já está em uso por outro salão.');
+  }
+
+  const updated = await prisma.tenant.update({
+    where: { id: req.tenantId! },
+    data: { customDomain: cleanDomain },
+  });
+
+  const targetHost = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const dnsStatus = await checkDnsPropagation(cleanDomain, targetHost);
+
+  await systemLog({
+    tenantId: req.tenantId!,
+    source: 'tenant',
+    message: `Domínio próprio configurado: ${cleanDomain} (Status DNS: ${dnsStatus.verified ? 'Verificado' : 'Propagando'})`,
+  });
+
+  res.json({
+    customDomain: updated.customDomain,
+    dnsStatus,
+  });
+});
+
+/** Desvincula o domínio próprio do salão */
+tenantRouter.delete('/custom-domain', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const current = await prisma.tenant.findUniqueOrThrow({ where: { id: req.tenantId! } });
+  if (!current.customDomain) {
+    return res.json({ success: true, message: 'Nenhum domínio configurado.' });
+  }
+
+  const removedDomain = current.customDomain;
+  await prisma.tenant.update({
+    where: { id: req.tenantId! },
+    data: { customDomain: null },
+  });
+
+  await systemLog({
+    tenantId: req.tenantId!,
+    source: 'tenant',
+    message: `Domínio próprio [${removedDomain}] removido pelo gestor.`,
+  });
+
+  res.json({ success: true, message: 'Domínio próprio desvinculado com sucesso.' });
+});
+

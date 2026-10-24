@@ -208,6 +208,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
       id: tenant.id,
       name: tenant.name,
       slug: tenant.slug,
+      customDomain: tenant.customDomain,
       logoUrl: tenant.logoUrl,
       phone: tenant.phone,
       address: tenant.address,

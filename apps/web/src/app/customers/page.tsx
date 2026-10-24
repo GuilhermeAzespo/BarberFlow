@@ -6,6 +6,7 @@ import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
 
 interface Customer {
@@ -38,6 +39,7 @@ interface CustomerDetails {
 }
 
 export default function CustomersPage() {
+  const { toast } = useToast();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function CustomersPage() {
       setSelectedCustomer(res);
       setIsDetailsModalOpen(true);
     } catch (err: unknown) {
-      alert(err instanceof ApiError ? err.message : 'Falha ao buscar detalhes do cliente.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao buscar detalhes do cliente.');
     }
   };
 
@@ -103,8 +105,10 @@ export default function CustomersPage() {
       setNewEmail('');
       setNewNotes('');
       await loadCustomers();
+      toast.success('Cliente cadastrado com sucesso!');
     } catch (err: unknown) {
       setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao cadastrar cliente.');
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao cadastrar cliente.');
     } finally {
       setSubmitting(false);
     }
