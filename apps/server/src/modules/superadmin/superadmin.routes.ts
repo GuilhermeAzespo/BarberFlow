@@ -16,6 +16,7 @@ import {
 import {
   getActiveMercadoPagoConfig,
   testMercadoPagoConnection,
+  getMercadoPagoWebhookUrl,
 } from '../../lib/mercadopago.js';
 
 export const superAdminRouter = Router();
@@ -698,9 +699,7 @@ superAdminRouter.get('/integrations/mercadopago', async (req, res) => {
   const token = setting?.mpAccessToken || process.env.MP_ACCESS_TOKEN || '';
   const maskedToken = token ? `${token.slice(0, 12)}****************${token.slice(-4)}` : '';
 
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-  const host = req.get('host') || 'barberflow.azespo.com.br';
-  const webhookUrl = `${protocol}://${host}/api/webhooks/mercadopago`;
+  const webhookUrl = getMercadoPagoWebhookUrl(req);
 
   res.json({
     config: {

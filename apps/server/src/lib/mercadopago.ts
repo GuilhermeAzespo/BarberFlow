@@ -11,6 +11,38 @@ export interface MercadoPagoConfig {
   isConfigured: boolean;
 }
 
+export const DEFAULT_PUBLIC_FQDN = 'barberflow.azespo.com.br';
+
+export function getMercadoPagoWebhookUrl(req?: any): string {
+  // 1. Variável de ambiente explícita
+  if (process.env.MP_WEBHOOK_URL && process.env.MP_WEBHOOK_URL.trim() !== '') {
+    return process.env.MP_WEBHOOK_URL.trim();
+  }
+  if (process.env.PUBLIC_URL && process.env.PUBLIC_URL.trim() !== '') {
+    return `${process.env.PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/mercadopago`;
+  }
+
+  // 2. Se a requisição contiver um host público válido (não localhost e não IP local)
+  const rawHost = req?.get ? req.get('host') : null;
+  if (rawHost) {
+    const host = rawHost.split(':')[0].toLowerCase();
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      host.endsWith('.local');
+
+    if (!isLocal) {
+      const proto = req.headers?.['x-forwarded-proto'] || req.protocol || 'https';
+      return `${proto}://${rawHost}/api/webhooks/mercadopago`;
+    }
+  }
+
+  // 3. Padrão FQDN Cloudflare Zero Trust oficial da aplicação
+  return `https://${DEFAULT_PUBLIC_FQDN}/api/webhooks/mercadopago`;
+}
+
 export async function getActiveMercadoPagoConfig(): Promise<MercadoPagoConfig> {
   const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
 
@@ -130,8 +162,9 @@ export async function createMercadoPagoPix(params: CreatePixParams): Promise<Cre
     metadata: params.metadata || {},
   };
 
-  if (params.notificationUrl) {
-    body.notification_url = params.notificationUrl;
+  const notificationUrl = params.notificationUrl || getMercadoPagoWebhookUrl();
+  if (notificationUrl) {
+    body.notification_url = notificationUrl;
   }
 
   const res = await fetch('https://api.mercadopago.com/v1/payments', {
@@ -277,8 +310,9 @@ export async function createMercadoPagoCardPayment(params: CreateCardPaymentPara
     metadata: params.metadata || {},
   };
 
-  if (params.notificationUrl) {
-    body.notification_url = params.notificationUrl;
+  const notificationUrl = params.notificationUrl || getMercadoPagoWebhookUrl();
+  if (notificationUrl) {
+    body.notification_url = notificationUrl;
   }
 
   const res = await fetch('https://api.mercadopago.com/v1/payments', {

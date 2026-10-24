@@ -10,6 +10,7 @@ import {
   createMercadoPagoCardToken,
   createMercadoPagoCardPayment,
   getMercadoPagoPayment,
+  getMercadoPagoWebhookUrl,
 } from '../../lib/mercadopago.js';
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
 
@@ -119,9 +120,7 @@ billingRouter.post('/checkout/pix', async (req, res) => {
   const payerEmail = data.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = data.payerName || owner?.name || tenant.name;
 
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-  const host = req.get('host') || 'barberflow.azespo.com.br';
-  const notificationUrl = `${protocol}://${host}/api/webhooks/mercadopago`;
+  const notificationUrl = getMercadoPagoWebhookUrl(req);
 
   // Cria registro pendente no banco
   const saasPayment = await prisma.saaSPayment.create({

@@ -551,12 +551,17 @@ export default function SuperAdminPage() {
     }
   };
 
+  const publicWebhookUrl =
+    mpConfig?.webhookUrl &&
+    !mpConfig.webhookUrl.includes('localhost') &&
+    !mpConfig.webhookUrl.includes('127.0.0.1')
+      ? mpConfig.webhookUrl
+      : 'https://barberflow.azespo.com.br/api/webhooks/mercadopago';
+
   // Copiar URL do Webhook
   const handleCopyWebhook = () => {
-    if (mpConfig?.webhookUrl) {
-      navigator.clipboard.writeText(mpConfig.webhookUrl);
-      toast.success('URL do Webhook copiada para a área de transferência!');
-    }
+    navigator.clipboard.writeText(publicWebhookUrl);
+    toast.success('URL pública do Webhook copiada com sucesso!');
   };
 
   const formatBRL = (cents: number) => {
@@ -675,108 +680,144 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* Navegação por Abas */}
+        {/* Navegação por Abas Master (Estilo Segmented Luxury • Sem quebra de linha) */}
         <div
           style={{
             display: 'flex',
+            alignItems: 'center',
             gap: '8px',
-            borderBottom: '1px solid var(--border-color)',
-            marginBottom: '24px',
+            padding: '6px',
+            background: 'rgba(18, 24, 38, 0.75)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '14px',
+            marginBottom: '28px',
             overflowX: 'auto',
+            scrollbarWidth: 'none',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
           <button
+            type="button"
             onClick={() => setActiveTab('tenants')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'tenants' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'tenants' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'tenants' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'tenants' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'tenants' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'tenants' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <Building size={16} />
+            <Building size={16} color={activeTab === 'tenants' ? 'var(--primary)' : 'currentColor'} />
             <span>Salões & Instâncias ({tenants.length})</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('plans')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'plans' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'plans' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'plans' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'plans' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'plans' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'plans' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <DollarSign size={16} />
+            <DollarSign size={16} color={activeTab === 'plans' ? 'var(--primary)' : 'currentColor'} />
             <span>Planos & Vitrine ({plans.length})</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('growth')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'growth' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'growth' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'growth' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'growth' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'growth' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'growth' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <TrendingUp size={16} />
+            <TrendingUp size={16} color={activeTab === 'growth' ? 'var(--primary)' : 'currentColor'} />
             <span>Relatórios de Crescimento</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('smtp')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'smtp' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'smtp' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'smtp' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'smtp' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'smtp' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'smtp' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <Mail size={16} />
+            <Mail size={16} color={activeTab === 'smtp' ? 'var(--primary)' : 'currentColor'} />
             <span>Servidor SMTP & E-mails</span>
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('mercadopago')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'mercadopago' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'mercadopago' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'mercadopago' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'mercadopago' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'mercadopago' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <CreditCard size={16} />
+            <CreditCard size={16} color={activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
             <span>Integração Mercado Pago</span>
             {mpConfig?.isConfigured && (
               <span
@@ -785,9 +826,10 @@ export default function SuperAdminPage() {
                   background: mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
                   color: mpConfig.mpSandbox ? '#FBBF24' : '#10B981',
                   border: `1px solid ${mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
-                  padding: '1px 6px',
-                  borderRadius: '4px',
+                  padding: '2px 7px',
+                  borderRadius: '6px',
                   fontWeight: 700,
+                  letterSpacing: '0.04em',
                 }}
               >
                 {mpConfig.mpSandbox ? 'SANDBOX' : 'PRODUÇÃO'}
@@ -796,21 +838,27 @@ export default function SuperAdminPage() {
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('logs')}
             style={{
-              padding: '12px 20px',
-              border: 'none',
-              background: 'transparent',
+              padding: '10px 18px',
+              borderRadius: '10px',
+              border: activeTab === 'logs' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'logs' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'logs' ? 'var(--primary)' : 'var(--text-muted)',
-              borderBottom: activeTab === 'logs' ? '2px solid var(--primary)' : '2px solid transparent',
-              fontWeight: 600,
-              fontSize: '0.92rem',
-              display: 'flex',
+              boxShadow: activeTab === 'logs' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'logs' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <FileText size={16} />
+            <FileText size={16} color={activeTab === 'logs' ? 'var(--primary)' : 'currentColor'} />
             <span>Auditoria & Debug ({logs.length})</span>
           </button>
         </div>
@@ -1641,12 +1689,28 @@ export default function SuperAdminPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Card de Webhook */}
                 <div className="glass-panel" style={{ padding: '24px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                    <Globe size={18} color="#10B981" />
-                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>URL de Notificação (Webhook)</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Globe size={18} color="#10B981" />
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0 }}>URL de Notificação (Webhook)</h3>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: '#10B981',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontWeight: 700,
+                        letterSpacing: '0.03em',
+                      }}
+                    >
+                      CLOUDFLARE ZERO TRUST FQDN
+                    </span>
                   </div>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginBottom: '14px' }}>
-                    Cadastre este endereço no Mercado Pago para que a liberação de assinaturas (Pix e Cartão) ocorra de forma 100% instantânea:
+                    Cadastre este endereço público oficial no Mercado Pago para que a liberação de assinaturas (Pix e Cartão) ocorra de forma 100% instantânea via túnel seguro:
                   </p>
 
                   <div
@@ -1654,29 +1718,39 @@ export default function SuperAdminPage() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
-                      background: 'rgba(0,0,0,0.4)',
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--border-color)',
+                      background: 'rgba(0,0,0,0.5)',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
                       marginBottom: '10px',
                     }}
                   >
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: '#10B981', flex: 1, wordBreak: 'break-all' }}>
-                      {mpConfig?.webhookUrl || 'https://barberflow.azespo.com.br/api/webhooks/mercadopago'}
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.84rem', color: '#10B981', flex: 1, wordBreak: 'break-all', fontWeight: 600 }}>
+                      {publicWebhookUrl}
                     </span>
                     <button
                       type="button"
                       onClick={handleCopyWebhook}
                       className="glass-card"
-                      style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+                      style={{
+                        padding: '7px 14px',
+                        fontSize: '0.8rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
                     >
                       <Copy size={13} />
                       <span>Copiar</span>
                     </button>
                   </div>
 
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', lineHeight: 1.4 }}>
-                    📌 No Mercado Pago, selecione o evento <strong>Pagamentos (payment)</strong> no modo de produção.
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>📌</span>
+                    <span>No Mercado Pago, selecione o evento <strong>Pagamentos (payment)</strong> no modo de produção.</span>
                   </div>
                 </div>
 
