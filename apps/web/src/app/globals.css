@@ -363,9 +363,14 @@ input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:f
   background: var(--primary);
 }
 
-.custom-scrollbar::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
+/* Remove native number input spinners (white box arrows) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

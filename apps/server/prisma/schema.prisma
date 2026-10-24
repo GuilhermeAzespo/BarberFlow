@@ -257,6 +257,7 @@ model Professional {
   name              String
   phone             String?
   email             String?
+  avatarUrl         String?
   color             String   @default("#C9A227")
   commissionPercent Int      @default(0)
   isActive          Boolean  @default(true)
@@ -267,8 +268,18 @@ model Professional {
   user         User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   services     ProfessionalService[]
   appointments Appointment[]
+  avatar       ProfessionalAvatar?
 
   @@index([tenantId, isActive])
+}
+
+model ProfessionalAvatar {
+  professionalId String       @id
+  mimeType       String
+  data           Bytes
+  updatedAt      DateTime     @updatedAt
+
+  professional   Professional @relation(fields: [professionalId], references: [id], onDelete: Cascade)
 }
 
 model Service {

@@ -44,6 +44,16 @@ publicRouter.get('/tenants/gallery/:imageId', async (req, res) => {
   res.send(Buffer.from(img.data));
 });
 
+publicRouter.get('/professionals/:id/avatar', async (req, res) => {
+  const avatar = await prisma.professionalAvatar.findUnique({ where: { professionalId: String(req.params.id) } });
+  if (!avatar) throw HttpError.notFound('Foto não encontrada');
+  res.setHeader('Content-Type', avatar.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.send(Buffer.from(avatar.data));
+});
+
 /** Dados públicos do salão (vitrine/link de agendamento web). */
 publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
   const tenant = await prisma.tenant.findUnique({
@@ -88,6 +98,7 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
           id: true,
           name: true,
           color: true,
+          avatarUrl: true,
           services: { select: { serviceId: true } },
         },
         orderBy: { name: 'asc' },

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
 import { z } from 'zod';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
@@ -10,6 +11,17 @@ import { requireRole } from '../../middlewares/auth.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 
 export const professionalsRouter = Router();
+
+const ALLOWED_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+
+const uploadAvatar = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_AVATAR_TYPES.includes(file.mimetype)) return cb(null, true);
+    cb(HttpError.badRequest('Formato de foto inválido. Envie PNG, JPG ou WEBP.'));
+  },
+});
 
 const permissionsSchema = z.object({
   preset: z.enum(['ADMIN', 'RECEPTION', 'BARBER', 'FINANCE', 'CUSTOM']).optional(),
@@ -40,6 +52,7 @@ const professionalSchema = z.object({
   name: z.string().trim().min(2, 'Informe o nome').max(80),
   phone: z.string().trim().max(30).nullable().optional(),
   email: z.string().email().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Cor inválida').optional(),
   commissionPercent: z.number().int().min(0).max(100).optional(),
   isActive: z.boolean().optional(),
@@ -416,5 +429,45 @@ professionalsRouter.post('/:id/send-invite', requireRole('OWNER', 'MANAGER'), as
     loginUrl,
     email,
   });
+});
+
+professionalsRouter.post('/:id/avatar', requireRole('OWNER', 'MANAGER'), uploadAvatar.single('avatar'), async (req, res) => {
+  if (!req.file) throw HttpError.badRequest('Envie o arquivo no campo "avatar"');
+  const tenantId = req.tenantId!;
+  const id = req.params.id as string;
+  const professional = await prisma.professional.findFirst({ where: { id, tenantId } });
+  if (!professional) throw HttpError.notFound('Profissional não encontrado');
+
+  const data = new Uint8Array(req.file.buffer);
+  await prisma.professionalAvatar.upsert({
+    where: { professionalId: id },
+    update: { mimeType: req.file.mimetype, data },
+    create: { professionalId: id, mimeType: req.file.mimetype, data },
+  });
+
+  const avatarUrl = `/api/public/professionals/${id}/avatar?v=${Date.now()}`;
+  const updated = await prisma.professional.update({
+    where: { id },
+    data: { avatarUrl },
+    include,
+  });
+
+  res.json({ professional: serialize(updated) });
+});
+
+professionalsRouter.delete('/:id/avatar', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  const id = req.params.id as string;
+  const professional = await prisma.professional.findFirst({ where: { id, tenantId } });
+  if (!professional) throw HttpError.notFound('Profissional não encontrado');
+
+  await prisma.professionalAvatar.deleteMany({ where: { professionalId: id } });
+  const updated = await prisma.professional.update({
+    where: { id },
+    data: { avatarUrl: null },
+    include,
+  });
+
+  res.json({ professional: serialize(updated) });
 });
 

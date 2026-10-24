@@ -31,6 +31,8 @@ import {
   RotateCcw,
   AlertTriangle,
   UserX,
+  Upload,
+  Camera,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -67,6 +69,7 @@ interface Professional {
   name: string;
   phone?: string | null;
   email?: string | null;
+  avatarUrl?: string | null;
   color: string;
   commissionPercent: number;
   isActive: boolean;
@@ -247,6 +250,10 @@ export default function ProfessionalsPage() {
   const [color, setColor] = useState('#E5B338');
   const [commissionPercent, setCommissionPercent] = useState(0);
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -439,10 +446,52 @@ export default function ProfessionalsPage() {
     setCanManageSettings(def.canManageSettings);
   };
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      alert('Formato de foto inválido. Por favor, envie PNG, JPG ou WEBP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('A foto deve ter no máximo 5MB.');
+      return;
+    }
+    setAvatarFile(file);
+    const preview = URL.createObjectURL(file);
+    setAvatarPreview(preview);
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (editingId && avatarUrl) {
+      if (confirm('Deseja realmente remover a foto deste profissional?')) {
+        try {
+          setUploadingAvatar(true);
+          await api.delete(`/api/professionals/${editingId}/avatar`);
+          setAvatarUrl(null);
+          setAvatarPreview(null);
+          setAvatarFile(null);
+          await loadData();
+          showActionSuccess('Foto removida com sucesso!');
+        } catch (err: unknown) {
+          alert(err instanceof ApiError ? err.message : 'Falha ao remover foto.');
+        } finally {
+          setUploadingAvatar(false);
+        }
+      }
+    } else {
+      setAvatarFile(null);
+      setAvatarPreview(null);
+    }
+  };
+
   const openCreateModal = (initialPreset: PresetType = 'BARBER') => {
     setEditingId(null);
     setName('');
     setPhone('');
+    setAvatarUrl(null);
+    setAvatarFile(null);
+    setAvatarPreview(null);
     setColor('#E5B338');
     setCommissionPercent(0);
     setSelectedServices(services.map((s) => s.id));
@@ -463,6 +512,9 @@ export default function ProfessionalsPage() {
     setEditingId(p.id);
     setName(p.name);
     setPhone(p.phone || '');
+    setAvatarUrl(p.avatarUrl || null);
+    setAvatarFile(null);
+    setAvatarPreview(p.avatarUrl || null);
     setColor(p.color || '#E5B338');
     setCommissionPercent(p.commissionPercent || 0);
     setSelectedServices(p.serviceIds || []);
@@ -563,14 +615,23 @@ export default function ProfessionalsPage() {
           : undefined,
       };
 
+      let savedProfId = editingId;
       if (editingId) {
         await api.patch(`/api/professionals/${editingId}`, payload);
       } else {
-        await api.post('/api/professionals', payload);
+        const res = await api.post<{ professional: Professional; provisionalPassword?: string }>('/api/professionals', payload);
+        savedProfId = res.professional.id;
+      }
+
+      if (avatarFile && savedProfId) {
+        const formData = new FormData();
+        formData.append('avatar', avatarFile);
+        await api.post(`/api/professionals/${savedProfId}/avatar`, formData);
       }
 
       setIsModalOpen(false);
       await loadData();
+      showActionSuccess(editingId ? 'Dados do profissional atualizados com sucesso!' : 'Profissional adicionado com sucesso!');
     } catch (err: unknown) {
       setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao salvar membro da equipe.');
     } finally {
@@ -793,23 +854,40 @@ export default function ProfessionalsPage() {
                         {/* Header do Card */}
                         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                width: '44px',
-                                height: '44px',
-                                borderRadius: '12px',
-                                background: isWorker ? (p.color || '#E5B338') : '#334155',
-                                color: isWorker ? '#0B0F17' : '#F8FAFC',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 700,
-                                fontSize: '1.25rem',
-                                boxShadow: isWorker ? `0 0 16px ${p.color || '#E5B338'}33` : 'none',
-                              }}
-                            >
-                              {p.name.charAt(0).toUpperCase()}
-                            </div>
+                            {p.avatarUrl ? (
+                              <img
+                                src={p.avatarUrl}
+                                alt={p.name}
+                                style={{
+                                  width: '44px',
+                                  height: '44px',
+                                  borderRadius: '12px',
+                                  objectFit: 'cover',
+                                  border: `1.5px solid ${isWorker ? (p.color || '#E5B338') : 'rgba(255, 255, 255, 0.15)'}`,
+                                  boxShadow: isWorker ? `0 0 16px ${p.color || '#E5B338'}33` : 'none',
+                                  flexShrink: 0,
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  width: '44px',
+                                  height: '44px',
+                                  borderRadius: '12px',
+                                  background: isWorker ? (p.color || '#E5B338') : '#334155',
+                                  color: isWorker ? '#0B0F17' : '#F8FAFC',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontWeight: 700,
+                                  fontSize: '1.25rem',
+                                  boxShadow: isWorker ? `0 0 16px ${p.color || '#E5B338'}33` : 'none',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {p.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                 <h4 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-main)' }}>{p.name}</h4>
@@ -1158,6 +1236,113 @@ export default function ProfessionalsPage() {
         )}
 
         <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          {/* Foto do Profissional */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              padding: '14px',
+              borderRadius: '12px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border-color)',
+            }}
+          >
+            <div style={{ position: 'relative' }}>
+              {avatarPreview ? (
+                <img
+                  src={avatarPreview}
+                  alt="Foto do Profissional"
+                  style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '16px',
+                    objectFit: 'cover',
+                    border: '2px solid var(--primary)',
+                    boxShadow: '0 0 16px rgba(229, 179, 56, 0.25)',
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: '64px',
+                    height: '64px',
+                    borderRadius: '16px',
+                    background: color || '#E5B338',
+                    color: '#0B0F17',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    fontSize: '1.6rem',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  }}
+                >
+                  {(name.trim() || 'P').charAt(0).toUpperCase()}
+                </div>
+              )}
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '2px' }}>
+                Foto do Profissional
+              </div>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', margin: '0 0 8px 0', lineHeight: 1.4 }}>
+                Exibida na equipe e na vitrine de agendamento online (JPG, PNG ou WebP até 5MB).
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    background: 'rgba(229, 179, 56, 0.15)',
+                    color: 'var(--primary)',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Upload size={14} />
+                  <span>{avatarPreview ? 'Alterar Foto' : 'Adicionar Foto'}</span>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/webp"
+                    style={{ display: 'none' }}
+                    onChange={handleAvatarChange}
+                  />
+                </label>
+
+                {avatarPreview && (
+                  <button
+                    type="button"
+                    onClick={handleRemoveAvatar}
+                    disabled={uploadingAvatar}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      background: 'rgba(244, 63, 94, 0.12)',
+                      color: '#FB7185',
+                      border: '1px solid rgba(244, 63, 94, 0.25)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    <span>{uploadingAvatar ? 'Removendo...' : 'Remover'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Seção 1: Dados do Membro */}
           <div>
             <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>

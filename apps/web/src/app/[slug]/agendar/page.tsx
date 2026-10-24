@@ -45,6 +45,7 @@ interface Professional {
   id: string;
   name: string;
   color: string;
+  avatarUrl?: string | null;
   services: { serviceId: string }[];
 }
 
@@ -865,22 +866,38 @@ function PublicBookingContent() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <div
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '50%',
-                          background: prof.color || 'var(--primary)',
-                          color: '#0B0F17',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '1rem',
-                        }}
-                      >
-                        {prof.name.charAt(0).toUpperCase()}
-                      </div>
+                      {prof.avatarUrl ? (
+                        <img
+                          src={prof.avatarUrl}
+                          alt={prof.name}
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: `2px solid ${isSelected ? 'var(--primary)' : 'rgba(255, 255, 255, 0.15)'}`,
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '50%',
+                            background: prof.color || 'var(--primary)',
+                            color: '#0B0F17',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {prof.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <div>
                         <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 2px 0' }}>
                           {prof.name}
@@ -1158,8 +1175,16 @@ function PublicBookingContent() {
                 <h4 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '2px 0 0 0' }}>
                   {selectedService?.name}
                 </h4>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  Com: <strong>{selectedProfessional ? selectedProfessional.name : 'Qualquer Profissional'}</strong>
+                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Com:</span>
+                  {selectedProfessional?.avatarUrl && (
+                    <img
+                      src={selectedProfessional.avatarUrl}
+                      alt={selectedProfessional.name}
+                      style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover' }}
+                    />
+                  )}
+                  <strong>{selectedProfessional ? selectedProfessional.name : 'Qualquer Profissional'}</strong>
                 </p>
               </div>
 

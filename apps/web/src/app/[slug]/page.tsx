@@ -49,6 +49,7 @@ interface Professional {
   id: string;
   name: string;
   color: string;
+  avatarUrl?: string | null;
   services: { serviceId: string }[];
 }
 
@@ -963,25 +964,41 @@ export default function TenantHomePage() {
                     alignItems: 'center',
                   }}
                 >
-                  <div
-                    style={{
-                      width: '74px',
-                      height: '74px',
-                      borderRadius: '50%',
-                      background: prof.color || 'var(--primary)',
-                      color: '#0B0F17',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 800,
-                      fontSize: '1.8rem',
-                      marginBottom: '16px',
-                      boxShadow: '0 6px 18px rgba(0, 0, 0, 0.5)',
-                      border: '2px solid rgba(255, 255, 255, 0.1)',
-                    }}
-                  >
-                    {prof.name.charAt(0).toUpperCase()}
-                  </div>
+                  {prof.avatarUrl ? (
+                    <img
+                      src={prof.avatarUrl}
+                      alt={prof.name}
+                      style={{
+                        width: '74px',
+                        height: '74px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        marginBottom: '16px',
+                        boxShadow: `0 6px 18px ${prof.color || 'var(--primary)'}44`,
+                        border: `2.5px solid ${prof.color || 'var(--primary)'}`,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '74px',
+                        height: '74px',
+                        borderRadius: '50%',
+                        background: prof.color || 'var(--primary)',
+                        color: '#0B0F17',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '1.8rem',
+                        marginBottom: '16px',
+                        boxShadow: '0 6px 18px rgba(0, 0, 0, 0.5)',
+                        border: '2px solid rgba(255, 255, 255, 0.1)',
+                      }}
+                    >
+                      {prof.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
 
                   <h3 style={{ fontSize: '1.18rem', fontWeight: 700, marginBottom: '6px' }}>
                     {prof.name}
