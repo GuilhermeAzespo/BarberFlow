@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '../lib/auth-context';
-import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown } from 'lucide-react';
+import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown, Clock } from 'lucide-react';
 
 export function Header() {
   const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
@@ -56,6 +56,113 @@ export function Header() {
           </button>
         </div>
       )}
+
+      {/* Banner de Aviso de Fim de Trial / Renovação */}
+      {subscription && user?.role !== 'SUPER_ADMIN' && (
+        <>
+          {subscription.status === 'TRIALING' && (subscription.trialDaysLeft ?? 99) <= 3 && (
+            <div
+              style={{
+                background: (subscription.trialDaysLeft ?? 0) <= 0
+                  ? 'linear-gradient(90deg, #991B1B 0%, #B91C1C 100%)'
+                  : 'linear-gradient(90deg, #78350F 0%, #B45309 100%)',
+                color: '#FFFFFF',
+                padding: '9px 28px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '0.86rem',
+                fontWeight: 600,
+                boxShadow: '0 2px 10px rgba(0,0,0,0.3)',
+                zIndex: 45,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <AlertTriangle size={18} color="#FDE047" />
+                <span>
+                  {(subscription.trialDaysLeft ?? 0) <= 0 ? (
+                    <>
+                      <strong>Seu período de teste de 14 dias terminou!</strong> Cadastre um cartão de crédito ou realize o pagamento via Pix para continuar utilizando o BarberFlow.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Atenção:</strong> Seu teste gratuito de 14 dias está acabando! Restam apenas <strong>{subscription.trialDaysLeft} dia(s)</strong>.
+                      Escolha seu plano e ative o pagamento via Pix ou Cartão para não interromper seu salão.
+                    </>
+                  )}
+                </span>
+              </div>
+              <Link
+                href="/planos"
+                style={{
+                  background: '#E5B338',
+                  color: '#0B0F17',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontWeight: 800,
+                  fontSize: '0.8rem',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 8px rgba(229, 179, 56, 0.4)',
+                }}
+              >
+                <span>Ativar Assinatura Agora →</span>
+              </Link>
+            </div>
+          )}
+
+          {subscription.status === 'ACTIVE' && subscription.renewDaysLeft !== null && subscription.renewDaysLeft !== undefined && subscription.renewDaysLeft <= 3 && (
+            <div
+              style={{
+                background: 'linear-gradient(90deg, #1E1B4B 0%, #312E81 100%)',
+                borderBottom: '1px solid rgba(139, 92, 246, 0.3)',
+                color: '#E0E7FF',
+                padding: '8px 28px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '0.84rem',
+                fontWeight: 500,
+                zIndex: 45,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Clock size={16} color="#A78BFA" />
+                <span>
+                  {subscription.renewDaysLeft <= 0 ? (
+                    <>
+                      Sua assinatura mensal renovou hoje! Efetue a confirmação via Pix ou Cartão para manter seus recursos 100% ativos.
+                    </>
+                  ) : (
+                    <>
+                      Sua assinatura do <strong>Plano {subscription.plan.name}</strong> renova em <strong>{subscription.renewDaysLeft} dia(s)</strong>.
+                    </>
+                  )}
+                </span>
+              </div>
+              <Link
+                href="/planos"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  color: '#FFFFFF',
+                  padding: '4px 12px',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.78rem',
+                  textDecoration: 'none',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                }}
+              >
+                Ver Faturas / Planos →
+              </Link>
+            </div>
+          )}
+        </>
+      )}
+
       <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '10px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40, minHeight: '74px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         <div>

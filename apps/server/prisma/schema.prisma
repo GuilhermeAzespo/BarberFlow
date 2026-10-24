@@ -107,6 +107,7 @@ model Plan {
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
   subscriptions           Subscription[]
+  saasPayments            SaaSPayment[]
 }
 
 model Tenant {
@@ -145,6 +146,7 @@ model Tenant {
   whatsAppConfig        WhatsAppConfig?
   whatsAppSessionKeys   WhatsAppSessionKey[]
   whatsAppConversations WhatsAppConversation[]
+  saasPayments          SaaSPayment[]
   logs                  SystemLog[]
 
   @@index([status])
@@ -475,5 +477,56 @@ model SystemSetting {
   smtpFrom                  String?
   smtpSecure                Boolean  @default(false)
   emailNotificationsEnabled Boolean  @default(true)
+
+  // Integração Mercado Pago para Assinaturas SaaS
+  mpAccessToken             String?
+  mpPublicKey               String?
+  mpWebhookSecret           String?
+  mpSandbox                 Boolean  @default(false)
+  mpEnabled                 Boolean  @default(false)
+
   updatedAt                 DateTime @updatedAt
 }
+
+enum SaaSPaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+  EXPIRED
+  CANCELED
+}
+
+model SaaSPayment {
+  id             String            @id @default(cuid())
+  tenantId       String
+  planId         String
+  amountCents    Int
+  method         PaymentMethod     @default(PIX)
+  status         SaaSPaymentStatus @default(PENDING)
+  mpPaymentId    String?           @unique
+  mpStatus       String?
+  mpStatusDetail String?
+  qrCode         String?           @db.Text
+  qrCodeBase64   String?           @db.Text
+  ticketUrl      String?
+  installments   Int?              @default(1)
+  cardBrand      String?
+  cardLastFour   String?
+  payerEmail     String?
+  payerName      String?
+  payerDoc       String?
+  paidAt         DateTime?
+  expiresAt      DateTime?
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+  @@index([mpPaymentId])
+}
+

@@ -47,7 +47,12 @@ export interface Tenant {
 export interface Subscription {
   status: 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED';
   trialEndsAt?: string | null;
+  currentPeriodStart?: string | null;
   currentPeriodEnd?: string | null;
+  lastPaymentAt?: string | null;
+  isTrial?: boolean;
+  trialDaysLeft?: number | null;
+  renewDaysLeft?: number | null;
   plan: {
     id: string;
     name: string;

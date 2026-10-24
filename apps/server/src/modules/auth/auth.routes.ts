@@ -222,7 +222,18 @@ authRouter.get('/me', requireAuth, async (req, res) => {
       ? {
           status: sub.status,
           trialEndsAt: sub.trialEndsAt,
+          currentPeriodStart: sub.currentPeriodStart,
           currentPeriodEnd: sub.currentPeriodEnd,
+          lastPaymentAt: sub.lastPaymentAt,
+          isTrial: sub.status === 'TRIALING',
+          trialDaysLeft:
+            sub.trialEndsAt
+              ? Math.max(0, Math.ceil(DateTime.fromJSDate(sub.trialEndsAt).diffNow('days').days))
+              : null,
+          renewDaysLeft:
+            sub.currentPeriodEnd
+              ? Math.ceil(DateTime.fromJSDate(sub.currentPeriodEnd).diffNow('days').days)
+              : null,
           plan: { id: sub.plan.id, name: sub.plan.name, slug: sub.plan.slug, priceCents: sub.plan.priceCents },
           limits: effectiveLimits(sub),
         }

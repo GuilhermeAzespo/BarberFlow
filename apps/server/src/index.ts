@@ -22,6 +22,8 @@ import { financeRouter } from './modules/finance/finance.routes.js';
 import { whatsAppRouter } from './modules/whatsapp/whatsapp.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
 import { superAdminRouter } from './modules/superadmin/superadmin.routes.js';
+import { billingRouter } from './modules/billing/billing.routes.js';
+import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 
 const app = express();
@@ -67,6 +69,7 @@ app.get('/api/health', async (_req, res) => {
 // Rotas públicas e de autenticação
 app.use('/api/public', publicRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/webhooks', webhooksRouter);
 
 // Rotas do painel do salão (requer login + contexto do tenant + permissão granular de menu)
 app.use('/api/tenant', requireAuth, requireTenant, tenantRouter);
@@ -77,6 +80,7 @@ app.use('/api/appointments', requireAuth, requireTenant, appointmentsRouter);
 app.use('/api/finance', requireAuth, requireTenant, requireMenuPermission('finance'), financeRouter);
 app.use('/api/whatsapp', requireAuth, requireTenant, requireMenuPermission('whatsapp'), whatsAppRouter);
 app.use('/api/dashboard', requireAuth, requireTenant, requireMenuPermission('dashboard'), dashboardRouter);
+app.use('/api/billing', requireAuth, requireTenant, billingRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);

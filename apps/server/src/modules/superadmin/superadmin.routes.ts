@@ -13,6 +13,10 @@ import {
   sendEmail,
   buildBarberFlowEmailHtml,
 } from '../../lib/email.js';
+import {
+  getActiveMercadoPagoConfig,
+  testMercadoPagoConnection,
+} from '../../lib/mercadopago.js';
 
 export const superAdminRouter = Router();
 
@@ -71,6 +75,18 @@ const broadcastEmailSchema = z.object({
   subject: z.string().trim().min(3, 'Assunto é obrigatório'),
   message: z.string().trim().min(10, 'A mensagem precisa ter pelo menos 10 caracteres'),
   target: z.enum(['ALL', 'ACTIVE', 'BLOCKED']).default('ALL'),
+});
+
+const mpConfigSchema = z.object({
+  mpAccessToken: z.string().trim().optional(),
+  mpPublicKey: z.string().trim().optional(),
+  mpWebhookSecret: z.string().trim().optional(),
+  mpSandbox: z.boolean().default(false),
+  mpEnabled: z.boolean().default(true),
+});
+
+const testMpSchema = z.object({
+  accessToken: z.string().trim().optional(),
 });
 
 // Métricas globais da plataforma SaaS
@@ -672,3 +688,97 @@ superAdminRouter.post('/broadcast-email', async (req, res) => {
     message: `Comunicado enviado para ${sentCount} de ${list.length} destinatários com sucesso!`,
   });
 });
+
+// ─────────────────────── Integração Mercado Pago ───────────────────────
+
+superAdminRouter.get('/integrations/mercadopago', async (req, res) => {
+  const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+  const config = await getActiveMercadoPagoConfig();
+
+  const token = setting?.mpAccessToken || process.env.MP_ACCESS_TOKEN || '';
+  const maskedToken = token ? `${token.slice(0, 12)}****************${token.slice(-4)}` : '';
+
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.get('host') || 'barberflow.azespo.com.br';
+  const webhookUrl = `${protocol}://${host}/api/webhooks/mercadopago`;
+
+  res.json({
+    config: {
+      mpPublicKey: setting?.mpPublicKey || process.env.MP_PUBLIC_KEY || '',
+      mpAccessTokenMasked: maskedToken,
+      hasAccessToken: Boolean(token),
+      mpWebhookSecret: setting?.mpWebhookSecret || process.env.MP_WEBHOOK_SECRET || '',
+      mpSandbox: config.sandbox,
+      mpEnabled: config.enabled,
+      isConfigured: config.isConfigured,
+      webhookUrl,
+    },
+  });
+});
+
+superAdminRouter.put('/integrations/mercadopago', async (req, res) => {
+  const data = mpConfigSchema.parse(req.body);
+  const existing = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+
+  const finalAccessToken =
+    data.mpAccessToken && data.mpAccessToken.trim() !== ''
+      ? data.mpAccessToken.trim()
+      : existing?.mpAccessToken;
+
+  const finalPublicKey =
+    data.mpPublicKey !== undefined
+      ? data.mpPublicKey.trim() || null
+      : existing?.mpPublicKey;
+
+  const finalWebhookSecret =
+    data.mpWebhookSecret !== undefined
+      ? data.mpWebhookSecret.trim() || null
+      : existing?.mpWebhookSecret;
+
+  await prisma.systemSetting.upsert({
+    where: { id: 'global' },
+    create: {
+      id: 'global',
+      mpAccessToken: finalAccessToken || null,
+      mpPublicKey: finalPublicKey,
+      mpWebhookSecret: finalWebhookSecret,
+      mpSandbox: data.mpSandbox,
+      mpEnabled: data.mpEnabled,
+    },
+    update: {
+      mpAccessToken: finalAccessToken || null,
+      mpPublicKey: finalPublicKey,
+      mpWebhookSecret: finalWebhookSecret,
+      mpSandbox: data.mpSandbox,
+      mpEnabled: data.mpEnabled,
+    },
+  });
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Configurações do Mercado Pago atualizadas (Sandbox: ${data.mpSandbox}, Ativo: ${data.mpEnabled})`,
+  });
+
+  res.json({
+    success: true,
+    message: 'Configurações do Mercado Pago salvas com sucesso!',
+  });
+});
+
+superAdminRouter.post('/integrations/mercadopago/test', async (req, res) => {
+  const data = testMpSchema.parse(req.body);
+  const existing = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+  const token = data.accessToken || existing?.mpAccessToken || process.env.MP_ACCESS_TOKEN;
+
+  if (!token) {
+    throw HttpError.badRequest('Informe o Access Token do Mercado Pago para testar a conexão.');
+  }
+
+  const result = await testMercadoPagoConnection(token);
+  if (!result.success) {
+    throw HttpError.badRequest(result.message);
+  }
+
+  res.json(result);
+});
+

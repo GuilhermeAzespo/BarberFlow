@@ -29,6 +29,11 @@ import {
   Clock,
   Layers,
   Lock,
+  CreditCard,
+  QrCode,
+  Copy,
+  Key,
+  Globe,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -133,18 +138,30 @@ interface SmtpConfigData {
   isConfigured: boolean;
 }
 
+interface MercadoPagoConfigData {
+  mpPublicKey: string;
+  mpAccessTokenMasked: string;
+  hasAccessToken: boolean;
+  mpWebhookSecret: string;
+  mpSandbox: boolean;
+  mpEnabled: boolean;
+  isConfigured: boolean;
+  webhookUrl: string;
+}
+
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
   const { toast, confirm } = useToast();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'logs'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'mercadopago' | 'logs'>('tenants');
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [plans, setPlans] = useState<PlanItem[]>([]);
   const [logs, setLogs] = useState<SystemLogItem[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [smtpConfig, setSmtpConfig] = useState<SmtpConfigData | null>(null);
+  const [mpConfig, setMpConfig] = useState<MercadoPagoConfigData | null>(null);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -203,6 +220,18 @@ export default function SuperAdminPage() {
 
   // Impersonation
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  // Formulário Mercado Pago
+  const [mpForm, setMpForm] = useState({
+    mpAccessToken: '',
+    mpPublicKey: '',
+    mpWebhookSecret: '',
+    mpSandbox: false,
+    mpEnabled: true,
+  });
+  const [savingMp, setSavingMp] = useState(false);
+  const [testingMp, setTestingMp] = useState(false);
+  const [showMpToken, setShowMpToken] = useState(false);
 
   const loadOverview = async () => {
     try {
@@ -265,6 +294,22 @@ export default function SuperAdminPage() {
     }
   };
 
+  const loadMpConfig = async () => {
+    try {
+      const res = await api.get<{ config: MercadoPagoConfigData }>('/api/superadmin/integrations/mercadopago');
+      setMpConfig(res.config);
+      setMpForm({
+        mpAccessToken: '',
+        mpPublicKey: res.config.mpPublicKey || '',
+        mpWebhookSecret: res.config.mpWebhookSecret || '',
+        mpSandbox: res.config.mpSandbox,
+        mpEnabled: res.config.mpEnabled,
+      });
+    } catch {
+      // Ignora erro
+    }
+  };
+
   const loadLogs = async () => {
     try {
       const res = await api.get<{ logs: SystemLogItem[] }>('/api/superadmin/logs?pageSize=50');
@@ -275,7 +320,7 @@ export default function SuperAdminPage() {
   };
 
   useEffect(() => {
-    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAnalytics(), loadSmtp(), loadLogs()]).finally(() =>
+    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadLogs()]).finally(() =>
       setLoading(false),
     );
   }, []);
@@ -472,6 +517,45 @@ export default function SuperAdminPage() {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao enviar comunicado.');
     } finally {
       setSendingBroadcast(false);
+    }
+  };
+
+  // Salvar Configurações do Mercado Pago
+  const handleSaveMp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingMp(true);
+    try {
+      await api.put('/api/superadmin/integrations/mercadopago', mpForm);
+      await loadMpConfig();
+      toast.success('Configurações do Mercado Pago salvas com sucesso!');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar configurações do Mercado Pago.');
+    } finally {
+      setSavingMp(false);
+    }
+  };
+
+  // Testar Conexão com Mercado Pago
+  const handleTestMp = async () => {
+    setTestingMp(true);
+    try {
+      const res = await api.post<{ success: boolean; message: string; account?: any }>(
+        '/api/superadmin/integrations/mercadopago/test',
+        { accessToken: mpForm.mpAccessToken || undefined },
+      );
+      toast.success(res.message || 'Conexão com o Mercado Pago validada com sucesso!');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao testar conexão com o Mercado Pago.');
+    } finally {
+      setTestingMp(false);
+    }
+  };
+
+  // Copiar URL do Webhook
+  const handleCopyWebhook = () => {
+    if (mpConfig?.webhookUrl) {
+      navigator.clipboard.writeText(mpConfig.webhookUrl);
+      toast.success('URL do Webhook copiada para a área de transferência!');
     }
   };
 
@@ -675,6 +759,40 @@ export default function SuperAdminPage() {
           >
             <Mail size={16} />
             <span>Servidor SMTP & E-mails</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('mercadopago')}
+            style={{
+              padding: '12px 20px',
+              border: 'none',
+              background: 'transparent',
+              color: activeTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
+              borderBottom: activeTab === 'mercadopago' ? '2px solid var(--primary)' : '2px solid transparent',
+              fontWeight: 600,
+              fontSize: '0.92rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <CreditCard size={16} />
+            <span>Integração Mercado Pago</span>
+            {mpConfig?.isConfigured && (
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  background: mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                  color: mpConfig.mpSandbox ? '#FBBF24' : '#10B981',
+                  border: `1px solid ${mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  fontWeight: 700,
+                }}
+              >
+                {mpConfig.mpSandbox ? 'SANDBOX' : 'PRODUÇÃO'}
+              </span>
+            )}
           </button>
 
           <button
@@ -1295,6 +1413,420 @@ export default function SuperAdminPage() {
                       {sendingBroadcast ? 'Disparando comunicado...' : 'Enviar Comunicado por E-mail'}
                     </button>
                   </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ───────────────── ABA: Integração Mercado Pago ───────────────── */}
+        {activeTab === 'mercadopago' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header de Status */}
+            <div
+              className="glass-panel"
+              style={{
+                padding: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                borderLeft: `4px solid ${mpConfig?.isConfigured ? '#10B981' : '#F59E0B'}`,
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <div
+                    style={{
+                      width: '38px',
+                      height: '38px',
+                      borderRadius: '10px',
+                      background: 'rgba(0, 158, 227, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#009EE3',
+                    }}
+                  >
+                    <CreditCard size={20} />
+                  </div>
+                  <h2 style={{ fontSize: '1.35rem', fontWeight: 700 }}>
+                    Integração Oficial Mercado Pago
+                  </h2>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '3px 9px',
+                      borderRadius: '6px',
+                      background: mpConfig?.isConfigured
+                        ? mpConfig.mpSandbox
+                          ? 'rgba(245, 158, 11, 0.2)'
+                          : 'rgba(16, 185, 129, 0.2)'
+                        : 'rgba(239, 68, 68, 0.2)',
+                      color: mpConfig?.isConfigured
+                        ? mpConfig.mpSandbox
+                          ? '#FBBF24'
+                          : '#10B981'
+                        : '#F87171',
+                      border: `1px solid ${
+                        mpConfig?.isConfigured
+                          ? mpConfig.mpSandbox
+                            ? 'rgba(245, 158, 11, 0.4)'
+                            : 'rgba(16, 185, 129, 0.4)'
+                          : 'rgba(239, 68, 68, 0.4)'
+                      }`,
+                    }}
+                  >
+                    {mpConfig?.isConfigured
+                      ? mpConfig.mpSandbox
+                        ? 'MODO TESTE (SANDBOX)'
+                        : 'CONECTADO EM PRODUÇÃO'
+                      : 'NÃO CONFIGURADO'}
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+                  Receba os pagamentos de assinatura (Starter, Pro e Premium) de todos os salões via <strong>Pix Instantâneo</strong> e <strong>Cartão de Crédito</strong>.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleTestMp}
+                  disabled={testingMp}
+                  className="glass-card"
+                  style={{
+                    padding: '10px 18px',
+                    fontSize: '0.88rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: '#009EE3',
+                    borderColor: 'rgba(0, 158, 227, 0.3)',
+                  }}
+                >
+                  <Key size={16} />
+                  <span>{testingMp ? 'Testando conexão...' : 'Validar Credenciais na API'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Grid 2 Colunas */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+                gap: '24px',
+              }}
+            >
+              {/* Coluna 1: Formulário de Credenciais */}
+              <div className="glass-panel" style={{ padding: '28px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <Key size={18} color="var(--primary)" />
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Credenciais da API Mercado Pago</h3>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginBottom: '20px' }}>
+                  Insira o seu <strong>Access Token</strong> e <strong>Public Key</strong> obtidos no Portal de Desenvolvedores do Mercado Pago.
+                </p>
+
+                <form onSubmit={handleSaveMp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Access Token de Produção *
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={showMpToken ? 'text' : 'password'}
+                        placeholder={
+                          mpConfig?.hasAccessToken
+                            ? `Token salvo (${mpConfig.mpAccessTokenMasked || '••••••••'}) - digite para alterar`
+                            : 'APP_USR-0000000000000000-000000-00000000000000000000000000000000-000000000'
+                        }
+                        value={mpForm.mpAccessToken}
+                        onChange={(e) => setMpForm({ ...mpForm, mpAccessToken: e.target.value })}
+                        style={{ paddingRight: '42px', fontFamily: 'monospace' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowMpToken(!showMpToken)}
+                        style={{
+                          position: 'absolute',
+                          right: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {showMpToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                      {mpConfig?.hasAccessToken
+                        ? 'Token já configurado e ativo. Preencha apenas se desejar trocar.'
+                        : 'Começa normalmente com "APP_USR-..." ou "TEST-..."'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Chave Pública (Public Key) *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="APP_USR-00000000-0000-0000-0000-000000000000"
+                      value={mpForm.mpPublicKey}
+                      onChange={(e) => setMpForm({ ...mpForm, mpPublicKey: e.target.value })}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                      Utilizada para tokenização segura do cartão no checkout do salão.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Chave Secreta do Webhook (Assinatura HMAC - Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Chave secreta gerada ao cadastrar o webhook (opcional)"
+                      value={mpForm.mpWebhookSecret}
+                      onChange={(e) => setMpForm({ ...mpForm, mpWebhookSecret: e.target.value })}
+                      style={{ fontFamily: 'monospace' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={mpForm.mpEnabled}
+                        onChange={(e) => setMpForm({ ...mpForm, mpEnabled: e.target.checked })}
+                      />
+                      <span>
+                        <strong>Ativar Checkout do Mercado Pago no SaaS</strong> (salões poderão pagar planos com Pix e Cartão)
+                      </span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={mpForm.mpSandbox}
+                        onChange={(e) => setMpForm({ ...mpForm, mpSandbox: e.target.checked })}
+                      />
+                      <span style={{ color: mpForm.mpSandbox ? '#FBBF24' : 'inherit' }}>
+                        <strong>Modo Sandbox (Testes)</strong> — ative caso queira simular pagamentos sem transacionar dinheiro real
+                      </span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={savingMp}
+                    className="gold-gradient-primary gold-glow"
+                    style={{ padding: '12px', fontWeight: 700, marginTop: '8px' }}
+                  >
+                    {savingMp ? 'Salvando...' : 'Salvar Configurações do Mercado Pago'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Coluna 2: Instruções Passo a Passo & Webhook */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Card de Webhook */}
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <Globe size={18} color="#10B981" />
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>URL de Notificação (Webhook)</h3>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginBottom: '14px' }}>
+                    Cadastre este endereço no Mercado Pago para que a liberação de assinaturas (Pix e Cartão) ocorra de forma 100% instantânea:
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: 'rgba(0,0,0,0.4)',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-color)',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.82rem', color: '#10B981', flex: 1, wordBreak: 'break-all' }}>
+                      {mpConfig?.webhookUrl || 'https://barberflow.azespo.com.br/api/webhooks/mercadopago'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyWebhook}
+                      className="glass-card"
+                      style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+                    >
+                      <Copy size={13} />
+                      <span>Copiar</span>
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', lineHeight: 1.4 }}>
+                    📌 No Mercado Pago, selecione o evento <strong>Pagamentos (payment)</strong> no modo de produção.
+                  </div>
+                </div>
+
+                {/* Card de Instruções Passo a Passo */}
+                <div className="glass-panel" style={{ padding: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                    <Sparkles size={18} color="var(--primary)" />
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Como Obter suas Credenciais</h3>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.84rem' }}>
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <span
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(229, 179, 56, 0.2)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        1
+                      </span>
+                      <div>
+                        <strong>Acesse o Portal de Desenvolvedores:</strong>
+                        <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          Entre em{' '}
+                          <a
+                            href="https://www.mercadopago.com.br/developers/panel"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: '#009EE3', textDecoration: 'none' }}
+                          >
+                            mercadopago.com.br/developers/panel <ExternalLink size={11} style={{ display: 'inline' }} />
+                          </a>{' '}
+                          com sua conta Mercado Pago.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <span
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(229, 179, 56, 0.2)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        2
+                      </span>
+                      <div>
+                        <strong>Crie uma Nova Aplicação:</strong>
+                        <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          Clique em &quot;Criar aplicação&quot;, dê o nome <strong>BarberFlow</strong> e selecione a opção &quot;Pagamentos no meu site (Checkout Transparente)&quot;.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <span
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(229, 179, 56, 0.2)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        3
+                      </span>
+                      <div>
+                        <strong>Copie as Credenciais de Produção:</strong>
+                        <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          No menu lateral da sua aplicação, clique em <strong>Credenciais de Produção</strong>. Copie o <strong>Public Key</strong> e o <strong>Access Token</strong> e cole no formulário ao lado.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <span
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(229, 179, 56, 0.2)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        4
+                      </span>
+                      <div>
+                        <strong>Configure as Notificações Webhook:</strong>
+                        <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          Vá na aba <strong>Webhooks</strong>, adicione a URL copiada acima e marque o evento <strong>Pagamentos (payment)</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <span
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: 'rgba(229, 179, 56, 0.2)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        5
+                      </span>
+                      <div>
+                        <strong>Pronto! Teste a Conexão:</strong>
+                        <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                          Clique em &quot;Validar Credenciais na API&quot; no topo para verificar se a conexão está 100% operacional.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

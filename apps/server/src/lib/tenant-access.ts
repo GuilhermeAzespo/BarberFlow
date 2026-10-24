@@ -48,11 +48,68 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
     };
   }
   if (sub.status === 'TRIALING' && sub.trialEndsAt) {
-    const daysLeft = Math.ceil(DateTime.fromJSDate(sub.trialEndsAt).diffNow('days').days);
+    const diff = DateTime.fromJSDate(sub.trialEndsAt).diffNow('days');
+    const daysLeft = Math.ceil(diff.days);
+    const dateFormatted = DateTime.fromJSDate(sub.trialEndsAt).setZone(tenant.timezone).toFormat('dd/LL/yyyy');
+
+    if (daysLeft <= 0) {
+      const graceEnd = DateTime.fromJSDate(sub.trialEndsAt).plus({ days: env.BILLING_GRACE_DAYS });
+      const graceDiff = Math.ceil(graceEnd.diffNow('days').days);
+      if (graceDiff <= 0) {
+        return {
+          allowed: false,
+          code: 'TENANT_BLOCKED',
+          message: 'Seu período de teste gratuito de 14 dias terminou. Cadastre seu cartão de crédito ou realize o pagamento via Pix para continuar utilizando o BarberFlow.',
+        };
+      }
+      return {
+        allowed: true,
+        code: 'OK',
+        message: 'OK',
+        warning: `⚠️ Seu período de teste de 14 dias terminou! Cadastre um cartão de crédito ou gere um Pix agora para manter seu salão funcionando sem interrupções.`,
+      };
+    }
+
     if (daysLeft <= 3) {
-      return { allowed: true, code: 'OK', message: 'OK', warning: `Seu período de teste termina em ${Math.max(daysLeft, 0)} dia(s).` };
+      return {
+        allowed: true,
+        code: 'OK',
+        message: 'OK',
+        warning: `⚠️ Seu teste gratuito de 14 dias finaliza em ${daysLeft} dia(s) (${dateFormatted}). Cadastre seu cartão ou gere um Pix para continuar.`,
+      };
+    }
+
+    return {
+      allowed: true,
+      code: 'OK',
+      message: 'OK',
+      warning: `Período de teste: restam ${daysLeft} dia(s) (termina em ${dateFormatted}).`,
+    };
+  }
+
+  if (sub.status === 'ACTIVE' && sub.currentPeriodEnd) {
+    const renewDate = DateTime.fromJSDate(sub.currentPeriodEnd).setZone(tenant.timezone);
+    const daysUntilRenew = Math.ceil(renewDate.diffNow('days').days);
+    const formattedRenew = renewDate.toFormat('dd/LL/yyyy');
+
+    if (daysUntilRenew <= 0) {
+      return {
+        allowed: true,
+        code: 'OK',
+        message: 'OK',
+        warning: `Sua assinatura renovou em ${formattedRenew}. Efetue o pagamento via Pix ou Cartão para manter seus serviços ativos.`,
+      };
+    }
+    if (daysUntilRenew <= 3) {
+      return {
+        allowed: true,
+        code: 'OK',
+        message: 'OK',
+        warning: `Aviso de renovação: sua assinatura renova em ${daysUntilRenew} dia(s) (${formattedRenew}).`,
+      };
     }
   }
+
   return { allowed: true, code: 'OK', message: 'OK' };
 }
 

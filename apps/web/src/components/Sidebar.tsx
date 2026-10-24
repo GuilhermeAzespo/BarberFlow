@@ -244,9 +244,29 @@ export function Sidebar() {
             Ver limites →
           </span>
         </div>
-        <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', lineHeight: 1.35, margin: '0 0 8px 0' }}>
-          Agendamentos e WhatsApp integrados.
-        </p>
+        <div style={{ fontSize: '0.74rem', lineHeight: 1.35, margin: '0 0 8px 0' }}>
+          {subscription?.status === 'TRIALING' ? (
+            <span style={{ color: (subscription.trialDaysLeft ?? 0) <= 3 ? '#F87171' : '#FBBF24', fontWeight: 600 }}>
+              {(subscription.trialDaysLeft ?? 0) <= 0
+                ? '⚠️ Teste encerrado (14 dias)'
+                : `⏱️ Teste: ${subscription.trialDaysLeft} dia(s) restante(s)`}
+            </span>
+          ) : subscription?.status === 'ACTIVE' ? (
+            <span style={{ color: '#10B981', fontWeight: 600 }}>
+              {subscription.renewDaysLeft !== null && subscription.renewDaysLeft !== undefined
+                ? `📅 Renova em ${subscription.renewDaysLeft} dia(s)`
+                : '✨ Assinatura Ativa'}
+            </span>
+          ) : subscription?.status === 'PAST_DUE' ? (
+            <span style={{ color: '#F43F5E', fontWeight: 600 }}>
+              ⚠️ Pagamento pendente
+            </span>
+          ) : (
+            <span style={{ color: 'var(--text-dim)' }}>
+              Agendamentos e WhatsApp integrados.
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
             Versão do Sistema:

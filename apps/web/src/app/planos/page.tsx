@@ -22,12 +22,20 @@ import {
   Scissors,
   Star,
   ExternalLink,
+  CreditCard,
+  QrCode,
+  Copy,
+  Clock,
+  Lock,
+  RefreshCw,
 } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { useAuth } from '../../lib/auth-context';
-import { api } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
+import { useToast } from '../../components/Toast';
+import { DateTime } from 'luxon';
 
 interface PublicPlan {
   id: string;
@@ -254,21 +262,112 @@ const COMPARISON_TABLE: ComparisonFeature[] = [
   },
 ];
 
+interface BillingStatusResponse {
+  subscription: {
+    status: string;
+    trialEndsAt?: string | null;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+    lastPaymentAt?: string | null;
+    isTrial?: boolean;
+    trialDaysLeft?: number | null;
+    renewDaysLeft?: number | null;
+    plan: {
+      id: string;
+      name: string;
+      slug: string;
+      priceCents: number;
+    };
+  } | null;
+  plans: PublicPlan[];
+  mercadopago: {
+    isConfigured: boolean;
+    enabled: boolean;
+    publicKey?: string | null;
+    sandbox: boolean;
+  };
+}
+
+interface PaymentHistoryItem {
+  id: string;
+  amountCents: number;
+  method: 'PIX' | 'CREDIT_CARD';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELED';
+  paidAt?: string | null;
+  createdAt: string;
+  cardBrand?: string | null;
+  cardLastFour?: string | null;
+  plan: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
 export default function PlanosPage() {
-  const { tenant, subscription } = useAuth();
+  const { tenant, subscription, refresh } = useAuth();
+  const { toast } = useToast();
   const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_PLANS);
   const [activeProfsCount, setActiveProfsCount] = useState<number>(1);
-  const [selectedUpgradePlan, setSelectedUpgradePlan] = useState<PublicPlan | null>(null);
+  const [billingInfo, setBillingInfo] = useState<BillingStatusResponse | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Modal de Checkout Mercado Pago
+  const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<PublicPlan | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CREDIT_CARD'>('PIX');
+
+  // PIX State
+  const [pixCpf, setPixCpf] = useState('');
+  const [generatingPix, setGeneratingPix] = useState(false);
+  const [checkingPix, setCheckingPix] = useState(false);
+  const [pixResult, setPixResult] = useState<{
+    paymentId: string;
+    qrCode?: string;
+    qrCodeBase64?: string;
+    ticketUrl?: string;
+    amountCents: number;
+    planName: string;
+    expiresAt?: string;
+  } | null>(null);
+  const [pixPaidSuccess, setPixPaidSuccess] = useState(false);
+
+  // Cartão de Crédito State
+  const [cardForm, setCardForm] = useState({
+    cardNumber: '',
+    cardholderName: '',
+    cardholderCpf: '',
+    expMonth: '12',
+    expYear: '2028',
+    cvv: '',
+  });
+  const [processingCard, setProcessingCard] = useState(false);
+  const [cardPaidSuccess, setCardPaidSuccess] = useState(false);
+
+  const loadBilling = async () => {
+    try {
+      const res = await api.get<BillingStatusResponse>('/api/billing/status');
+      setBillingInfo(res);
+      if (res.plans && res.plans.length > 0) {
+        setPlans(res.plans);
+      }
+    } catch {
+      // Ignora erro
+    }
+
+    try {
+      setLoadingHistory(true);
+      const resHist = await api.get<{ payments: PaymentHistoryItem[] }>('/api/billing/history');
+      setPaymentHistory(resHist.payments || []);
+    } catch {
+      // Ignora erro
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
   useEffect(() => {
-    api
-      .get<{ plans: PublicPlan[] }>('/api/public/plans')
-      .then((res) => {
-        if (res.plans && res.plans.length > 0) {
-          setPlans(res.plans);
-        }
-      })
-      .catch(() => {});
+    loadBilling();
 
     api
       .get<{ professionals: any[] }>('/api/professionals?active=true')
@@ -279,6 +378,29 @@ export default function PlanosPage() {
       })
       .catch(() => {});
   }, []);
+
+  // Polling automático para verificação de PIX
+  useEffect(() => {
+    if (!pixResult?.paymentId || pixPaidSuccess) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get<{ isPaid: boolean; status: string }>(
+          `/api/billing/payments/${pixResult.paymentId}/status`,
+        );
+        if (res.isPaid) {
+          setPixPaidSuccess(true);
+          toast.success('🎉 Pagamento PIX aprovado com sucesso! O plano do seu salão foi ativado agora mesmo.');
+          await refresh();
+          await loadBilling();
+        }
+      } catch {
+        // Ignora falha transitória
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [pixResult?.paymentId, pixPaidSuccess]);
 
   const currentPlanSlug = (subscription?.plan?.slug || 'starter').toLowerCase();
   const isTrial = subscription?.status === 'TRIALING';
@@ -293,22 +415,132 @@ export default function PlanosPage() {
     return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  const handleOpenUpgrade = (plan: PublicPlan) => {
-    setSelectedUpgradePlan(plan);
+  const formatCardNumber = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 16);
+    return digits.replace(/(\d{4})(?=\d)/g, '$1 ');
   };
 
-  const handleConfirmUpgradeWhatsApp = (plan: PublicPlan) => {
-    const salonName = tenant?.name || 'Minha Barbearia';
-    const planName = plan.name;
-    const msg = `🚀 *Solicitação de Upgrade - BarberFlow*\n\n` +
-      `💈 *Barbearia:* ${salonName}\n` +
-      `💎 *Plano Desejado:* ${planName} (${formatBRL(plan.priceCents)}/mês)\n` +
-      `👤 *Plano Atual:* ${subscription?.plan.name || 'Starter / Testes'}\n\n` +
-      `Olá! Gostaria de ativar o upgrade do meu salão para o *Plano ${planName}* agora mesmo. Como prosseguimos?`;
+  const formatCpf = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    return digits
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  };
 
-    const waUrl = `https://wa.me/5519982131483?text=${encodeURIComponent(msg)}`;
-    window.open(waUrl, '_blank');
-    setSelectedUpgradePlan(null);
+  const handleOpenCheckout = (plan: PublicPlan) => {
+    setSelectedPlanForCheckout(plan);
+    setPixResult(null);
+    setPixPaidSuccess(false);
+    setCardPaidSuccess(false);
+    setPaymentMethod('PIX');
+  };
+
+  const handleCloseCheckout = () => {
+    setSelectedPlanForCheckout(null);
+    setPixResult(null);
+    setPixPaidSuccess(false);
+    setCardPaidSuccess(false);
+  };
+
+  // Gerar PIX via Mercado Pago
+  const handleGeneratePix = async () => {
+    if (!selectedPlanForCheckout) return;
+    setGeneratingPix(true);
+    setPixResult(null);
+    setPixPaidSuccess(false);
+
+    try {
+      const res = await api.post<{
+        paymentId: string;
+        qrCode?: string;
+        qrCodeBase64?: string;
+        ticketUrl?: string;
+        amountCents: number;
+        planName: string;
+        expiresAt?: string;
+      }>('/api/billing/checkout/pix', {
+        planId: selectedPlanForCheckout.id,
+        payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
+      });
+
+      setPixResult(res);
+      toast.success('Código Pix gerado com sucesso! Efetue o pagamento no aplicativo do seu banco.');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao gerar cobrança Pix no Mercado Pago.');
+    } finally {
+      setGeneratingPix(false);
+    }
+  };
+
+  // Consulta manual de PIX
+  const handleCheckPixManual = async () => {
+    if (!pixResult?.paymentId) return;
+    setCheckingPix(true);
+    try {
+      const res = await api.get<{ isPaid: boolean; status: string }>(
+        `/api/billing/payments/${pixResult.paymentId}/status`,
+      );
+      if (res.isPaid) {
+        setPixPaidSuccess(true);
+        toast.success('🎉 Pagamento PIX aprovado com sucesso!');
+        await refresh();
+        await loadBilling();
+      } else {
+        toast.info('Pagamento ainda em processamento. Se já pagou, aguarde alguns segundos.');
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao consultar status do Pix.');
+    } finally {
+      setCheckingPix(false);
+    }
+  };
+
+  // Pagar via Cartão de Crédito
+  const handlePayCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPlanForCheckout) return;
+
+    if (!cardForm.cardNumber || !cardForm.cardholderName || !cardForm.cardholderCpf || !cardForm.cvv) {
+      return toast.warning('Preencha todos os campos do cartão de crédito.');
+    }
+
+    setProcessingCard(true);
+    try {
+      const res = await api.post<{ success: boolean; message: string; status: string }>(
+        '/api/billing/checkout/card',
+        {
+          planId: selectedPlanForCheckout.id,
+          cardNumber: cardForm.cardNumber,
+          cardholderName: cardForm.cardholderName,
+          cardholderCpf: cardForm.cardholderCpf,
+          expMonth: cardForm.expMonth,
+          expYear: cardForm.expYear,
+          cvv: cardForm.cvv,
+          installments: 1,
+        },
+      );
+
+      if (res.success || res.status === 'approved') {
+        setCardPaidSuccess(true);
+        toast.success('🎉 Pagamento aprovado! O plano do seu salão foi ativado agora mesmo.');
+        await refresh();
+        await loadBilling();
+      } else {
+        toast.warning(res.message || 'Pagamento em análise ou não autorizado pela operadora.');
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Erro ao processar cartão de crédito no Mercado Pago.');
+    } finally {
+      setProcessingCard(false);
+    }
+  };
+
+  const copyPixCode = () => {
+    if (pixResult?.qrCode) {
+      navigator.clipboard.writeText(pixResult.qrCode);
+      toast.success('Código Pix Copia e Cola copiado com sucesso!');
+    }
   };
 
   return (
@@ -392,6 +624,55 @@ export default function PlanosPage() {
                   {formatBRL(subscription?.plan?.priceCents || 4990)} / mês
                 </span>
               </div>
+
+              {/* Status de Trial / Renovação */}
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {isTrial ? (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      background: (subscription?.trialDaysLeft ?? 0) <= 3 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: (subscription?.trialDaysLeft ?? 0) <= 3 ? '#F87171' : '#FBBF24',
+                      border: `1px solid ${(subscription?.trialDaysLeft ?? 0) <= 3 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                    }}
+                  >
+                    <Clock size={13} />
+                    <span>
+                      {(subscription?.trialDaysLeft ?? 0) <= 0
+                        ? '⚠️ Período de teste de 14 dias encerrado'
+                        : `⏱️ Período de teste: ${subscription?.trialDaysLeft} dia(s) restante(s)`}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <Calendar size={13} />
+                    <span>
+                      {subscription?.currentPeriodEnd
+                        ? `📅 Renova em ${DateTime.fromISO(subscription.currentPeriodEnd).toFormat('dd/LL/yyyy')} (em ${subscription?.renewDaysLeft ?? 30} dias)`
+                        : '✨ Assinatura Ativa'}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Metrificadores de Capacidade */}
@@ -449,6 +730,27 @@ export default function PlanosPage() {
                   Lembretes 100% integrados
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => handleOpenCheckout(plans.find((p) => p.slug === currentPlanSlug) || plans[0])}
+                className="gold-gradient-primary gold-glow"
+                style={{
+                  padding: '12px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '0.86rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <CreditCard size={16} />
+                <span>{isTrial ? 'Pagar / Efetivar Assinatura' : 'Renovar com Mercado Pago'}</span>
+              </button>
             </div>
           </div>
 
@@ -571,7 +873,8 @@ export default function PlanosPage() {
                 </div>
 
                 <button
-                  onClick={() => handleOpenUpgrade(plans.find((p) => p.slug === (isStarter ? 'pro' : 'premium')) || plans[1])}
+                  type="button"
+                  onClick={() => handleOpenCheckout(plans.find((p) => p.slug === (isStarter ? 'pro' : 'premium')) || plans[1])}
                   className="gold-gradient-primary gold-glow"
                   style={{
                     padding: '10px 22px',
@@ -714,30 +1017,39 @@ export default function PlanosPage() {
                     {/* Botão de Ação */}
                     <div>
                       {isCurrent ? (
-                        <div
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCheckout(p)}
+                          className="gold-gradient-primary gold-glow"
                           style={{
                             width: '100%',
                             padding: '12px',
                             borderRadius: '8px',
-                            background: 'rgba(229, 179, 56, 0.15)',
-                            border: '1px solid rgba(229, 179, 56, 0.4)',
-                            color: 'var(--primary)',
-                            fontSize: '0.9rem',
+                            fontSize: '0.88rem',
                             fontWeight: 700,
-                            textAlign: 'center',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            color: '#0B0F17',
+                            border: 'none',
+                            transition: 'all 0.2s ease',
                           }}
                         >
-                          Plano Atual Ativo
-                        </div>
+                          <CreditCard size={16} />
+                          <span>{isTrial ? 'Efetivar Assinatura (Mercado Pago)' : 'Renovar Plano Atual'}</span>
+                        </button>
                       ) : (
                         <button
-                          onClick={() => handleOpenUpgrade(p)}
+                          type="button"
+                          onClick={() => handleOpenCheckout(p)}
                           className={isProCard ? 'gold-gradient-primary gold-glow' : 'glass-card'}
                           style={{
                             width: '100%',
                             padding: '12px',
                             borderRadius: '8px',
-                            fontSize: '0.9rem',
+                            fontSize: '0.88rem',
                             fontWeight: 700,
                             display: 'flex',
                             alignItems: 'center',
@@ -749,7 +1061,7 @@ export default function PlanosPage() {
                             transition: 'all 0.2s ease',
                           }}
                         >
-                          <span>Fazer Upgrade para {p.name}</span>
+                          <span>Mudar para {p.name}</span>
                           <ArrowRight size={16} />
                         </button>
                       )}
@@ -835,6 +1147,171 @@ export default function PlanosPage() {
             </div>
           </div>
 
+          {/* ───────────────── HISTÓRICO DE FATURAS & PAGAMENTOS ───────────────── */}
+          <div className="glass-panel" style={{ padding: '28px', borderRadius: '16px', marginBottom: '40px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: 800, margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={20} color="var(--primary)" />
+                  Histórico de Faturas & Pagamentos
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', margin: 0 }}>
+                  Acompanhe seus recibos, comprovantes Pix e transações de cartão de crédito Mercado Pago.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadBilling}
+                disabled={loadingHistory}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <RefreshCw size={14} className={loadingHistory ? 'spin' : ''} />
+                <span>Atualizar Histórico</span>
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                Carregando histórico de pagamentos...
+              </div>
+            ) : paymentHistory.length === 0 ? (
+              <div
+                style={{
+                  padding: '36px 20px',
+                  textAlign: 'center',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  borderRadius: '12px',
+                  border: '1px dashed var(--border-color)',
+                }}
+              >
+                <CreditCard size={32} color="var(--text-dim)" style={{ marginBottom: '8px' }} />
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: '0 0 6px 0', fontWeight: 600 }}>
+                  Nenhum pagamento registrado ainda.
+                </p>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                  Assim que você efetuar o pagamento via Pix ou Cartão de Crédito, seus comprovantes aparecerão aqui.
+                </span>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '600px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                      <th style={{ padding: '10px 12px' }}>Data</th>
+                      <th style={{ padding: '10px 12px' }}>Plano</th>
+                      <th style={{ padding: '10px 12px' }}>Método</th>
+                      <th style={{ padding: '10px 12px' }}>Valor</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentHistory.map((item) => {
+                      const dt = DateTime.fromISO(item.paidAt || item.createdAt).setLocale('pt-BR');
+                      const dateStr = dt.isValid ? dt.toFormat('dd/MM/yyyy HH:mm') : '-';
+                      const isApproved = item.status === 'APPROVED';
+                      const isPending = item.status === 'PENDING';
+
+                      return (
+                        <tr
+                          key={item.id}
+                          style={{
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                            fontSize: '0.86rem',
+                          }}
+                        >
+                          <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{dateStr}</td>
+                          <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {item.plan?.name || 'Plano'}
+                          </td>
+                          <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                            {item.method === 'PIX' ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <QrCode size={14} color="#10B981" /> Pix
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <CreditCard size={14} color="#60A5FA" />
+                                Cartão {item.cardBrand ? `(${item.cardBrand.toUpperCase()}` : ''}
+                                {item.cardLastFour ? ` •••• ${item.cardLastFour})` : ''}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-main)' }}>
+                            {formatBRL(item.amountCents)}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            {isApproved ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: '12px',
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#10B981',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <CheckCircle2 size={12} /> Aprovado
+                              </span>
+                            ) : isPending ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: '12px',
+                                  background: 'rgba(245, 158, 11, 0.15)',
+                                  color: '#F59E0B',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <Clock size={12} /> Pendente
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '4px 10px',
+                                  borderRadius: '12px',
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#EF4444',
+                                  fontSize: '0.76rem',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                <XCircle size={12} /> {item.status}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* ───────────────── FAQ DE DÚVIDAS SOBRE PLANOS ───────────────── */}
           <div style={{ maxWidth: '820px', margin: '0 auto 40px auto' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
@@ -850,7 +1327,7 @@ export default function PlanosPage() {
                 },
                 {
                   q: 'Quanto tempo leva para o novo plano ser ativado?',
-                  a: 'A ativação é imediata. Assim que o upgrade é confirmado, os limites de barbeiros e agendamentos são atualizados automaticamente na sua conta.',
+                  a: 'A ativação é imediata. Assim que o pagamento via Pix ou Cartão é processado pelo Mercado Pago, os limites e recursos são atualizados automaticamente na sua conta.',
                 },
                 {
                   q: 'Posso cancelar ou trocar de plano a qualquer momento?',
@@ -858,7 +1335,7 @@ export default function PlanosPage() {
                 },
                 {
                   q: 'Quais as formas de pagamento disponíveis?',
-                  a: 'Aceitamos Pix (com liberação instantânea), Cartão de Crédito com renovação mensal automática e Boleto Bancário.',
+                  a: 'Aceitamos Pix oficial do Mercado Pago (com liberação instantânea e QR Code na tela) e Cartão de Crédito com ativação na hora.',
                 },
               ].map((faq, i) => (
                 <div
@@ -883,91 +1360,569 @@ export default function PlanosPage() {
         </main>
       </div>
 
-      {/* Modal de Confirmação de Upgrade */}
-      {selectedUpgradePlan && (
+      {/* Modal de Checkout Mercado Pago */}
+      {selectedPlanForCheckout && (
         <Modal
-          isOpen={Boolean(selectedUpgradePlan)}
-          onClose={() => setSelectedUpgradePlan(null)}
-          title={`Upgrade para o Plano ${selectedUpgradePlan.name}`}
-          maxWidth="520px"
+          isOpen={Boolean(selectedPlanForCheckout)}
+          onClose={handleCloseCheckout}
+          title={`Assinatura BarberFlow • Plano ${selectedPlanForCheckout.name}`}
+          maxWidth="560px"
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header / Resumo do Plano */}
             <div
               style={{
-                padding: '16px',
+                padding: '16px 20px',
                 borderRadius: '12px',
-                background: 'rgba(229, 179, 56, 0.08)',
-                border: '1px solid rgba(229, 179, 56, 0.25)',
+                background: 'linear-gradient(135deg, rgba(229, 179, 56, 0.12) 0%, rgba(18, 24, 38, 0.95) 100%)',
+                border: '1px solid rgba(229, 179, 56, 0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
-              <span style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase' }}>
-                Resumo do Upgrade
-              </span>
-              <h4 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '4px 0 2px 0' }}>
-                {selectedUpgradePlan.name}
-              </h4>
-              <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)' }}>
-                {formatBRL(selectedUpgradePlan.priceCents)} / mês
-              </span>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4, margin: '8px 0 0 0' }}>
-                {selectedUpgradePlan.description}
-              </p>
+              <div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Plano Selecionado
+                </span>
+                <h4 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '2px 0 0 0', color: 'var(--text-main)' }}>
+                  {selectedPlanForCheckout.name}
+                </h4>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Acesso liberado imediatamente após confirmação
+                </span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
+                  {formatBRL(selectedPlanForCheckout.priceCents)}
+                </span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'block' }}>/ mês</span>
+              </div>
             </div>
 
-            <div>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-dim)', display: 'block', marginBottom: '8px' }}>
-                O que você desbloqueia imediatamente:
-              </span>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {(selectedUpgradePlan.features || []).map((f, i) => (
-                  <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: 'var(--text-main)' }}>
-                    <CheckCircle2 size={15} color="#10B981" />
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.25)', fontSize: '0.82rem', color: '#10B981' }}>
-              ⚡ <strong>Ativação Imediata:</strong> Enviaremos a confirmação para a equipe de atendimento via WhatsApp e seu acesso será liberado instantaneamente.
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+            {/* Abas de Método de Pagamento */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                padding: '4px',
+                borderRadius: '10px',
+              }}
+            >
               <button
                 type="button"
-                onClick={() => setSelectedUpgradePlan(null)}
+                onClick={() => setPaymentMethod('PIX')}
                 style={{
-                  padding: '10px 16px',
+                  padding: '10px',
                   borderRadius: '8px',
-                  background: 'transparent',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.88rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Voltar
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleConfirmUpgradeWhatsApp(selectedUpgradePlan)}
-                className="gold-gradient-primary gold-glow"
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '8px',
+                  border: 'none',
+                  background: paymentMethod === 'PIX' ? 'var(--primary)' : 'transparent',
+                  color: paymentMethod === 'PIX' ? '#0B0F17' : 'var(--text-muted)',
                   fontSize: '0.88rem',
                   fontWeight: 700,
                   display: 'flex',
                   alignItems: 'center',
+                  justifyContent: 'center',
                   gap: '8px',
                   cursor: 'pointer',
+                  transition: 'all 0.2s ease',
                 }}
               >
-                <Crown size={16} />
-                <span>Confirmar Upgrade via WhatsApp</span>
+                <QrCode size={16} />
+                <span>Pix Instantâneo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('CREDIT_CARD')}
+                style={{
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: paymentMethod === 'CREDIT_CARD' ? 'var(--primary)' : 'transparent',
+                  color: paymentMethod === 'CREDIT_CARD' ? '#0B0F17' : 'var(--text-muted)',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <CreditCard size={16} />
+                <span>Cartão de Crédito</span>
               </button>
             </div>
+
+            {/* Conteúdo da Aba PIX */}
+            {paymentMethod === 'PIX' && (
+              <div>
+                {pixPaidSuccess ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '30px 20px',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <CheckCircle2 size={54} color="#10B981" style={{ marginBottom: '12px' }} />
+                    <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#10B981', margin: '0 0 6px 0' }}>
+                      Pagamento Pix Confirmado!
+                    </h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 20px 0' }}>
+                      O plano <strong>{selectedPlanForCheckout.name}</strong> foi ativado para o seu salão. Todos os recursos já estão disponíveis.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCloseCheckout}
+                      className="gold-gradient-primary gold-glow"
+                      style={{
+                        padding: '10px 24px',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Concluir e Voltar
+                    </button>
+                  </div>
+                ) : pixResult ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+                    <div
+                      style={{
+                        background: '#FFFFFF',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                      }}
+                    >
+                      {pixResult.qrCodeBase64 ? (
+                        <img
+                          src={`data:image/png;base64,${pixResult.qrCodeBase64}`}
+                          alt="QR Code Pix"
+                          style={{ width: '200px', height: '200px', display: 'block' }}
+                        />
+                      ) : (
+                        <div style={{ width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', fontSize: '0.8rem', textAlign: 'center' }}>
+                          Abra o app do seu banco e use o Copia e Cola abaixo
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ width: '100%' }}>
+                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                        Código Pix Copia e Cola:
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          readOnly
+                          value={pixResult.qrCode || ''}
+                          style={{
+                            flex: 1,
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.8rem',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={copyPixCode}
+                          className="gold-gradient-primary"
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '0.84rem',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <Copy size={14} />
+                          <span>Copiar</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        width: '100%',
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        background: 'rgba(245, 158, 11, 0.08)',
+                        border: '1px solid rgba(245, 158, 11, 0.25)',
+                        fontSize: '0.82rem',
+                        color: '#F59E0B',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <Clock size={16} className="spin" />
+                      <span>Aguardando pagamento... Verificando a cada 3 segundos automaticamente.</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', width: '100%', justifyContent: 'space-between' }}>
+                      <button
+                        type="button"
+                        onClick={() => setPixResult(null)}
+                        style={{
+                          padding: '10px 16px',
+                          borderRadius: '8px',
+                          background: 'transparent',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-muted)',
+                          fontSize: '0.84rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Gerar Outro Pix
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCheckPixManual}
+                        disabled={checkingPix}
+                        className="glass-card"
+                        style={{
+                          padding: '10px 16px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '0.84rem',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-main)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <RefreshCw size={14} className={checkingPix ? 'spin' : ''} />
+                        <span>{checkingPix ? 'Verificando...' : 'Já paguei, verificar agora'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
+                        CPF do Pagador (Opcional para emissão do Pix):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="000.000.000-00"
+                        value={pixCpf}
+                        onChange={(e) => setPixCpf(formatCpf(e.target.value))}
+                        style={{
+                          width: '100%',
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-main)',
+                          fontSize: '0.9rem',
+                        }}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        padding: '14px',
+                        borderRadius: '8px',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        fontSize: '0.82rem',
+                        color: 'var(--text-main)',
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontWeight: 700, marginBottom: '4px' }}>
+                        <Zap size={15} /> Liberação Instantânea via Mercado Pago
+                      </div>
+                      O QR Code Pix e a chave Copia e Cola serão gerados na hora. Assim que pagar no aplicativo do seu banco, o sistema reconhece e renova o plano automaticamente em segundos.
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleGeneratePix}
+                      disabled={generatingPix}
+                      className="gold-gradient-primary gold-glow"
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        borderRadius: '10px',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        border: 'none',
+                        cursor: generatingPix ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        marginTop: '6px',
+                      }}
+                    >
+                      {generatingPix ? (
+                        <>
+                          <RefreshCw size={16} className="spin" />
+                          <span>Gerando Cobrança Pix no Mercado Pago...</span>
+                        </>
+                      ) : (
+                        <>
+                          <QrCode size={18} />
+                          <span>Gerar QR Code Pix ({formatBRL(selectedPlanForCheckout.priceCents)})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Conteúdo da Aba Cartão de Crédito */}
+            {paymentMethod === 'CREDIT_CARD' && (
+              <div>
+                {cardPaidSuccess ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '30px 20px',
+                      background: 'rgba(16, 185, 129, 0.08)',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <CheckCircle2 size={54} color="#10B981" style={{ marginBottom: '12px' }} />
+                    <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#10B981', margin: '0 0 6px 0' }}>
+                      Pagamento com Cartão Aprovado!
+                    </h3>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 20px 0' }}>
+                      Sua assinatura do plano <strong>{selectedPlanForCheckout.name}</strong> foi ativada com sucesso.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleCloseCheckout}
+                      className="gold-gradient-primary gold-glow"
+                      style={{
+                        padding: '10px 24px',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '0.9rem',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Concluir e Voltar
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handlePayCard} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Número do Cartão de Crédito *
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="text"
+                          required
+                          placeholder="0000 0000 0000 0000"
+                          maxLength={19}
+                          value={cardForm.cardNumber}
+                          onChange={(e) => setCardForm({ ...cardForm, cardNumber: formatCardNumber(e.target.value) })}
+                          style={{
+                            width: '100%',
+                            padding: '11px 40px 11px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.9rem',
+                            letterSpacing: '0.04em',
+                          }}
+                        />
+                        <CreditCard
+                          size={18}
+                          color="var(--text-dim)"
+                          style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Nome Impresso no Cartão *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="NOME COMO ESTÁ NO CARTÃO"
+                        value={cardForm.cardholderName}
+                        onChange={(e) => setCardForm({ ...cardForm, cardholderName: e.target.value.toUpperCase() })}
+                        style={{
+                          width: '100%',
+                          padding: '11px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-main)',
+                          fontSize: '0.9rem',
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                          CPF do Titular *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="000.000.000-00"
+                          value={cardForm.cardholderCpf}
+                          onChange={(e) => setCardForm({ ...cardForm, cardholderCpf: formatCpf(e.target.value) })}
+                          style={{
+                            width: '100%',
+                            padding: '11px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid var(--border-color)',
+                            color: 'var(--text-main)',
+                            fontSize: '0.9rem',
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div>
+                          <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                            Validade *
+                          </label>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <input
+                              type="text"
+                              required
+                              placeholder="MM"
+                              maxLength={2}
+                              value={cardForm.expMonth}
+                              onChange={(e) => setCardForm({ ...cardForm, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) })}
+                              style={{
+                                width: '100%',
+                                padding: '11px 6px',
+                                textAlign: 'center',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-main)',
+                                fontSize: '0.88rem',
+                              }}
+                            />
+                            <input
+                              type="text"
+                              required
+                              placeholder="AAAA"
+                              maxLength={4}
+                              value={cardForm.expYear}
+                              onChange={(e) => setCardForm({ ...cardForm, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                              style={{
+                                width: '100%',
+                                padding: '11px 6px',
+                                textAlign: 'center',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-main)',
+                                fontSize: '0.88rem',
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                            CVV *
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="123"
+                            maxLength={4}
+                            value={cardForm.cvv}
+                            onChange={(e) => setCardForm({ ...cardForm, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                            style={{
+                              width: '100%',
+                              padding: '11px 10px',
+                              textAlign: 'center',
+                              borderRadius: '8px',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid var(--border-color)',
+                              color: 'var(--text-main)',
+                              fontSize: '0.9rem',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                      <Lock size={14} color="#10B981" />
+                      <span>Transação segura de ponta a ponta criptografada pelo Mercado Pago.</span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={processingCard}
+                      className="gold-gradient-primary gold-glow"
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        borderRadius: '10px',
+                        fontWeight: 800,
+                        fontSize: '0.95rem',
+                        border: 'none',
+                        cursor: processingCard ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        marginTop: '8px',
+                      }}
+                    >
+                      {processingCard ? (
+                        <>
+                          <RefreshCw size={16} className="spin" />
+                          <span>Processando Cartão com Mercado Pago...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          <span>Pagar {formatBRL(selectedPlanForCheckout.priceCents)} com Cartão</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
           </div>
         </Modal>
       )}
