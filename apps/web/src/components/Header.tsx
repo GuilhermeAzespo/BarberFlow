@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '../lib/auth-context';
-import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft } from 'lucide-react';
+import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown } from 'lucide-react';
 
 export function Header() {
   const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
@@ -62,9 +62,28 @@ export function Header() {
           <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2 }}>
             {tenant ? tenant.name : 'BarberFlow'}
           </h2>
-          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-            {user?.role === 'SUPER_ADMIN' ? 'Painel Master SaaS' : `${subscription?.plan.name || 'Trial'} Plan`}
-          </span>
+          <Link
+            href="/planos"
+            title="Clique para ver detalhes do plano e limites"
+            style={{
+              fontSize: '0.8rem',
+              color: 'var(--primary)',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontWeight: 700,
+              background: 'rgba(229, 179, 56, 0.1)',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              border: '1px solid rgba(229, 179, 56, 0.25)',
+              marginTop: '2px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Crown size={12} />
+            <span>{user?.role === 'SUPER_ADMIN' ? 'Painel Master SaaS' : `Plano ${subscription?.plan.name || 'Starter'}`}</span>
+          </Link>
         </div>
 
         {access?.warning && (
@@ -162,6 +181,37 @@ export function Header() {
             <span>Painel Super Admin</span>
           </Link>
         )}
+
+        <Link
+          href="/novidades"
+          title="Ver o que há de novo no BarberFlow"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '20px',
+            background: 'rgba(229, 179, 56, 0.1)',
+            border: '1px solid rgba(229, 179, 56, 0.3)',
+            color: 'var(--primary)',
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            textDecoration: 'none',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Sparkles size={14} />
+          <span>Novidades</span>
+          <span
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: '#10B981',
+              boxShadow: '0 0 6px #10B981',
+            }}
+          />
+        </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div

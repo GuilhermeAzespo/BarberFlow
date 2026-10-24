@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Settings,
   Sparkles,
+  Crown,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 
@@ -29,7 +30,7 @@ export const ALL_MENU_KEYS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { canAccessMenu } = useAuth();
+  const { canAccessMenu, subscription } = useAuth();
   const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
   return (
@@ -82,7 +83,7 @@ export function Sidebar() {
           </div>
         </Link>
 
-        {/* Navigation links */}
+        {/* Navigation links operacionais */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {visibleMenuItems.map((item) => {
             const Icon = item.icon;
@@ -116,25 +117,117 @@ export function Sidebar() {
             );
           })}
         </nav>
+
+        {/* Divisor & Links Gerais do Sistema */}
+        <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.06)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ padding: '0 12px 6px 12px', fontSize: '0.72rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            Plataforma & Conta
+          </div>
+
+          <Link
+            href="/novidades"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '9px 14px',
+              borderRadius: '10px',
+              fontSize: '0.88rem',
+              fontWeight: pathname === '/novidades' ? 700 : 500,
+              color: pathname === '/novidades' ? '#0B0F17' : '#E5B338',
+              background: pathname === '/novidades'
+                ? 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)'
+                : 'rgba(229, 179, 56, 0.08)',
+              border: pathname === '/novidades' ? 'none' : '1px solid rgba(229, 179, 56, 0.2)',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Sparkles size={16} />
+              <span>Novidades</span>
+            </div>
+            <span
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: '6px',
+                background: pathname === '/novidades' ? 'rgba(0,0,0,0.3)' : 'rgba(229, 179, 56, 0.25)',
+                color: pathname === '/novidades' ? '#0B0F17' : '#E5B338',
+                letterSpacing: '0.04em',
+              }}
+            >
+              v2.4
+            </span>
+          </Link>
+
+          <Link
+            href="/planos"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '9px 14px',
+              borderRadius: '10px',
+              fontSize: '0.88rem',
+              fontWeight: pathname === '/planos' ? 700 : 500,
+              color: pathname === '/planos' ? '#0B0F17' : 'var(--text-muted)',
+              background: pathname === '/planos'
+                ? 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)'
+                : 'transparent',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Crown size={16} color={pathname === '/planos' ? '#0B0F17' : 'var(--primary)'} />
+              <span>Planos & Upgrade</span>
+            </div>
+            {subscription && (
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '6px',
+                  background: pathname === '/planos' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.06)',
+                  color: pathname === '/planos' ? '#0B0F17' : 'var(--text-dim)',
+                }}
+              >
+                {subscription.plan.name}
+              </span>
+            )}
+          </Link>
+        </div>
       </div>
 
       {/* Footer Banner */}
-      <div
+      <Link
+        href="/planos"
         className="glass-card"
         style={{
           padding: '14px',
           borderRadius: '12px',
           background: 'rgba(229, 179, 56, 0.05)',
-          border: '1px solid rgba(229, 179, 56, 0.15)',
+          border: '1px solid rgba(229, 179, 56, 0.2)',
+          textDecoration: 'none',
+          display: 'block',
+          transition: 'border-color 0.2s ease',
         }}
       >
-        <span style={{ fontSize: '0.78rem', color: '#FBBF24', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-          BarberFlow Automation
-        </span>
-        <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', lineHeight: 1.4 }}>
-          Agendamentos 100% integrados via WhatsApp e sincronizados em tempo real.
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+          <span style={{ fontSize: '0.78rem', color: '#FBBF24', fontWeight: 700 }}>
+            BarberFlow {subscription?.plan.name || 'Pro'}
+          </span>
+          <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 600 }}>
+            Ver limites →
+          </span>
+        </div>
+        <p style={{ fontSize: '0.74rem', color: 'var(--text-dim)', lineHeight: 1.4, margin: 0 }}>
+          Agendamentos e WhatsApp integrados. Clique para comparar planos.
         </p>
-      </div>
+      </Link>
     </aside>
   );
 }
