@@ -16,10 +16,10 @@ export const DEFAULT_PUBLIC_FQDN = 'barberflow.azespo.com.br';
 export function getMercadoPagoWebhookUrl(req?: any): string {
   // 1. Variável de ambiente explícita
   if (process.env.MP_WEBHOOK_URL && process.env.MP_WEBHOOK_URL.trim() !== '') {
-    return process.env.MP_WEBHOOK_URL.trim();
+    return sanitizeNotificationUrl(process.env.MP_WEBHOOK_URL.trim());
   }
   if (process.env.PUBLIC_URL && process.env.PUBLIC_URL.trim() !== '') {
-    return `${process.env.PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/mercadopago`;
+    return sanitizeNotificationUrl(`${process.env.PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/mercadopago`);
   }
 
   // 2. Se a requisição contiver um host público válido (não localhost e não IP local)
@@ -34,13 +34,38 @@ export function getMercadoPagoWebhookUrl(req?: any): string {
       host.endsWith('.local');
 
     if (!isLocal) {
-      const proto = req.headers?.['x-forwarded-proto'] || req.protocol || 'https';
-      return `${proto}://${rawHost}/api/webhooks/mercadopago`;
+      return `https://${host}/api/webhooks/mercadopago`;
     }
   }
 
-  // 3. Padrão FQDN Cloudflare Zero Trust oficial da aplicação
+  // 3. Padrão FQDN Cloudflare Zero Trust oficial da aplicação (sempre https://)
   return `https://${DEFAULT_PUBLIC_FQDN}/api/webhooks/mercadopago`;
+}
+
+export function sanitizeNotificationUrl(rawUrl?: string): string {
+  const url = (rawUrl || '').trim();
+  if (
+    !url ||
+    url.includes('localhost') ||
+    url.includes('127.0.0.1') ||
+    url.startsWith('http://') ||
+    !url.startsWith('https://') ||
+    /:\d+/.test(url)
+  ) {
+    return `https://${DEFAULT_PUBLIC_FQDN}/api/webhooks/mercadopago`;
+  }
+  return url;
+}
+
+export function inferPaymentMethodId(cardNumber?: string): string {
+  if (!cardNumber) return 'master';
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.startsWith('4')) return 'visa';
+  if (/^(5[1-5]|2[2-7])/.test(digits)) return 'master';
+  if (/^(34|37)/.test(digits)) return 'amex';
+  if (/^(4011|4389|4514|4576|5041|5066|5067|5090|6277|6362|6363|650|6516|6550)/.test(digits)) return 'elo';
+  if (/^(6062|3841)/.test(digits)) return 'hipercard';
+  return 'master';
 }
 
 export async function getActiveMercadoPagoConfig(): Promise<MercadoPagoConfig> {
@@ -162,7 +187,7 @@ export async function createMercadoPagoPix(params: CreatePixParams): Promise<Cre
     metadata: params.metadata || {},
   };
 
-  const notificationUrl = params.notificationUrl || getMercadoPagoWebhookUrl();
+  const notificationUrl = sanitizeNotificationUrl(params.notificationUrl || getMercadoPagoWebhookUrl());
   if (notificationUrl) {
     body.notification_url = notificationUrl;
   }
@@ -310,9 +335,13 @@ export async function createMercadoPagoCardPayment(params: CreateCardPaymentPara
     metadata: params.metadata || {},
   };
 
-  const notificationUrl = params.notificationUrl || getMercadoPagoWebhookUrl();
+  const notificationUrl = sanitizeNotificationUrl(params.notificationUrl || getMercadoPagoWebhookUrl());
   if (notificationUrl) {
     body.notification_url = notificationUrl;
+  }
+
+  if (!body.payment_method_id) {
+    body.payment_method_id = params.paymentMethodId || 'master';
   }
 
   const res = await fetch('https://api.mercadopago.com/v1/payments', {

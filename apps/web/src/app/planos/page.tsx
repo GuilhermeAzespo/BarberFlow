@@ -32,6 +32,7 @@ import {
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
+import { Select } from '../../components/Select';
 import { useAuth } from '../../lib/auth-context';
 import { api, ApiError } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -50,6 +51,24 @@ interface PublicPlan {
   badge?: string | null;
   isHighlighted?: boolean;
 }
+
+const EXPIRATION_MONTHS = [
+  { value: '01', label: '01 - Jan' },
+  { value: '02', label: '02 - Fev' },
+  { value: '03', label: '03 - Mar' },
+  { value: '04', label: '04 - Abr' },
+  { value: '05', label: '05 - Mai' },
+  { value: '06', label: '06 - Jun' },
+  { value: '07', label: '07 - Jul' },
+  { value: '08', label: '08 - Ago' },
+  { value: '09', label: '09 - Set' },
+  { value: '10', label: '10 - Out' },
+  { value: '11', label: '11 - Nov' },
+  { value: '12', label: '12 - Dez' },
+];
+
+const CURRENT_YEAR = new Date().getFullYear();
+const EXPIRATION_YEARS = Array.from({ length: 16 }, (_, i) => String(CURRENT_YEAR + i));
 
 const DEFAULT_PLANS: PublicPlan[] = [
   {
@@ -501,8 +520,8 @@ export default function PlanosPage() {
     e.preventDefault();
     if (!selectedPlanForCheckout) return;
 
-    if (!cardForm.cardNumber || !cardForm.cardholderName || !cardForm.cardholderCpf || !cardForm.cvv) {
-      return toast.warning('Preencha todos os campos do cartão de crédito.');
+    if (!cardForm.cardNumber || !cardForm.cardholderName || !cardForm.cardholderCpf || !cardForm.cvv || !cardForm.expMonth || !cardForm.expYear) {
+      return toast.warning('Preencha todos os campos do cartão de crédito (inclusive validade e CVV).');
     }
 
     setProcessingCard(true);
@@ -1789,97 +1808,83 @@ export default function PlanosPage() {
                       />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        CPF do Titular *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="000.000.000-00"
+                        value={cardForm.cardholderCpf}
+                        onChange={(e) => setCardForm({ ...cardForm, cardholderCpf: formatCpf(e.target.value) })}
+                        style={{
+                          width: '100%',
+                          padding: '11px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.05)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-main)',
+                          fontSize: '0.9rem',
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '12px' }}>
                       <div>
                         <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                          CPF do Titular *
+                          Validade *
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <Select
+                            value={cardForm.expMonth}
+                            onChange={(e) => setCardForm({ ...cardForm, expMonth: e.target.value })}
+                            placeholder="Mês"
+                          >
+                            {EXPIRATION_MONTHS.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </Select>
+
+                          <Select
+                            value={cardForm.expYear}
+                            onChange={(e) => setCardForm({ ...cardForm, expYear: e.target.value })}
+                            placeholder="Ano"
+                          >
+                            {EXPIRATION_YEARS.map((year) => (
+                              <option key={year} value={year}>
+                                {year}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                          CVV *
                         </label>
                         <input
-                          type="text"
+                          type="password"
                           required
-                          placeholder="000.000.000-00"
-                          value={cardForm.cardholderCpf}
-                          onChange={(e) => setCardForm({ ...cardForm, cardholderCpf: formatCpf(e.target.value) })}
+                          placeholder="123"
+                          maxLength={4}
+                          value={cardForm.cvv}
+                          onChange={(e) => setCardForm({ ...cardForm, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })}
                           style={{
                             width: '100%',
-                            padding: '11px 12px',
+                            padding: '11px 10px',
+                            textAlign: 'center',
                             borderRadius: '8px',
                             background: 'rgba(255, 255, 255, 0.05)',
                             border: '1px solid var(--border-color)',
                             color: 'var(--text-main)',
                             fontSize: '0.9rem',
+                            letterSpacing: '0.15em',
                           }}
                         />
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <div>
-                          <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                            Validade *
-                          </label>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <input
-                              type="text"
-                              required
-                              placeholder="MM"
-                              maxLength={2}
-                              value={cardForm.expMonth}
-                              onChange={(e) => setCardForm({ ...cardForm, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) })}
-                              style={{
-                                width: '100%',
-                                padding: '11px 6px',
-                                textAlign: 'center',
-                                borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid var(--border-color)',
-                                color: 'var(--text-main)',
-                                fontSize: '0.88rem',
-                              }}
-                            />
-                            <input
-                              type="text"
-                              required
-                              placeholder="AAAA"
-                              maxLength={4}
-                              value={cardForm.expYear}
-                              onChange={(e) => setCardForm({ ...cardForm, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                              style={{
-                                width: '100%',
-                                padding: '11px 6px',
-                                textAlign: 'center',
-                                borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid var(--border-color)',
-                                color: 'var(--text-main)',
-                                fontSize: '0.88rem',
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                            CVV *
-                          </label>
-                          <input
-                            type="password"
-                            required
-                            placeholder="123"
-                            maxLength={4}
-                            value={cardForm.cvv}
-                            onChange={(e) => setCardForm({ ...cardForm, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                            style={{
-                              width: '100%',
-                              padding: '11px 10px',
-                              textAlign: 'center',
-                              borderRadius: '8px',
-                              background: 'rgba(255, 255, 255, 0.05)',
-                              border: '1px solid var(--border-color)',
-                              color: 'var(--text-main)',
-                              fontSize: '0.9rem',
-                            }}
-                          />
-                        </div>
                       </div>
                     </div>
 

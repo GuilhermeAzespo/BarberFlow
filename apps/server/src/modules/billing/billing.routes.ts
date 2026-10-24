@@ -11,6 +11,7 @@ import {
   createMercadoPagoCardPayment,
   getMercadoPagoPayment,
   getMercadoPagoWebhookUrl,
+  inferPaymentMethodId,
 } from '../../lib/mercadopago.js';
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
 
@@ -222,9 +223,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
     });
   }
 
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-  const host = req.get('host') || 'barberflow.azespo.com.br';
-  const notificationUrl = `${protocol}://${host}/api/webhooks/mercadopago`;
+  const notificationUrl = getMercadoPagoWebhookUrl(req);
 
   const saasPayment = await prisma.saaSPayment.create({
     data: {
@@ -246,7 +245,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       token: cardToken,
       description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})`,
       installments: data.installments,
-      paymentMethodId: data.paymentMethodId,
+      paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
       payerCpf: data.cardholderCpf,
       notificationUrl,
