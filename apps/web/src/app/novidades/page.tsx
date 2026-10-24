@@ -45,6 +45,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v2-5',
+    version: 'v2.5',
+    date: '23 de Outubro de 2026',
+    title: 'Barra Lateral Fixa (Sticky) & Posicionamento Ancorado do Rodapé',
+    category: 'DESIGN',
+    categoryLabel: 'Design & UX',
+    badgeColor: '#8B5CF6',
+    badgeBg: 'rgba(139, 92, 246, 0.15)',
+    summary:
+      'Aprimoramento estrutural do Menu Lateral (Sidebar): fixação 100vh na tela com rolagem independente e ancoragem permanente do card de plano e versão no rodapé.',
+    highlights: [
+      'Sidebar com fixação sticky (100vh): o menu permanece fixo na lateral da tela enquanto o conteúdo da página rola livremente, sem esticar.',
+      'Card de plano e limites ancorado de forma permanente no rodapé da barra lateral, sem flutuar para cima ou para baixo conforme o tamanho do conteúdo.',
+      'Exibição da versão ativa do sistema (v2.5) diretamente no rodapé da Sidebar e na Central de Novidades.',
+      'Rolagem interna suave no menu lateral com suporte responsivo a qualquer resolução.',
+      'Novas páginas de Novidades (/novidades) e Comparativo de Planos (/planos) integradas à navegação.',
+    ],
+    impact: 'Navegação 100% estável e consistente em todas as telas do painel, eliminando deslocamentos indesejados da barra lateral.',
+  },
+  {
     id: 'v2-4',
     version: 'v2.4',
     date: '23 de Outubro de 2026',
@@ -275,7 +295,7 @@ export default function NovidadesPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255, 255, 255, 0.04)', padding: '10px 16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 10px #10B981' }} />
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                    Versão Atual: <strong style={{ color: 'var(--primary)' }}>v2.4</strong>
+                    Versão Atual: <strong style={{ color: 'var(--primary)' }}>v2.5</strong>
                   </span>
                 </div>
 
