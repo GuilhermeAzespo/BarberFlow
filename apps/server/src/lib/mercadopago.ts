@@ -278,7 +278,13 @@ export async function createMercadoPagoCardToken(params: CreateCardTokenParams):
   const data = (await res.json()) as any;
   if (!res.ok || !data.id) {
     logger.error({ err: data }, 'Falha na tokenização do cartão');
-    throw new Error(data.message || data.cause?.[0]?.description || 'Dados do cartão de crédito inválidos.');
+    const rawMsg = data.message || data.cause?.[0]?.description || '';
+    if (rawMsg.includes('Unauthorized use of live credentials') || data.cause?.[0]?.code === 7) {
+      throw new Error(
+        'Você está usando uma Chave Pública de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.'
+      );
+    }
+    throw new Error(rawMsg || 'Dados do cartão de crédito inválidos.');
   }
 
   return data.id as string;
@@ -357,7 +363,13 @@ export async function createMercadoPagoCardPayment(params: CreateCardPaymentPara
   const data = (await res.json()) as any;
   if (!res.ok) {
     logger.error({ err: data }, 'Falha ao processar pagamento com cartão no Mercado Pago');
-    throw new Error(data.message || data.cause?.[0]?.description || 'Erro ao processar cartão de crédito.');
+    const rawMsg = data.message || data.cause?.[0]?.description || '';
+    if (rawMsg.includes('Unauthorized use of live credentials') || data.cause?.[0]?.code === 7) {
+      throw new Error(
+        'Você está usando credenciais de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.'
+      );
+    }
+    throw new Error(rawMsg || 'Erro ao processar cartão de crédito.');
   }
 
   return {

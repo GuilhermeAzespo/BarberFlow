@@ -1581,9 +1581,28 @@ export default function SuperAdminPage() {
                 </p>
 
                 <form onSubmit={handleSaveMp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {mpForm.mpSandbox && (mpForm.mpPublicKey?.startsWith('APP_USR-') || (!mpForm.mpPublicKey && mpConfig?.mpPublicKey?.startsWith('APP_USR-'))) && (
+                    <div
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '8px',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        border: '1px solid rgba(245, 158, 11, 0.35)',
+                        fontSize: '0.82rem',
+                        color: '#FBBF24',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '4px' }}>
+                        <AlertTriangle size={15} /> Credencial de Produção em Modo Sandbox
+                      </div>
+                      Suas credenciais salvas começam com <code>APP_USR-</code> (Produção). Para simular pagamentos usando os cartões de teste (como <code>5480...</code>), você deve copiar as <strong>Credenciais de Teste</strong> no Mercado Pago (que começam com <code>TEST-</code>). O Mercado Pago bloqueia cartões fictícios com credenciais <code>APP_USR-</code> gerando o erro <em>Unauthorized use of live credentials</em>.
+                    </div>
+                  )}
+
                   <div>
                     <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Access Token de Produção *
+                      {mpForm.mpSandbox ? 'Access Token de Teste (Sandbox) *' : 'Access Token de Produção *'}
                     </label>
                     <div style={{ position: 'relative' }}>
                       <input
@@ -1591,6 +1610,8 @@ export default function SuperAdminPage() {
                         placeholder={
                           mpConfig?.hasAccessToken
                             ? `Token salvo (${mpConfig.mpAccessTokenMasked || '••••••••'}) - digite para alterar`
+                            : mpForm.mpSandbox
+                            ? 'TEST-0000000000000000-000000-00000000000000000000000000000000-000000000'
                             : 'APP_USR-0000000000000000-000000-00000000000000000000000000000000-000000000'
                         }
                         value={mpForm.mpAccessToken}
@@ -1615,19 +1636,23 @@ export default function SuperAdminPage() {
                       </button>
                     </div>
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
-                      {mpConfig?.hasAccessToken
-                        ? 'Token já configurado e ativo. Preencha apenas se desejar trocar.'
-                        : 'Começa normalmente com "APP_USR-..." ou "TEST-..."'}
+                      {mpForm.mpSandbox
+                        ? 'Para testes sandbox, utilize o token que começa com "TEST-..."'
+                        : 'Para vendas reais, utilize o token que começa com "APP_USR-..."'}
                     </span>
                   </div>
 
                   <div>
                     <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Chave Pública (Public Key) *
+                      {mpForm.mpSandbox ? 'Chave Pública de Teste (Public Key) *' : 'Chave Pública de Produção (Public Key) *'}
                     </label>
                     <input
                       type="text"
-                      placeholder="APP_USR-00000000-0000-0000-0000-000000000000"
+                      placeholder={
+                        mpForm.mpSandbox
+                          ? 'TEST-00000000-0000-0000-0000-000000000000'
+                          : 'APP_USR-00000000-0000-0000-0000-000000000000'
+                      }
                       value={mpForm.mpPublicKey}
                       onChange={(e) => setMpForm({ ...mpForm, mpPublicKey: e.target.value })}
                       style={{ fontFamily: 'monospace' }}
@@ -1842,10 +1867,14 @@ export default function SuperAdminPage() {
                         3
                       </span>
                       <div>
-                        <strong>Copie as Credenciais de Produção:</strong>
+                        <strong>Copie as Credenciais Corretas da sua Aplicação:</strong>
                         <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                          No menu lateral da sua aplicação, clique em <strong>Credenciais de Produção</strong>. Copie o <strong>Public Key</strong> e o <strong>Access Token</strong> e cole no formulário ao lado.
+                          No menu lateral da sua aplicação criada no Mercado Pago, escolha conforme seu objetivo:
                         </p>
+                        <div style={{ margin: '6px 0 0 0', color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: 1.5 }}>
+                          • <strong>Para Testar (Sandbox):</strong> Clique em <em>Credenciais de Teste</em>. Copie o Public Key e Access Token (começam com <code>TEST-</code>).<br />
+                          • <strong>Para Vender Real (Produção):</strong> Clique em <em>Credenciais de Produção</em>. Copie as chaves (começam com <code>APP_USR-</code>) e desmarque a opção Modo Sandbox.
+                        </div>
                       </div>
                     </div>
 
