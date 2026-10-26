@@ -4,6 +4,7 @@
 
 # Credenciais locais (NUNCA versionar)
 /Git
+/Access_Easypanel
 *.pem
 *.key
 .env
