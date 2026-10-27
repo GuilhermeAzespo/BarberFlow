@@ -451,6 +451,7 @@ export default function DashboardPage() {
                   const timeStr = DateTime.fromISO(app.startAt, { zone: tenant?.timezone || 'America/Sao_Paulo' }).toFormat('HH:mm');
                   const isCompleted = app.status === 'COMPLETED';
                   const isCanceled = app.status === 'CANCELED';
+                  const isDelayed = app.status === 'DELAYED';
 
                   return (
                     <div
@@ -463,6 +464,7 @@ export default function DashboardPage() {
                         justifyContent: 'space-between',
                         gap: '16px',
                         flexWrap: 'wrap',
+                        borderLeft: isDelayed ? '4px solid #EF4444' : undefined,
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -470,17 +472,17 @@ export default function DashboardPage() {
                           style={{
                             padding: '8px 14px',
                             borderRadius: '8px',
-                            background: 'var(--bg-input)',
-                            border: '1px solid var(--border-color)',
+                            background: isDelayed ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-input)',
+                            border: `1px solid ${isDelayed ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}`,
                             fontSize: '1rem',
                             fontWeight: 700,
-                            color: 'var(--text-main)',
+                            color: isDelayed ? '#EF4444' : 'var(--text-main)',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '6px',
                           }}
                         >
-                          <Clock size={16} color="var(--primary)" />
+                          <Clock size={16} color={isDelayed ? '#EF4444' : 'var(--primary)'} />
                           <span>{timeStr}</span>
                         </div>
 
@@ -521,10 +523,11 @@ export default function DashboardPage() {
 
                         <span
                           className={`badge ${
-                            isCompleted ? 'badge-success' : isCanceled ? 'badge-danger' : 'badge-warning'
+                            isCompleted ? 'badge-success' : isCanceled ? 'badge-danger' : isDelayed ? 'badge-danger' : 'badge-warning'
                           }`}
+                          style={isDelayed ? { background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.4)' } : undefined}
                         >
-                          {isCompleted ? 'Concluído' : isCanceled ? 'Cancelado' : 'Agendado'}
+                          {isCompleted ? 'Concluído' : isCanceled ? 'Cancelado' : isDelayed ? '⚠️ Atrasado' : 'Agendado'}
                         </span>
                       </div>
                     </div>

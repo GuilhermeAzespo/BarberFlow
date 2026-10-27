@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AppointmentStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { DateTime } from 'luxon';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import {
@@ -9,8 +10,11 @@ import {
   createAppointment,
   getAvailability,
   getAvailableDates,
+  getDelayedAppointments,
   rescheduleAppointment,
+  syncDelayedAppointments,
 } from './appointments.service.js';
+import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 
 export const appointmentsRouter = Router();
 
@@ -54,7 +58,7 @@ const updateAppointmentSchema = z.object({
 });
 
 const changeStatusSchema = z.object({
-  status: z.enum(['SCHEDULED', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW']),
+  status: z.enum(['SCHEDULED', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW', 'DELAYED']),
   paymentMethod: z.enum(['CASH', 'PIX', 'CREDIT_CARD', 'DEBIT_CARD', 'TRANSFER', 'OTHER']).optional(),
   cancelReason: z.string().trim().max(300).nullable().optional(),
 });
@@ -75,6 +79,9 @@ async function getProfessionalIdForUser(req: Request): Promise<string | null> {
 appointmentsRouter.get('/', async (req, res) => {
   const query = listAppointmentsQuery.parse(req.query);
   const tenantId = req.tenantId!;
+
+  // Sincroniza atendimentos que já passaram do horário previsto e ainda não foram concluídos
+  await syncDelayedAppointments(tenantId);
 
   let targetProfId = query.professionalId;
 
@@ -263,4 +270,85 @@ appointmentsRouter.delete('/:id', async (req, res) => {
     userId: req.auth?.userId,
   });
   res.json({ appointment });
+});
+
+// Listar agendamentos em atraso para notificações e alertas internos
+appointmentsRouter.get('/delayed', async (req, res) => {
+  const tenantId = req.tenantId!;
+  let targetProfId: string | undefined = undefined;
+
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+    const myProfId = await getProfessionalIdForUser(req);
+    if (!myProfId) {
+      return res.json({ delayedAppointments: [], count: 0 });
+    }
+    targetProfId = myProfId;
+  }
+
+  const delayedAppointments = await getDelayedAppointments({
+    tenantId,
+    professionalId: targetProfId,
+  });
+
+  res.json({
+    delayedAppointments,
+    count: delayedAppointments.length,
+  });
+});
+
+// Notificar cliente sobre atraso no agendamento (via WhatsApp Bot / WhatsApp link)
+appointmentsRouter.post('/:id/notify-delay', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: req.params.id as string, tenantId },
+    include: {
+      customer: true,
+      service: true,
+      professional: true,
+      tenant: true,
+    },
+  });
+
+  if (!appointment) {
+    throw HttpError.notFound('Agendamento não encontrado');
+  }
+
+  // Se o agendamento ainda estava como SCHEDULED ou CONFIRMED, atualiza para DELAYED
+  if (['SCHEDULED', 'CONFIRMED'].includes(appointment.status)) {
+    await prisma.appointment.update({
+      where: { id: appointment.id },
+      data: { status: 'DELAYED' },
+    });
+  }
+
+  const rawPhone = appointment.customer.phone;
+  if (!rawPhone) {
+    throw HttpError.badRequest('O cliente não possui telefone/WhatsApp cadastrado para receber notificação.');
+  }
+
+  const cleanPhone = rawPhone.replace(/\D/g, '');
+  const startTimeStr = DateTime.fromJSDate(appointment.startAt).setZone(appointment.tenant.timezone).toFormat('HH:mm');
+
+  const textMessage = `Olá ${appointment.customer.name}! 👋 Passando para avisar que seu horário para *${appointment.service.name}* com *${appointment.professional.name}* na *${appointment.tenant.name}* (agendado para às ${startTimeStr}) já iniciou.\n\nVocê já está a caminho? Se tiver qualquer imprevisto ou atraso, por favor nos avise por aqui! 💈`;
+
+  let sentViaBot = false;
+  try {
+    const conn = whatsAppService.getConnection(tenantId);
+    if (conn.status === 'CONNECTED') {
+      sentViaBot = await whatsAppService.sendMessage(tenantId, cleanPhone, textMessage);
+    }
+  } catch {
+    sentViaBot = false;
+  }
+
+  const whatsappUrl = `https://wa.me/55${cleanPhone.replace(/^55/, '')}?text=${encodeURIComponent(textMessage)}`;
+
+  res.json({
+    success: true,
+    sentViaBot,
+    whatsappUrl,
+    message: sentViaBot
+      ? 'Notificação enviada ao WhatsApp do cliente com sucesso!'
+      : 'Link para notificação via WhatsApp gerado com sucesso.',
+  });
 });

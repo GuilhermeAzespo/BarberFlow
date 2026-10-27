@@ -1,12 +1,75 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../lib/auth-context';
-import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown, Clock } from 'lucide-react';
+import { api } from '../lib/api';
+import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown, Clock, Bell, MessageCircle, Scissors } from 'lucide-react';
+
+interface DelayedAppointmentItem {
+  id: string;
+  startAt: string;
+  endAt: string;
+  customer: {
+    name: string;
+    phone?: string | null;
+  };
+  service: {
+    name: string;
+    durationMinutes: number;
+    priceCents: number;
+  };
+  professional: {
+    name: string;
+    color?: string | null;
+  };
+}
 
 export function Header() {
   const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
+  const [delayedAppointments, setDelayedAppointments] = useState<DelayedAppointmentItem[]>([]);
+  const [delayedCount, setDelayedCount] = useState(0);
+  const [isDelayedOpen, setIsDelayedOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user || user.role === 'SUPER_ADMIN' || !tenant) return;
+
+    let isMounted = true;
+    const fetchDelayed = async () => {
+      try {
+        const res = await api.get<{ delayedAppointments: DelayedAppointmentItem[]; count: number }>('/api/appointments/delayed');
+        if (isMounted) {
+          setDelayedAppointments(res.delayedAppointments || []);
+          setDelayedCount(res.count ?? res.delayedAppointments?.length ?? 0);
+        }
+      } catch {
+        // Silently fail if not loaded or background polling
+      }
+    };
+
+    fetchDelayed();
+    const interval = setInterval(fetchDelayed, 45000); // Polling a cada 45s
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [user, tenant]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDelayedOpen(false);
+      }
+    };
+    if (isDelayedOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDelayedOpen]);
 
   return (
     <>
@@ -319,6 +382,213 @@ export function Header() {
             }}
           />
         </Link>
+
+        {/* Notificações Internas do Salão / Barbeiro */}
+        {user?.role !== 'SUPER_ADMIN' && (
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={() => setIsDelayedOpen(!isDelayedOpen)}
+              title={delayedCount > 0 ? `${delayedCount} atendimento(s) atrasado(s)` : 'Notificações Internas'}
+              style={{
+                position: 'relative',
+                background: delayedCount > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                border: `1px solid ${delayedCount > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)'}`,
+                color: delayedCount > 0 ? '#EF4444' : 'var(--text-muted)',
+                borderRadius: '8px',
+                padding: '8px 10px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = delayedCount > 0 ? '#F87171' : 'var(--text-main)';
+                e.currentTarget.style.borderColor = delayedCount > 0 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(255, 255, 255, 0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = delayedCount > 0 ? '#EF4444' : 'var(--text-muted)';
+                e.currentTarget.style.borderColor = delayedCount > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)';
+              }}
+            >
+              <Bell size={18} />
+              {delayedCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-6px',
+                    right: '-6px',
+                    background: '#EF4444',
+                    color: '#FFFFFF',
+                    borderRadius: '10px',
+                    padding: '1px 6px',
+                    fontSize: '0.68rem',
+                    fontWeight: 800,
+                    boxShadow: '0 0 10px rgba(239, 68, 68, 0.7)',
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {delayedCount}
+                </span>
+              )}
+            </button>
+
+            {isDelayedOpen && (
+              <div
+                className="glass-panel"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 'calc(100% + 10px)',
+                  width: '360px',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  background: 'rgba(15, 21, 32, 0.98)',
+                  boxShadow: '0 12px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+                  zIndex: 100,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertTriangle size={16} color={delayedCount > 0 ? '#EF4444' : 'var(--text-muted)'} />
+                    <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      Notificações do Salão
+                    </span>
+                  </div>
+                  {delayedCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#EF4444',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                      }}
+                    >
+                      {delayedCount} atrasado(s)
+                    </span>
+                  )}
+                </div>
+
+                {delayedCount === 0 ? (
+                  <div style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.84rem' }}>
+                    <CheckCircle size={24} color="#10B981" style={{ margin: '0 auto 8px auto', display: 'block' }} />
+                    Tudo em dia! Nenhum corte ou atendimento atrasado no momento.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
+                    {delayedAppointments.map((app) => {
+                      const endTime = new Date(app.endAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                      const cleanPhone = app.customer.phone ? app.customer.phone.replace(/\D/g, '') : null;
+
+                      return (
+                        <div
+                          key={app.id}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#F3F4F6' }}>
+                              {app.customer.name}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#EF4444' }}>
+                              Previsto até {endTime}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                            <Scissors size={12} color="var(--primary)" />
+                            <span>{app.service.name}</span>
+                            <span>•</span>
+                            <span style={{ color: app.professional.color || 'var(--primary)', fontWeight: 600 }}>
+                              {app.professional.name}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                            {cleanPhone && (
+                              <a
+                                href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Olá ${app.customer.name}! Notamos um atraso no seu agendamento de ${app.service.name} com ${app.professional.name}. Se precisar de suporte ou tiver algum imprevisto, estamos à disposição!`)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.74rem',
+                                  color: '#25D366',
+                                  fontWeight: 600,
+                                  textDecoration: 'none',
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(37, 211, 102, 0.1)',
+                                  border: '1px solid rgba(37, 211, 102, 0.25)',
+                                }}
+                              >
+                                <MessageCircle size={12} />
+                                <span>Avisar Cliente</span>
+                              </a>
+                            )}
+                            <Link
+                              href="/calendar"
+                              onClick={() => setIsDelayedOpen(false)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.74rem',
+                                color: 'var(--primary)',
+                                fontWeight: 600,
+                                textDecoration: 'none',
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                background: 'rgba(229, 179, 56, 0.1)',
+                                border: '1px solid rgba(229, 179, 56, 0.25)',
+                              }}
+                            >
+                              <span>Ver Agenda →</span>
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: '8px', textAlign: 'center' }}>
+                  <Link
+                    href="/calendar"
+                    onClick={() => setIsDelayedOpen(false)}
+                    style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      color: 'var(--text-muted)',
+                      textDecoration: 'none',
+                      transition: 'color 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                  >
+                    Gerenciar todos os agendamentos na Agenda →
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div

@@ -6,7 +6,7 @@ import { assertAppointmentLimit } from '../../lib/tenant-access.js';
 import { normalizePhone, timeToMinutes, weekdayOf } from '../../lib/utils.js';
 
 /** Status que ocupam a agenda do profissional. */
-export const BLOCKING_STATUSES: AppointmentStatus[] = ['SCHEDULED', 'CONFIRMED'];
+export const BLOCKING_STATUSES: AppointmentStatus[] = ['SCHEDULED', 'CONFIRMED', 'DELAYED'];
 
 export const appointmentInclude = {
   customer: { select: { id: true, name: true, phone: true, whatsappJid: true } },
@@ -69,6 +69,11 @@ export async function getAvailability(params: {
   const day = DateTime.fromISO(params.date, { zone: tenant.timezone }).startOf('day');
   if (!day.isValid) throw HttpError.badRequest('Data inválida');
 
+  const now = DateTime.now().setZone(tenant.timezone);
+  if (day < now.startOf('day')) {
+    return { date: params.date, slots: [], closed: false };
+  }
+
   const service = await prisma.service.findFirst({ where: { id: params.serviceId, tenantId: params.tenantId, isActive: true } });
   if (!service) throw HttpError.notFound('Serviço não encontrado');
 
@@ -94,7 +99,6 @@ export async function getAvailability(params: {
     select: { professionalId: true, startAt: true, endAt: true },
   });
 
-  const now = DateTime.now().setZone(tenant.timezone);
   const slots: Slot[] = [];
   for (let cursor = open; cursor.plus({ minutes: service.durationMinutes }) <= close; cursor = cursor.plus({ minutes: tenant.slotIntervalMinutes })) {
     const end = cursor.plus({ minutes: service.durationMinutes });
@@ -178,6 +182,11 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
 
   const start = DateTime.fromJSDate(input.startAt).setZone(tenant.timezone);
   const end = start.plus({ minutes: service.durationMinutes });
+
+  const now = DateTime.now().setZone(tenant.timezone);
+  if (start < now.startOf('day')) {
+    throw HttpError.badRequest('Não é permitido agendar em datas anteriores a hoje.');
+  }
 
   if (input.enforceBusinessHours !== false) {
     const hours = await prisma.businessHour.findUnique({
@@ -421,4 +430,40 @@ export async function changeAppointmentStatus(params: {
     if (isOverlapConstraintError(error)) throw HttpError.conflict('O horário deste agendamento já foi ocupado', 'SLOT_TAKEN');
     throw error;
   }
+}
+
+/**
+ * Sincroniza e marca agendamentos que já ultrapassaram o horário final de atendimento
+ * sem terem sido concluídos pelo barbeiro/salão como DELAYED (Atrasados).
+ */
+export async function syncDelayedAppointments(tenantId?: string): Promise<number> {
+  const now = new Date();
+  const res = await prisma.appointment.updateMany({
+    where: {
+      ...(tenantId ? { tenantId } : {}),
+      status: { in: ['SCHEDULED', 'CONFIRMED'] },
+      endAt: { lt: now },
+    },
+    data: {
+      status: 'DELAYED',
+    },
+  });
+  return res.count;
+}
+
+/**
+ * Retorna todos os agendamentos atrasados para alerta interno do barbeiro/salão.
+ */
+export async function getDelayedAppointments(params: { tenantId: string; professionalId?: string | null }) {
+  await syncDelayedAppointments(params.tenantId);
+
+  return prisma.appointment.findMany({
+    where: {
+      tenantId: params.tenantId,
+      status: 'DELAYED',
+      ...(params.professionalId ? { professionalId: params.professionalId } : {}),
+    },
+    include: appointmentInclude,
+    orderBy: { startAt: 'asc' },
+  });
 }

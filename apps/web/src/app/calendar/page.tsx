@@ -17,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -303,7 +304,16 @@ export default function CalendarPage() {
     });
   }, [appointments, selectedProfId]);
 
+  const delayedAppointments = useMemo(() => {
+    return appointments.filter((a) => a.status === 'DELAYED');
+  }, [appointments]);
+
   const handleCellClick = (day: DateTime, hour: number) => {
+    const today = DateTime.now().setZone(timezone).startOf('day');
+    if (day.startOf('day') < today) {
+      toast.error('Não é permitido agendar em datas anteriores a hoje.');
+      return;
+    }
     setSelectedDate(day);
     setNewTime(`${String(hour).padStart(2, '0')}:00`);
     if (isRestrictedProfessional && loggedInProfId) {
@@ -329,6 +339,13 @@ export default function CalendarPage() {
   const handleCreateAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+
+    const today = DateTime.now().setZone(timezone).startOf('day');
+    if (selectedDate.startOf('day') < today) {
+      setErrorMsg('Não é permitido agendar em datas anteriores a hoje.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -349,10 +366,46 @@ export default function CalendarPage() {
       setCustomerPhone('');
       setNewNotes('');
       await loadData();
+      toast.success('Agendamento realizado com sucesso!');
     } catch (err: unknown) {
       setErrorMsg(err instanceof ApiError ? err.message : 'Falha ao agendar horário.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const [notifyingClient, setNotifyingClient] = useState(false);
+
+  const handleNotifyCustomerDelay = async () => {
+    if (!selectedApp) return;
+    setNotifyingClient(true);
+    try {
+      const res = await api.post<{ success: boolean; sentViaBot: boolean; whatsappUrl: string; message: string }>(
+        `/api/appointments/${selectedApp.id}/notify-delay`
+      );
+      toast.success(res.message);
+      if (!res.sentViaBot && res.whatsappUrl) {
+        window.open(res.whatsappUrl, '_blank');
+      }
+      await loadData();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao notificar cliente.');
+    } finally {
+      setNotifyingClient(false);
+    }
+  };
+
+  const handleMarkAsDelayed = async () => {
+    if (!selectedApp) return;
+    try {
+      await api.patch(`/api/appointments/${selectedApp.id}/status`, {
+        status: 'DELAYED',
+      });
+      toast.success('Atendimento marcado como atrasado.');
+      await loadData();
+      setIsStatusModalOpen(false);
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao alterar status.');
     }
   };
 
@@ -1048,6 +1101,62 @@ export default function CalendarPage() {
               </div>
             </div>
 
+            {/* Banner de Alerta Interno de Atendimentos em Atraso */}
+            {delayedAppointments.length > 0 && (
+              <div
+                style={{
+                  padding: '10px 18px',
+                  background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.22) 0%, rgba(245, 158, 11, 0.14) 100%)',
+                  borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  zIndex: 25,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <AlertTriangle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
+                  <div>
+                    <span style={{ fontSize: '0.86rem', color: '#FEE2E2', fontWeight: 700 }}>
+                      Alerta do Sistema: {delayedAppointments.length} atendimento(s) em atraso!
+                    </span>
+                    <span style={{ display: 'block', fontSize: '0.78rem', color: 'rgba(255, 255, 255, 0.75)' }}>
+                      Estes agendamentos ultrapassaram o horário previsto e ainda não foram concluídos pelo barbeiro/salão.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedApp(delayedAppointments[0]);
+                      setIsStatusModalOpen(true);
+                    }}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      background: '#EF4444',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
+                    }}
+                  >
+                    <CheckCircle size={14} />
+                    <span>Concluir Atendimento Atrasado</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Timetable Grid (Grade Horária Estilo Microsoft Teams) */}
             <div
               ref={gridScrollRef}
@@ -1209,6 +1318,7 @@ export default function CalendarPage() {
                   {/* Colunas dos Dias com Linhas de Fundo e Agendamentos */}
                   {visibleDays.map((d, colIndex) => {
                     const isToday = d.hasSame(now, 'day');
+                    const isPastDay = d.startOf('day') < now.startOf('day');
                     const dayApps = filteredAppointments.filter((a) => {
                       const appDate = DateTime.fromISO(a.startAt, { zone: timezone });
                       return appDate.hasSame(d, 'day');
@@ -1221,7 +1331,11 @@ export default function CalendarPage() {
                         style={{
                           position: 'relative',
                           borderRight: '1px solid rgba(255, 255, 255, 0.05)',
-                          background: isToday ? 'rgba(229, 179, 56, 0.02)' : 'transparent',
+                          background: isPastDay
+                            ? 'rgba(0, 0, 0, 0.22)'
+                            : isToday
+                            ? 'rgba(229, 179, 56, 0.02)'
+                            : 'transparent',
                         }}
                       >
                         {/* Linhas Horizontais de Cada Hora */}
@@ -1229,16 +1343,19 @@ export default function CalendarPage() {
                           <div
                             key={hr}
                             onClick={() => handleCellClick(d, hr)}
-                            title={`Clique para agendar em ${d.toFormat('dd/MM')} às ${String(hr).padStart(2, '0')}:00`}
+                            title={isPastDay ? 'Data passada (não é permitido agendar)' : `Clique para agendar em ${d.toFormat('dd/MM')} às ${String(hr).padStart(2, '0')}:00`}
                             style={{
                               height: `${HOUR_HEIGHT}px`,
                               borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                              cursor: 'pointer',
+                              cursor: isPastDay ? 'not-allowed' : 'pointer',
                               position: 'relative',
                               transition: 'background 0.15s ease',
+                              opacity: isPastDay ? 0.65 : 1,
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = 'rgba(229, 179, 56, 0.06)';
+                              if (!isPastDay) {
+                                e.currentTarget.style.background = 'rgba(229, 179, 56, 0.06)';
+                              }
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = 'transparent';
@@ -1310,6 +1427,7 @@ export default function CalendarPage() {
 
                           const isCompleted = app.status === 'COMPLETED';
                           const isCanceled = app.status === 'CANCELED';
+                          const isDelayed = app.status === 'DELAYED';
                           const profColor = app.professional.color || '#E5B338';
 
                           return (
@@ -1331,15 +1449,19 @@ export default function CalendarPage() {
                                   ? 'rgba(244, 63, 94, 0.16)'
                                   : isCompleted
                                   ? 'rgba(16, 185, 129, 0.16)'
+                                  : isDelayed
+                                  ? 'rgba(239, 68, 68, 0.22)'
                                   : 'rgba(24, 30, 44, 0.95)',
                                 border: `1px solid ${
                                   isCanceled
                                     ? 'rgba(244, 63, 94, 0.4)'
                                     : isCompleted
                                     ? 'rgba(16, 185, 129, 0.4)'
+                                    : isDelayed
+                                    ? 'rgba(239, 68, 68, 0.6)'
                                     : 'rgba(255, 255, 255, 0.12)'
                                 }`,
-                                borderLeft: `4px solid ${isCanceled ? '#F43F5E' : profColor}`,
+                                borderLeft: `4px solid ${isCanceled ? '#F43F5E' : isDelayed ? '#EF4444' : profColor}`,
                                 borderRadius: '6px',
                                 padding: height > 60 ? '6px 8px' : '4px 7px',
                                 cursor: 'pointer',
@@ -1350,7 +1472,7 @@ export default function CalendarPage() {
                                 justifyContent: height > 75 ? 'space-between' : 'flex-start',
                                 gap: '2px',
                                 transition: 'all 0.15s ease',
-                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+                                boxShadow: isDelayed ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 12px rgba(0, 0, 0, 0.4)',
                               }}
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.transform = 'translateY(-1px) scale(1.01)';
@@ -1360,7 +1482,7 @@ export default function CalendarPage() {
                               onMouseLeave={(e) => {
                                 e.currentTarget.style.transform = 'none';
                                 e.currentTarget.style.zIndex = '10';
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
+                                e.currentTarget.style.boxShadow = isDelayed ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 12px rgba(0, 0, 0, 0.4)';
                               }}
                             >
                               <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1399,6 +1521,22 @@ export default function CalendarPage() {
                                       }}
                                     >
                                       ✓ CONCLUÍDO
+                                    </span>
+                                  )}
+                                  {isDelayed && (
+                                    <span
+                                      style={{
+                                        color: '#EF4444',
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        background: 'rgba(239, 68, 68, 0.25)',
+                                        border: '1px solid rgba(239, 68, 68, 0.45)',
+                                        padding: '1px 5px',
+                                        borderRadius: '3px',
+                                        lineHeight: 1,
+                                      }}
+                                    >
+                                      ⚠️ ATRASADO
                                     </span>
                                   )}
                                   {isCanceled && (
@@ -1530,22 +1668,38 @@ export default function CalendarPage() {
         <form onSubmit={handleCreateAppointment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-              Data Selecionada
+              Data do Agendamento *
             </label>
-            <div
+            <input
+              type="date"
+              required
+              min={DateTime.now().setZone(timezone).toISODate() ?? undefined}
+              value={selectedDate.toISODate() ?? ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  const newDt = DateTime.fromISO(e.target.value, { zone: timezone });
+                  const today = DateTime.now().setZone(timezone).startOf('day');
+                  if (newDt.startOf('day') < today) {
+                    toast.error('Não é permitido agendar em datas anteriores a hoje.');
+                    return;
+                  }
+                  setSelectedDate(newDt);
+                }
+              }}
               style={{
-                padding: '9px 12px',
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: '8px',
                 background: 'rgba(0, 0, 0, 0.35)',
                 border: '1px solid var(--border-color)',
-                borderRadius: '8px',
                 fontSize: '0.9rem',
                 color: '#F3F4F6',
                 fontWeight: 600,
-                textTransform: 'capitalize',
               }}
-            >
+            />
+            <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--primary)', marginTop: '4px', textTransform: 'capitalize' }}>
               {selectedDate.toFormat("cccc, dd 'de' MMMM 'de' yyyy", { locale: 'pt-BR' })}
-            </div>
+            </span>
           </div>
 
           <div>
@@ -1731,6 +1885,101 @@ export default function CalendarPage() {
                 </div>
               )}
             </div>
+
+            {selectedApp.status === 'DELAYED' && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  color: '#EF4444',
+                }}
+              >
+                <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+                <div style={{ fontSize: '0.86rem' }}>
+                  <strong>Atendimento Atrasado:</strong> O horário previsto de término expirou sem conclusão pelo profissional/salão.
+                </div>
+              </div>
+            )}
+
+            {selectedApp.status !== 'COMPLETED' && selectedApp.status !== 'CANCELED' && (
+              <div
+                className="glass-card"
+                style={{
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  background: 'rgba(245, 158, 11, 0.05)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertTriangle size={15} />
+                    Status & Controle de Atraso
+                  </span>
+                  {selectedApp.status === 'DELAYED' && (
+                    <span style={{ fontSize: '0.74rem', background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                      ATRASADO
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {selectedApp.status !== 'DELAYED' && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAsDelayed}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        color: '#EF4444',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <AlertTriangle size={14} />
+                      Marcar como Atrasado
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleNotifyCustomerDelay}
+                    disabled={notifyingClient}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(37, 211, 102, 0.4)',
+                      background: 'rgba(37, 211, 102, 0.12)',
+                      color: '#25D366',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: notifyingClient ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <MessageCircle size={14} />
+                    {notifyingClient ? 'Enviando...' : 'Notificar Cliente de Atraso (WhatsApp)'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {selectedApp.status !== 'COMPLETED' && selectedApp.status !== 'CANCELED' && (
               <div>

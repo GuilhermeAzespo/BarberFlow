@@ -50,6 +50,7 @@ enum AppointmentStatus {
   COMPLETED
   CANCELED
   NO_SHOW
+  DELAYED
 }
 
 enum AppointmentSource {

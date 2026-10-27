@@ -2,11 +2,15 @@ import { Router } from 'express';
 import { DateTime } from 'luxon';
 import { prisma } from '../../lib/prisma.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
+import { syncDelayedAppointments } from '../appointments/appointments.service.js';
 
 export const dashboardRouter = Router();
 
 dashboardRouter.get('/', async (req, res) => {
   const tenantId = req.tenantId!;
+
+  // Sincroniza atendimentos em atraso
+  await syncDelayedAppointments(tenantId);
 
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: tenantId },
@@ -88,6 +92,7 @@ dashboardRouter.get('/', async (req, res) => {
   const liveWhatsAppStatus = conn.status !== 'DISCONNECTED' ? conn.status : (whatsAppConfig?.status ?? 'DISCONNECTED');
 
   const todayCompletedCount = todayAppointments.filter((a) => a.status === 'COMPLETED').length;
+  const todayDelayedCount = todayAppointments.filter((a) => a.status === 'DELAYED').length;
   const todayPendingCount = todayAppointments.filter((a) => ['SCHEDULED', 'CONFIRMED'].includes(a.status)).length;
   const todayCanceledCount = todayAppointments.filter((a) => a.status === 'CANCELED').length;
 
@@ -97,6 +102,7 @@ dashboardRouter.get('/', async (req, res) => {
       monthRevenueCents: monthIncomeSum._sum.amountCents || 0,
       todayAppointmentsTotal: todayAppointments.length,
       todayCompletedCount,
+      todayDelayedCount,
       todayPendingCount,
       todayCanceledCount,
       monthAppointmentsCount,
