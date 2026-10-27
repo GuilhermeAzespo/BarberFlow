@@ -57,6 +57,9 @@ const CHANGELOG_DATA: ChangelogItem[] = [
     summary:
       'Lançamento da nova Central de Atendimento e Chat ao Vivo (/chat), permitindo conversar em tempo real com clientes do WhatsApp diretamente pelo painel e alternar entre o robô e o atendente humano com 1 clique. Além disso, adicionamos o status Atrasado com alertas internos no Salão, notificação de atraso ao cliente e bloqueio rigoroso de horários passados.',
     highlights: [
+      'Identificação Automática do Atendente: ao responder um cliente pelo painel, o sistema inclui automaticamente o nome do atendente na mensagem do WhatsApp (ex: *Guilherme Jorge:*\nopa), garantindo total clareza de quem está prestando o atendimento.',
+      'Cruzamento Inteligente com Cadastro de Clientes: o Chat ao Vivo agora cruza em tempo real os números do WhatsApp com a aba Clientes (/customers), trazendo sempre o nome oficial do cliente ao invés do telefone.',
+      'Filtros do Chat em Grid 2x2 (Zero Scrollbar): redesenho dos botões de filtro (Todas, Não Lidas, Atendente, Robô) em grade compacta sem barra de rolagem horizontal.',
       'Aba de Atendimento / Chat ao Vivo (/chat): visualize conversas do WhatsApp em tempo real, leia mensagens e envie respostas instantâneas para os clientes pelo painel.',
       'Transferência para Atendente Humano: pause o robô com 1 clique para falar diretamente com o cliente sem mensagens automáticas interferindo, e devolva para o bot quando terminar.',
       'Opção "Falar com Atendente" no Bot: clientes que escolhem a opção 5 no WhatsApp são automaticamente transferidos para a fila de atendimento humano.',

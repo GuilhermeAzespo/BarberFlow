@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma.js';
 import { normalizePhone } from '../../lib/utils.js';
 import { whatsAppService } from './whatsapp.service.js';
 import { requireRole } from '../../middlewares/auth.js';
+import { findCustomerForContact, formatAttendantShortName } from './whatsapp-customer.js';
 
 export const whatsAppRouter = Router();
 
@@ -100,19 +101,48 @@ whatsAppRouter.post('/send-test', requireRole('OWNER', 'MANAGER'), async (req, r
 
 // ───────────────────────────── Chat / Atendimento Humano ─────────────────────────────
 
-// Listar conversas ativas do WhatsApp
+// Listar conversas ativas do WhatsApp com cruzamento de dados de Clientes
 whatsAppRouter.get('/conversations', async (req, res) => {
   const tenantId = req.tenantId!;
-  const conversations = await prisma.whatsAppConversation.findMany({
+  const rawConversations = await prisma.whatsAppConversation.findMany({
     where: { tenantId },
     orderBy: { lastMessageAt: 'desc' },
-    take: 50,
+    take: 60,
   });
+
+  // Cruzamento dinâmico com a base cadastral de Clientes (/customers)
+  const conversations = await Promise.all(
+    rawConversations.map(async (conv) => {
+      const customer = await findCustomerForContact(tenantId, conv.contactJid, conv.phone);
+      if (customer && customer.name && customer.name.trim() !== 'Cliente' && !/^\d+$/.test(customer.name.trim())) {
+        // Se a conversa ainda estiver salva com número ou genérico, atualiza em background
+        if (conv.contactName !== customer.name) {
+          prisma.whatsAppConversation
+            .update({
+              where: { id: conv.id },
+              data: { contactName: customer.name },
+            })
+            .catch(() => {});
+        }
+        return {
+          ...conv,
+          contactName: customer.name,
+          customer: {
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.email,
+          },
+        };
+      }
+      return conv;
+    })
+  );
 
   return res.json({ conversations });
 });
 
-// Buscar histórico de mensagens de uma conversa específica
+// Buscar histórico de mensagens de uma conversa específica com cruzamento de dados do cliente
 whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
   const tenantId = req.tenantId!;
   const { id } = req.params;
@@ -129,13 +159,35 @@ whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
     });
   }
 
+  // Cruzamento com cliente
+  const customer = await findCustomerForContact(tenantId, conversation.contactJid, conversation.phone);
+  let resolvedContactName = conversation.contactName;
+  if (customer && customer.name && customer.name.trim() !== 'Cliente' && !/^\d+$/.test(customer.name.trim())) {
+    resolvedContactName = customer.name;
+    if (conversation.contactName !== customer.name) {
+      prisma.whatsAppConversation
+        .update({
+          where: { id: conversation.id },
+          data: { contactName: customer.name },
+        })
+        .catch(() => {});
+    }
+  }
+
   const messages = await prisma.whatsAppMessage.findMany({
     where: { conversationId: id, tenantId },
     orderBy: { createdAt: 'asc' },
     take: 120,
   });
 
-  return res.json({ conversation, messages });
+  return res.json({
+    conversation: {
+      ...conversation,
+      contactName: resolvedContactName,
+      customer: customer || null,
+    },
+    messages,
+  });
 });
 
 const sendChatMessageSchema = z.object({
@@ -156,18 +208,32 @@ whatsAppRouter.post('/conversations/:id/messages', async (req, res) => {
   const target = conversation.contactJid || conversation.phone;
   if (!target) throw HttpError.badRequest('Contato não possui identificador do WhatsApp válido');
 
-  const sent = await whatsAppService.sendMessage(tenantId, target, text);
-  if (!sent) {
-    throw HttpError.badRequest('Falha ao enviar mensagem. Certifique-se de que o WhatsApp do salão está conectado em /whatsapp.');
-  }
-
-  let senderName = 'Atendente';
+  // Identifica o nome do atendente logado no sistema
+  let rawSenderName = 'Atendente';
   if (req.auth?.userId) {
     const u = await prisma.user.findUnique({
       where: { id: req.auth.userId },
       select: { name: true },
     });
-    if (u?.name) senderName = u.name;
+    if (u?.name) rawSenderName = u.name;
+  }
+
+  // Formata o nome para exibição (ex: Guilherme Jorge Azevedo Andrade -> Guilherme Jorge)
+  const attendantShortName = formatAttendantShortName(rawSenderName);
+
+  // Formata a mensagem com o nome do atendente antes de enviar ao WhatsApp:
+  // EX:
+  // *Guilherme Jorge:*
+  // opa
+  const cleanInput = text.trim();
+  const escapedName = attendantShortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const alreadyPrefixed = new RegExp(`^(\\*?${escapedName}:?\\*?)\\s*`, 'i').test(cleanInput);
+
+  const outboundText = alreadyPrefixed ? cleanInput : `*${attendantShortName}:*\n${cleanInput}`;
+
+  const sent = await whatsAppService.sendMessage(tenantId, target, outboundText);
+  if (!sent) {
+    throw HttpError.badRequest('Falha ao enviar mensagem. Certifique-se de que o WhatsApp do salão está conectado em /whatsapp.');
   }
 
   const message = await prisma.whatsAppMessage.create({
@@ -177,8 +243,8 @@ whatsAppRouter.post('/conversations/:id/messages', async (req, res) => {
       contactJid: conversation.contactJid,
       fromMe: true,
       senderType: 'ATTENDANT',
-      senderName,
-      body: text,
+      senderName: attendantShortName,
+      body: outboundText,
       status: 'SENT',
     },
   });
@@ -186,7 +252,7 @@ whatsAppRouter.post('/conversations/:id/messages', async (req, res) => {
   await prisma.whatsAppConversation.update({
     where: { id },
     data: {
-      lastMessage: text,
+      lastMessage: `${attendantShortName}: ${cleanInput}`,
       lastMessageAt: new Date(),
       isAttendant: true,
       state: 'HUMAN_ATTENDANT',

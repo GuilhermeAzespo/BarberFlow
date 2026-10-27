@@ -10,6 +10,7 @@ import {
   professionalsForService,
 } from '../appointments/appointments.service.js';
 import { logger } from '../../lib/logger.js';
+import { findCustomerForContact } from './whatsapp-customer.js';
 
 interface BotContext {
   serviceId?: string;
@@ -50,27 +51,24 @@ export async function handleIncomingMessage(params: {
 
   if (!tenant) return;
 
-  // Identifica ou atualiza cliente
+  // Identifica ou atualiza cliente cruzando com a base de clientes (/customers)
   const rawPhone = (phoneJid ?? senderJid).replace(/[:@].*$/, '');
   const normalizedPhone = senderJid.endsWith('@lid') && !phoneJid ? null : normalizePhone(rawPhone);
 
-  let customer = await prisma.customer.findFirst({
-    where: {
-      tenantId,
-      OR: [
-        { whatsappJid: senderJid },
-        ...(normalizedPhone ? [{ phone: normalizedPhone }] : []),
-      ],
-    },
-  });
+  const matchedCustomer = await findCustomerForContact(tenantId, senderJid, normalizedPhone || rawPhone);
+  let customer = matchedCustomer
+    ? await prisma.customer.findUnique({ where: { id: matchedCustomer.id } })
+    : null;
 
-  const finalCustomerName = customer?.name || senderName || 'Cliente';
+  const resolvedName = (customer?.name && customer.name.trim() !== 'Cliente' && !/^\d+$/.test(customer.name.trim()))
+    ? customer.name
+    : (senderName || 'Cliente');
 
   if (!customer && normalizedPhone) {
     customer = await prisma.customer.create({
       data: {
         tenantId,
-        name: finalCustomerName,
+        name: resolvedName,
         phone: normalizedPhone,
         whatsappJid: senderJid,
       },
@@ -81,6 +79,8 @@ export async function handleIncomingMessage(params: {
       data: { whatsappJid: senderJid },
     });
   }
+
+  const finalCustomerName = resolvedName;
 
   // Carrega ou inicializa a conversa
   let conversation = await prisma.whatsAppConversation.findUnique({

@@ -37,6 +37,12 @@ interface ConversationItem {
   contactJid: string;
   phone?: string | null;
   contactName?: string | null;
+  customer?: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
   state: string;
   isAttendant: boolean;
   unreadCount: number;
@@ -55,6 +61,39 @@ interface ChatMessage {
   createdAt: string;
 }
 
+function getAttendantShortName(fullName?: string | null): string {
+  if (!fullName) return 'Atendente';
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length <= 2) return fullName.trim();
+  return `${parts[0]} ${parts[1]}`;
+}
+
+function formatPhoneDisplay(raw?: string | null): string {
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 13 && digits.startsWith('55')) {
+    const ddd = digits.slice(2, 4);
+    const num = digits.slice(4);
+    return `+55 (${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('55')) {
+    const ddd = digits.slice(2, 4);
+    const num = digits.slice(4);
+    return `+55 (${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  }
+  if (digits.length === 11) {
+    const ddd = digits.slice(0, 2);
+    const num = digits.slice(2);
+    return `(${ddd}) ${num.slice(0, 5)}-${num.slice(5)}`;
+  }
+  if (digits.length === 10) {
+    const ddd = digits.slice(0, 2);
+    const num = digits.slice(2);
+    return `(${ddd}) ${num.slice(0, 4)}-${num.slice(4)}`;
+  }
+  return raw;
+}
+
 const QUICK_REPLIES = [
   'Olá! Como posso te ajudar hoje? 😊',
   'Seu agendamento está confirmado! Te esperamos aqui. 💈',
@@ -67,6 +106,8 @@ export default function ChatPage() {
   const { user, tenant, canAccessMenu, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+
+  const attendantShortName = useMemo(() => getAttendantShortName(user?.name), [user?.name]);
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -332,13 +373,13 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* Filtros em Abas */}
-              <div style={{ display: 'flex', gap: '6px', marginTop: '12px', overflowX: 'auto', paddingBottom: '2px' }}>
+              {/* Filtros em Grid 2x2 - Totalmente responsivo e sem scrollbar */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '12px' }}>
                 <button
                   type="button"
                   onClick={() => setFilterMode('ALL')}
                   style={{
-                    padding: '4px 10px',
+                    padding: '7px 8px',
                     borderRadius: '6px',
                     fontSize: '0.74rem',
                     fontWeight: 700,
@@ -346,50 +387,21 @@ export default function ChatPage() {
                     border: filterMode === 'ALL' ? '1px solid var(--primary)' : '1px solid rgba(255, 255, 255, 0.08)',
                     background: filterMode === 'ALL' ? 'rgba(229, 179, 56, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                     color: filterMode === 'ALL' ? 'var(--primary)' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  Todas ({conversations.length})
+                  <span>💬 Todas ({conversations.length})</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('ATTENDANT')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    border: filterMode === 'ATTENDANT' ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.08)',
-                    background: filterMode === 'ATTENDANT' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                    color: filterMode === 'ATTENDANT' ? '#FBBF24' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  👤 Atendente ({conversations.filter((c) => c.isAttendant).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterMode('BOT')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    border: filterMode === 'BOT' ? '1px solid #10B981' : '1px solid rgba(255, 255, 255, 0.08)',
-                    background: filterMode === 'BOT' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                    color: filterMode === 'BOT' ? '#34D399' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🤖 Bot ({conversations.filter((c) => !c.isAttendant).length})
-                </button>
+
                 <button
                   type="button"
                   onClick={() => setFilterMode('UNREAD')}
                   style={{
-                    padding: '4px 10px',
+                    padding: '7px 8px',
                     borderRadius: '6px',
                     fontSize: '0.74rem',
                     fontWeight: 700,
@@ -397,10 +409,61 @@ export default function ChatPage() {
                     border: filterMode === 'UNREAD' ? '1px solid #EF4444' : '1px solid rgba(255, 255, 255, 0.08)',
                     background: filterMode === 'UNREAD' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.03)',
                     color: filterMode === 'UNREAD' ? '#EF4444' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  Não Lidas ({conversations.filter((c) => c.unreadCount > 0).length})
+                  <Clock size={12} />
+                  <span>Não Lidas ({conversations.filter((c) => c.unreadCount > 0).length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('ATTENDANT')}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: '6px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: filterMode === 'ATTENDANT' ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.08)',
+                    background: filterMode === 'ATTENDANT' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    color: filterMode === 'ATTENDANT' ? '#FBBF24' : 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <User size={12} />
+                  <span>Atendente ({conversations.filter((c) => c.isAttendant).length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFilterMode('BOT')}
+                  style={{
+                    padding: '7px 8px',
+                    borderRadius: '6px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: filterMode === 'BOT' ? '1px solid #10B981' : '1px solid rgba(255, 255, 255, 0.08)',
+                    background: filterMode === 'BOT' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                    color: filterMode === 'BOT' ? '#34D399' : 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Bot size={12} />
+                  <span>Robô ({conversations.filter((c) => !c.isAttendant).length})</span>
                 </button>
               </div>
             </div>
@@ -482,7 +545,7 @@ export default function ChatPage() {
                               textOverflow: 'ellipsis',
                             }}
                           >
-                            {conv.contactName || conv.phone || 'Cliente'}
+                            {conv.contactName || (conv.phone ? formatPhoneDisplay(conv.phone) : 'Cliente')}
                           </span>
                           <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '6px' }}>
                             {timeFormatted}
@@ -505,7 +568,7 @@ export default function ChatPage() {
                         </p>
 
                         {/* Badges de Status (Atendente vs Bot e Não Lidas) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
                           <span
                             style={{
                               fontSize: '0.64rem',
@@ -523,9 +586,25 @@ export default function ChatPage() {
                             {conv.isAttendant ? '👤 Atendente' : '🤖 Bot'}
                           </span>
 
+                          {conv.customer && (
+                            <span
+                              style={{
+                                fontSize: '0.62rem',
+                                fontWeight: 700,
+                                padding: '1px 5px',
+                                borderRadius: '4px',
+                                background: 'rgba(229, 179, 56, 0.15)',
+                                color: '#E5B338',
+                                border: '1px solid rgba(229, 179, 56, 0.3)',
+                              }}
+                            >
+                              Cliente
+                            </span>
+                          )}
+
                           {conv.phone && (
                             <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
-                              {conv.phone}
+                              {formatPhoneDisplay(conv.phone)}
                             </span>
                           )}
 
@@ -601,13 +680,28 @@ export default function ChatPage() {
                     </div>
 
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
-                          {selectedConv.contactName || selectedConv.phone || 'Cliente'}
+                          {selectedConv.contactName || (selectedConv.phone ? formatPhoneDisplay(selectedConv.phone) : 'Cliente')}
                         </h3>
                         {selectedConv.phone && (
                           <span style={{ fontSize: '0.80rem', color: 'var(--text-dim)', fontWeight: 500 }}>
-                            ({selectedConv.phone})
+                            {formatPhoneDisplay(selectedConv.phone)}
+                          </span>
+                        )}
+                        {selectedConv.customer && (
+                          <span
+                            style={{
+                              fontSize: '0.66rem',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(229, 179, 56, 0.15)',
+                              color: '#E5B338',
+                              border: '1px solid rgba(229, 179, 56, 0.35)',
+                            }}
+                          >
+                            Cliente Cadastrado
                           </span>
                         )}
                       </div>
@@ -738,7 +832,7 @@ export default function ChatPage() {
                                   ? '🤖 Robô BarberFlow'
                                   : m.senderType === 'SYSTEM'
                                   ? '⚙️ Sistema'
-                                  : `👤 Atendente (${m.senderName || user?.name || 'Você'})`
+                                  : `👤 ${m.senderName || attendantShortName}`
                                 : m.senderName || selectedConv.contactName || 'Cliente'}
                             </span>
                             <span style={{ fontSize: '0.66rem', color: 'rgba(255, 255, 255, 0.35)' }}>• {time}</span>
@@ -767,7 +861,23 @@ export default function ChatPage() {
                               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
                             }}
                           >
-                            {m.body}
+                            {(() => {
+                              // Se a mensagem começa com *Nome:* ou Nome:
+                              const match = m.body.match(/^(\*[^*]+:\*|[A-Za-zÀ-ÿ\s]+:)\s*\n([\s\S]*)$/);
+                              if (match) {
+                                const header = match[1].replace(/\*/g, '');
+                                const content = match[2];
+                                return (
+                                  <div>
+                                    <div style={{ fontWeight: 800, color: '#FBBF24', marginBottom: '4px', fontSize: '0.82rem' }}>
+                                      {header}
+                                    </div>
+                                    <div>{content}</div>
+                                  </div>
+                                );
+                              }
+                              return m.body;
+                            })()}
                           </div>
                         </div>
                       );
@@ -822,62 +932,91 @@ export default function ChatPage() {
                 </div>
 
                 {/* Barra de Digitação e Envio */}
-                <form
-                  onSubmit={handleSendMessage}
+                <div
                   style={{
-                    padding: '14px 24px',
+                    padding: '12px 24px 16px 24px',
                     borderTop: '1px solid var(--border-color)',
                     background: 'rgba(11, 15, 23, 0.95)',
                     display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
+                    flexDirection: 'column',
+                    gap: '8px',
                   }}
                 >
-                  <input
-                    type="text"
-                    required
-                    placeholder={
-                      selectedConv.isAttendant
-                        ? 'Digite sua mensagem para o cliente (enviada no WhatsApp)...'
-                        : 'Digite uma mensagem (ao enviar, a conversa será assumida por você)...'
-                    }
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '12px 16px',
-                      borderRadius: '8px',
-                      background: 'rgba(0, 0, 0, 0.45)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.90rem',
-                      outline: 'none',
-                    }}
-                  />
+                  {/* Identificação do Atendente Ativo */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          background: '#FBBF24',
+                          boxShadow: '0 0 6px rgba(251, 191, 36, 0.6)',
+                        }}
+                      />
+                      <span style={{ fontSize: '0.74rem', color: '#FBBF24', fontWeight: 600 }}>
+                        Enviando no WhatsApp como: <strong>{attendantShortName}</strong>
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)' }}>
+                      O nome do atendente é incluído automaticamente na mensagem
+                    </span>
+                  </div>
 
-                  <button
-                    type="submit"
-                    disabled={sending || !inputText.trim()}
+                  <form
+                    onSubmit={handleSendMessage}
                     style={{
-                      padding: '12px 20px',
-                      borderRadius: '8px',
-                      fontWeight: 700,
-                      fontSize: '0.88rem',
-                      cursor: sending || !inputText.trim() ? 'not-allowed' : 'pointer',
-                      background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-                      color: '#0B0F17',
-                      border: 'none',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '8px',
-                      boxShadow: '0 2px 12px rgba(37, 211, 102, 0.35)',
-                      transition: 'transform 0.1s ease',
+                      gap: '12px',
                     }}
                   >
-                    <span>{sending ? 'Enviando...' : 'Enviar no WhatsApp'}</span>
-                    <Send size={15} />
-                  </button>
-                </form>
+                    <input
+                      type="text"
+                      required
+                      placeholder={
+                        selectedConv.isAttendant
+                          ? `Digite sua mensagem... (será enviada como "${attendantShortName}: <sua mensagem>")`
+                          : 'Digite uma mensagem (ao enviar, a conversa será assumida por você)...'
+                      }
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        background: 'rgba(0, 0, 0, 0.45)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.90rem',
+                        outline: 'none',
+                      }}
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={sending || !inputText.trim()}
+                      style={{
+                        padding: '12px 20px',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '0.88rem',
+                        cursor: sending || !inputText.trim() ? 'not-allowed' : 'pointer',
+                        background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
+                        color: '#0B0F17',
+                        border: 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 12px rgba(37, 211, 102, 0.35)',
+                        transition: 'transform 0.1s ease',
+                      }}
+                    >
+                      <span>{sending ? 'Enviando...' : 'Enviar no WhatsApp'}</span>
+                      <Send size={15} />
+                    </button>
+                  </form>
+                </div>
               </>
             ) : (
               /* Nenhum chat selecionado */
