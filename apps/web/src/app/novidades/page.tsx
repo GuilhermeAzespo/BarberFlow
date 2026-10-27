@@ -49,14 +49,16 @@ const CHANGELOG_DATA: ChangelogItem[] = [
     id: 'v2-7',
     version: 'v2.7',
     date: '27 de Outubro de 2026',
-    title: 'Chat ao Vivo com WhatsApp, Transferência para Atendente, Status Atrasado e Bloqueio de Horários Passados',
+    title: 'Notificações em Tempo Real (Som + Toast + Desktop), Chat ao Vivo com WhatsApp, Transferência para Atendente e Status Atrasado',
     category: 'WHATSAPP',
     categoryLabel: 'Grande Lançamento',
     badgeColor: '#10B981',
     badgeBg: 'rgba(16, 185, 129, 0.15)',
     summary:
-      'Lançamento da nova Central de Atendimento e Chat ao Vivo (/chat), permitindo conversar em tempo real com clientes do WhatsApp diretamente pelo painel e alternar entre o robô e o atendente humano com 1 clique. Além disso, adicionamos o status Atrasado com alertas internos no Salão, notificação de atraso ao cliente e bloqueio rigoroso de horários passados.',
+      'Lançamento da nova Central de Atendimento e Chat ao Vivo (/chat) com sistema completo de Notificações em Tempo Real (chime sonoro, toast flutuante, notificação desktop do navegador, badge no menu lateral e sino no cabeçalho) sempre que o salão recebe mensagens no WhatsApp e não está com o chat aberto. Além disso, adicionamos transferência para atendente humano, identificação automática do operador, cruzamento inteligente de clientes, status Atrasado com avisos internos e bloqueio de horários passados.',
     highlights: [
+      'Notificações em Tempo Real (Som + Toast + Desktop): sempre que o salão recebe mensagem no WhatsApp com a aba de atendimento fechada ou minimizada, o sistema toca um aviso sonoro (chime sintetizado via Web Audio API), exibe um alerta flutuante luxuoso com atalho direto e envia notificação nativa na área de trabalho do computador.',
+      'Badges Dinâmicos no Menu Lateral e Sino (Header): o item "Atendimento / Chat" da barra lateral e o sino de notificações no topo exibem em tempo real o número exato de mensagens não lidas, com dropdown detalhado com nome do cliente, prévia da mensagem e clique direto para abrir.',
       'Identificação Automática do Atendente: ao responder um cliente pelo painel, o sistema inclui automaticamente o nome do atendente na mensagem do WhatsApp (ex: *Guilherme Jorge:*\nopa), garantindo total clareza de quem está prestando o atendimento.',
       'Cruzamento Inteligente com Cadastro de Clientes: o Chat ao Vivo agora cruza em tempo real os números do WhatsApp com a aba Clientes (/customers), trazendo sempre o nome oficial do cliente ao invés do telefone.',
       'Filtros do Chat em Grid 2x2 (Zero Scrollbar): redesenho dos botões de filtro (Todas, Não Lidas, Atendente, Robô) em grade compacta sem barra de rolagem horizontal.',

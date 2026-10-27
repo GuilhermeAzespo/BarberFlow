@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../lib/auth-context';
 import { api } from '../lib/api';
 import { LogOut, User as UserIcon, AlertTriangle, Shield, CheckCircle, ShieldAlert, ArrowLeft, Sparkles, Crown, Clock, Bell, MessageCircle, Scissors } from 'lucide-react';
+import { useWhatsAppNotifications } from '../lib/whatsapp-notifications-context';
 
 interface DelayedAppointmentItem {
   id: string;
@@ -27,10 +28,13 @@ interface DelayedAppointmentItem {
 
 export function Header() {
   const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
+  const { unreadCount: whatsappUnreadCount, unreadConversations } = useWhatsAppNotifications();
   const [delayedAppointments, setDelayedAppointments] = useState<DelayedAppointmentItem[]>([]);
   const [delayedCount, setDelayedCount] = useState(0);
   const [isDelayedOpen, setIsDelayedOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const totalAlerts = delayedCount + whatsappUnreadCount;
 
   useEffect(() => {
     if (!user || user.role === 'SUPER_ADMIN' || !tenant) return;
@@ -389,12 +393,16 @@ export function Header() {
             <button
               type="button"
               onClick={() => setIsDelayedOpen(!isDelayedOpen)}
-              title={delayedCount > 0 ? `${delayedCount} atendimento(s) atrasado(s)` : 'Notificações Internas'}
+              title={
+                totalAlerts > 0
+                  ? `${totalAlerts} notificação(ões) pendente(s)`
+                  : 'Notificações Internas'
+              }
               style={{
                 position: 'relative',
-                background: delayedCount > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                border: `1px solid ${delayedCount > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)'}`,
-                color: delayedCount > 0 ? '#EF4444' : 'var(--text-muted)',
+                background: totalAlerts > 0 ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                border: `1px solid ${totalAlerts > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)'}`,
+                color: totalAlerts > 0 ? '#EF4444' : 'var(--text-muted)',
                 borderRadius: '8px',
                 padding: '8px 10px',
                 cursor: 'pointer',
@@ -404,16 +412,16 @@ export function Header() {
                 transition: 'all 0.2s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = delayedCount > 0 ? '#F87171' : 'var(--text-main)';
-                e.currentTarget.style.borderColor = delayedCount > 0 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.color = totalAlerts > 0 ? '#F87171' : 'var(--text-main)';
+                e.currentTarget.style.borderColor = totalAlerts > 0 ? 'rgba(239, 68, 68, 0.6)' : 'rgba(255, 255, 255, 0.25)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = delayedCount > 0 ? '#EF4444' : 'var(--text-muted)';
-                e.currentTarget.style.borderColor = delayedCount > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.color = totalAlerts > 0 ? '#EF4444' : 'var(--text-muted)';
+                e.currentTarget.style.borderColor = totalAlerts > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(255, 255, 255, 0.1)';
               }}
             >
               <Bell size={18} />
-              {delayedCount > 0 && (
+              {totalAlerts > 0 && (
                 <span
                   style={{
                     position: 'absolute',
@@ -429,7 +437,7 @@ export function Header() {
                     lineHeight: 1.2,
                   }}
                 >
-                  {delayedCount}
+                  {totalAlerts}
                 </span>
               )}
             </button>
@@ -441,7 +449,7 @@ export function Header() {
                   position: 'absolute',
                   right: 0,
                   top: 'calc(100% + 10px)',
-                  width: '360px',
+                  width: '380px',
                   borderRadius: '12px',
                   padding: '14px',
                   background: 'rgba(15, 21, 32, 0.98)',
@@ -454,117 +462,212 @@ export function Header() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <AlertTriangle size={16} color={delayedCount > 0 ? '#EF4444' : 'var(--text-muted)'} />
+                    <Bell size={16} color={totalAlerts > 0 ? '#EF4444' : 'var(--text-muted)'} />
                     <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-main)' }}>
-                      Notificações do Salão
+                      Central de Notificações
                     </span>
                   </div>
-                  {delayedCount > 0 && (
-                    <span
-                      style={{
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        background: 'rgba(239, 68, 68, 0.2)',
-                        color: '#EF4444',
-                        border: '1px solid rgba(239, 68, 68, 0.4)',
-                      }}
-                    >
-                      {delayedCount} atrasado(s)
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {whatsappUnreadCount > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.70rem',
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: '10px',
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          color: '#34D399',
+                          border: '1px solid rgba(37, 211, 102, 0.35)',
+                        }}
+                      >
+                        {whatsappUnreadCount} WhatsApp
+                      </span>
+                    )}
+                    {delayedCount > 0 && (
+                      <span
+                        style={{
+                          fontSize: '0.70rem',
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: '10px',
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#EF4444',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                        }}
+                      >
+                        {delayedCount} atrasado(s)
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                {delayedCount === 0 ? (
-                  <div style={{ padding: '20px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.84rem' }}>
+                {totalAlerts === 0 ? (
+                  <div style={{ padding: '24px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.84rem' }}>
                     <CheckCircle size={24} color="#10B981" style={{ margin: '0 auto 8px auto', display: 'block' }} />
-                    Tudo em dia! Nenhum corte ou atendimento atrasado no momento.
+                    Tudo em dia! Nenhuma mensagem nova ou atendimento pendente.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto' }}>
-                    {delayedAppointments.map((app) => {
-                      const endTime = new Date(app.endAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-                      const cleanPhone = app.customer.phone ? app.customer.phone.replace(/\D/g, '') : null;
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '340px', overflowY: 'auto' }}>
+                    {/* Seção 1: Mensagens do WhatsApp Não Lidas */}
+                    {whatsappUnreadCount > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#34D399', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <MessageCircle size={13} color="#25D366" /> Mensagens do WhatsApp
+                          </span>
+                          <Link
+                            href="/chat"
+                            onClick={() => setIsDelayedOpen(false)}
+                            style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            Ir para o Chat →
+                          </Link>
+                        </div>
 
-                      return (
-                        <div
-                          key={app.id}
-                          style={{
-                            padding: '10px 12px',
-                            borderRadius: '8px',
-                            background: 'rgba(239, 68, 68, 0.08)',
-                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '4px',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#F3F4F6' }}>
-                              {app.customer.name}
-                            </span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#EF4444' }}>
-                              Previsto até {endTime}
-                            </span>
-                          </div>
+                        {unreadConversations.map((conv) => (
+                          <Link
+                            key={conv.id}
+                            href={`/chat?id=${conv.id}`}
+                            onClick={() => setIsDelayedOpen(false)}
+                            style={{
+                              padding: '8px 10px',
+                              borderRadius: '8px',
+                              background: 'rgba(37, 211, 102, 0.08)',
+                              border: '1px solid rgba(37, 211, 102, 0.22)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '3px',
+                              textDecoration: 'none',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'rgba(37, 211, 102, 0.16)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'rgba(37, 211, 102, 0.08)';
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.84rem', color: '#FFFFFF' }}>
+                                {conv.contactName || conv.phone || 'Cliente'}
+                              </span>
+                              <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+                                {new Date(conv.lastMessageAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: '0.76rem', color: '#E5E7EB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {conv.lastMessage || 'Nova mensagem recebida'}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            <Scissors size={12} color="var(--primary)" />
-                            <span>{app.service.name}</span>
-                            <span>•</span>
-                            <span style={{ color: app.professional.color || 'var(--primary)', fontWeight: 600 }}>
-                              {app.professional.name}
-                            </span>
-                          </div>
+                    {/* Divisor */}
+                    {whatsappUnreadCount > 0 && delayedCount > 0 && (
+                      <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '2px 0' }} />
+                    )}
 
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-                            {cleanPhone && (
-                              <a
-                                href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Olá ${app.customer.name}! Notamos um atraso no seu agendamento de ${app.service.name} com ${app.professional.name}. Se precisar de suporte ou tiver algum imprevisto, estamos à disposição!`)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  fontSize: '0.74rem',
-                                  color: '#25D366',
-                                  fontWeight: 600,
-                                  textDecoration: 'none',
-                                  padding: '3px 8px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(37, 211, 102, 0.1)',
-                                  border: '1px solid rgba(37, 211, 102, 0.25)',
-                                }}
-                              >
-                                <MessageCircle size={12} />
-                                <span>Avisar Cliente</span>
-                              </a>
-                            )}
-                            <Link
-                              href="/calendar"
-                              onClick={() => setIsDelayedOpen(false)}
+                    {/* Seção 2: Atendimentos Atrasados */}
+                    {delayedCount > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <AlertTriangle size={13} color="#EF4444" /> Atendimentos Atrasados
+                          </span>
+                          <Link
+                            href="/calendar"
+                            onClick={() => setIsDelayedOpen(false)}
+                            style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none' }}
+                          >
+                            Ver Agenda →
+                          </Link>
+                        </div>
+
+                        {delayedAppointments.map((app) => {
+                          const endTime = new Date(app.endAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                          const cleanPhone = app.customer.phone ? app.customer.phone.replace(/\D/g, '') : null;
+
+                          return (
+                            <div
+                              key={app.id}
                               style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                display: 'flex',
+                                flexDirection: 'column',
                                 gap: '4px',
-                                fontSize: '0.74rem',
-                                color: 'var(--primary)',
-                                fontWeight: 600,
-                                textDecoration: 'none',
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                background: 'rgba(229, 179, 56, 0.1)',
-                                border: '1px solid rgba(229, 179, 56, 0.25)',
                               }}
                             >
-                              <span>Ver Agenda →</span>
-                            </Link>
-                          </div>
-                        </div>
-                      );
-                    })}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#F3F4F6' }}>
+                                  {app.customer.name}
+                                </span>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#EF4444' }}>
+                                  Previsto até {endTime}
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                                <Scissors size={12} color="var(--primary)" />
+                                <span>{app.service.name}</span>
+                                <span>•</span>
+                                <span style={{ color: app.professional.color || 'var(--primary)', fontWeight: 600 }}>
+                                  {app.professional.name}
+                                </span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                                {cleanPhone && (
+                                  <a
+                                    href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(`Olá ${app.customer.name}! Notamos um atraso no seu agendamento de ${app.service.name} com ${app.professional.name}. Se precisar de suporte ou tiver algum imprevisto, estamos à disposição!`)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '0.74rem',
+                                      color: '#25D366',
+                                      fontWeight: 600,
+                                      textDecoration: 'none',
+                                      padding: '3px 8px',
+                                      borderRadius: '4px',
+                                      background: 'rgba(37, 211, 102, 0.1)',
+                                      border: '1px solid rgba(37, 211, 102, 0.25)',
+                                    }}
+                                  >
+                                    <MessageCircle size={12} />
+                                    <span>Avisar Cliente</span>
+                                  </a>
+                                )}
+                                <Link
+                                  href="/calendar"
+                                  onClick={() => setIsDelayedOpen(false)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: '0.74rem',
+                                    color: 'var(--primary)',
+                                    fontWeight: 600,
+                                    textDecoration: 'none',
+                                    padding: '3px 8px',
+                                    borderRadius: '4px',
+                                    background: 'rgba(229, 179, 56, 0.1)',
+                                    border: '1px solid rgba(229, 179, 56, 0.25)',
+                                  }}
+                                >
+                                  <span>Ver Agenda →</span>
+                                </Link>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
 import { ToastProvider } from '../components/Toast';
+import { WhatsAppNotificationProvider } from '../lib/whatsapp-notifications-context';
 
 export const metadata: Metadata = {
   title: 'BarberFlow — Gestão Inteligente para Barbearias e Salões',
@@ -28,7 +29,9 @@ export default function RootLayout({
       </head>
       <body>
         <ToastProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <WhatsAppNotificationProvider>{children}</WhatsAppNotificationProvider>
+          </AuthProvider>
         </ToastProvider>
       </body>
     </html>

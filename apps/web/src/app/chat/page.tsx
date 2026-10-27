@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   MessageSquare,
   MessageCircle,
@@ -24,12 +24,14 @@ import {
   ChevronRight,
   Headphones,
   Shield,
+  Users,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { useToast } from '../../components/Toast';
+import { useWhatsAppNotifications } from '../../lib/whatsapp-notifications-context';
 
 interface ConversationItem {
   id: string;
@@ -102,15 +104,24 @@ const QUICK_REPLIES = [
   'Vou verificar para você e já te respondo, só um momento.',
 ];
 
-export default function ChatPage() {
+function ChatPageContent() {
   const { user, tenant, canAccessMenu, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { refreshUnread } = useWhatsAppNotifications();
 
   const attendantShortName = useMemo(() => getAttendantShortName(user?.name), [user?.name]);
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('id'));
+
+  useEffect(() => {
+    const paramId = searchParams.get('id');
+    if (paramId && paramId !== selectedId) {
+      setSelectedId(paramId);
+    }
+  }, [searchParams, selectedId]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loadingList, setLoadingList] = useState(true);
@@ -154,6 +165,8 @@ export default function ChatPage() {
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, ...res.conversation, unreadCount: 0 } : c))
       );
+      // Notifica o contexto global para atualizar badges do sidebar e header
+      refreshUnread();
     } catch (err: unknown) {
       if (!silent) {
         toast.error(err instanceof ApiError ? err.message : 'Falha ao carregar mensagens.');
@@ -1085,5 +1098,28 @@ export default function ChatPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: '100vh',
+            background: 'var(--bg-main)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+          }}
+        >
+          Carregando atendimento...
+        </div>
+      }
+    >
+      <ChatPageContent />
+    </React.Suspense>
   );
 }

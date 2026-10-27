@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { SYSTEM_VERSION } from '../lib/constants';
+import { useWhatsAppNotifications } from '../lib/whatsapp-notifications-context';
 
 export const ALL_MENU_KEYS = [
   { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -34,6 +35,7 @@ export const ALL_MENU_KEYS = [
 export function Sidebar() {
   const pathname = usePathname();
   const { canAccessMenu, subscription } = useAuth();
+  const { unreadCount: whatsappUnreadCount } = useWhatsAppNotifications();
   const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
   return (
@@ -133,6 +135,22 @@ export function Sidebar() {
               >
                 <Icon size={17} color={active ? '#0B0F17' : item.highlight ? '#FBBF24' : 'currentColor'} />
                 <span>{item.label}</span>
+                {item.key === 'chat' && whatsappUnreadCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      background: active ? '#0B0F17' : '#EF4444',
+                      color: active ? '#E5B338' : '#FFFFFF',
+                      borderRadius: '10px',
+                      padding: '1px 6px',
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      boxShadow: active ? 'none' : '0 0 8px rgba(239, 68, 68, 0.7)',
+                    }}
+                  >
+                    {whatsappUnreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}

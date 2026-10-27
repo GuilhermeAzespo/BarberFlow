@@ -142,6 +142,56 @@ whatsAppRouter.get('/conversations', async (req, res) => {
   return res.json({ conversations });
 });
 
+// Obter total de mensagens não lidas e conversas pendentes (para notificações globais)
+whatsAppRouter.get('/unread', async (req, res) => {
+  const tenantId = req.tenantId!;
+
+  const unreadConversations = await prisma.whatsAppConversation.findMany({
+    where: {
+      tenantId,
+      unreadCount: { gt: 0 },
+    },
+    orderBy: { lastMessageAt: 'desc' },
+    take: 10,
+    select: {
+      id: true,
+      contactName: true,
+      phone: true,
+      contactJid: true,
+      lastMessage: true,
+      lastMessageAt: true,
+      unreadCount: true,
+      isAttendant: true,
+      state: true,
+    },
+  });
+
+  const totalUnreadMessages = unreadConversations.reduce((sum, c) => sum + c.unreadCount, 0);
+
+  // Cruzamento com Customer para enriquecer o nome caso contactName seja genérico
+  const enriched = await Promise.all(
+    unreadConversations.map(async (conv) => {
+      const customer = await findCustomerForContact(tenantId, conv.contactJid, conv.phone);
+      const name =
+        customer && customer.name && customer.name.trim() !== 'Cliente' && !/^\d+$/.test(customer.name.trim())
+          ? customer.name
+          : conv.contactName || conv.phone || 'Cliente';
+
+      return {
+        ...conv,
+        contactName: name,
+        customer: customer ? { id: customer.id, name: customer.name } : null,
+      };
+    })
+  );
+
+  return res.json({
+    unreadCount: totalUnreadMessages,
+    unreadConversationsCount: unreadConversations.length,
+    conversations: enriched,
+  });
+});
+
 // Buscar histórico de mensagens de uma conversa específica com cruzamento de dados do cliente
 whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
   const tenantId = req.tenantId!;
