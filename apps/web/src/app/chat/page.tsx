@@ -123,6 +123,11 @@ function ChatPageContent() {
     }
   }, [searchParams, selectedId]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [totalMessagesCount, setTotalMessagesCount] = useState(0);
+  const [todayMessagesCount, setTodayMessagesCount] = useState(0);
+  const [showingAllHistory, setShowingAllHistory] = useState(false);
+  const [closingChat, setClosingChat] = useState(false);
   const [inputText, setInputText] = useState('');
   const [loadingList, setLoadingList] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -153,14 +158,25 @@ function ChatPageContent() {
     }
   };
 
-  // Carrega mensagens da conversa selecionada
-  const loadMessages = async (convId: string, silent = false) => {
+  // Carrega mensagens da conversa selecionada (priorizando a data atual)
+  const loadMessages = async (convId: string, silent = false, loadAll = false) => {
     if (!silent) setLoadingMessages(true);
     try {
-      const res = await api.get<{ conversation: ConversationItem; messages: ChatMessage[] }>(
-        `/api/whatsapp/conversations/${convId}/messages`
-      );
+      const queryParam = loadAll ? '?all=true' : '';
+      const res = await api.get<{
+        conversation: ConversationItem;
+        messages: ChatMessage[];
+        hasOlderMessages?: boolean;
+        totalMessagesCount?: number;
+        todayMessagesCount?: number;
+      }>(`/api/whatsapp/conversations/${convId}/messages${queryParam}`);
+
       setMessages(res.messages || []);
+      setHasOlderMessages(Boolean(res.hasOlderMessages));
+      setTotalMessagesCount(res.totalMessagesCount || 0);
+      setTodayMessagesCount(res.todayMessagesCount || 0);
+      if (loadAll) setShowingAllHistory(true);
+
       // Atualiza a conversa na lista local para refletir unreadCount = 0
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, ...res.conversation, unreadCount: 0 } : c))
@@ -191,10 +207,12 @@ function ChatPageContent() {
 
   // Ao selecionar uma conversa
   useEffect(() => {
+    setShowingAllHistory(false);
     if (selectedId) {
       loadMessages(selectedId);
     } else {
       setMessages([]);
+      setHasOlderMessages(false);
     }
   }, [selectedId]);
 
@@ -267,6 +285,35 @@ function ChatPageContent() {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao transferir atendimento.');
     } finally {
       setTransferring(false);
+    }
+  };
+
+  // Fechar chat do atendimento e disparar pesquisa de satisfação
+  const handleCloseChat = async () => {
+    if (!selectedConv || closingChat) return;
+
+    const confirmed = window.confirm(
+      `Deseja realmente encerrar o atendimento com ${selectedConv.contactName || 'o cliente'}?\n\nIsso devolverá a conversa ao robô e enviará automaticamente a pesquisa de satisfação referente ao suporte.`
+    );
+    if (!confirmed) return;
+
+    setClosingChat(true);
+    try {
+      const res = await api.post<{ success: boolean; conversation: ConversationItem }>(
+        `/api/whatsapp/conversations/${selectedConv.id}/close`
+      );
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConv.id ? { ...c, ...res.conversation, isAttendant: false } : c
+        )
+      );
+      await loadMessages(selectedConv.id, true);
+      toast.success('Atendimento encerrado com sucesso! Pesquisa de satisfação enviada ao cliente.');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao encerrar atendimento.');
+    } finally {
+      setClosingChat(false);
     }
   };
 
@@ -776,6 +823,34 @@ function ChatPageContent() {
 
                   {/* Ações da Conversa */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    {/* Botão de Fechar Chat / Encerrar Atendimento (com Pesquisa de Satisfação) */}
+                    {selectedConv.isAttendant && (
+                      <button
+                        type="button"
+                        onClick={handleCloseChat}
+                        disabled={closingChat}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: closingChat ? 'not-allowed' : 'pointer',
+                          border: '1px solid rgba(239, 68, 68, 0.4)',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: '#F87171',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Encerra o atendimento humano, libera a conversa para o robô e envia a pesquisa de satisfação de 2 níveis ao cliente"
+                      >
+                        <CheckCheck size={14} />
+                        <span>{closingChat ? 'Encerrando...' : 'Encerrar Atendimento'}</span>
+                      </button>
+                    )}
+
                     {/* Botão de Transferência (Atendente <-> Robô) */}
                     <button
                       type="button"
@@ -844,13 +919,70 @@ function ChatPageContent() {
                     gap: '10px',
                   }}
                 >
+                  {/* Banners de Contexto: Histórico da Data Atual e Carregar Anteriores */}
+                  {selectedConv && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '8px',
+                        margin: '2px 0 10px 0',
+                      }}
+                    >
+                      {hasOlderMessages && !showingAllHistory && (
+                        <button
+                          type="button"
+                          onClick={() => loadMessages(selectedConv.id, false, true)}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            border: '1px dashed rgba(229, 179, 56, 0.45)',
+                            borderRadius: '16px',
+                            padding: '5px 14px',
+                            fontSize: '0.73rem',
+                            color: '#E5B338',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Clock size={12} />
+                          <span>Carregar mensagens anteriores deste cliente ({totalMessagesCount - messages.length} mais antigas)</span>
+                        </button>
+                      )}
+
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '3px 12px',
+                          borderRadius: '12px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.07)',
+                          fontSize: '0.70rem',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        <Calendar size={11} color="var(--primary)" />
+                        <span>
+                          {showingAllHistory
+                            ? '📜 Exibindo histórico completo do cliente'
+                            : `📅 Histórico do Atendimento de Hoje (${new Date().toLocaleDateString('pt-BR')})`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {loadingMessages ? (
                     <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-dim)', fontSize: '0.85rem' }}>
                       Carregando histórico do chat...
                     </div>
                   ) : messages.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-                      <p style={{ fontSize: '0.90rem', fontWeight: 600 }}>Nenhuma mensagem registrada nesta conversa ainda.</p>
+                      <p style={{ fontSize: '0.90rem', fontWeight: 600 }}>Nenhuma mensagem registrada no atendimento de hoje.</p>
                       <p style={{ fontSize: '0.76rem', color: 'var(--text-dim)', marginTop: '4px' }}>
                         Envie uma mensagem abaixo para falar com o cliente no WhatsApp.
                       </p>
@@ -859,6 +991,31 @@ function ChatPageContent() {
                     messages.map((m) => {
                       const isOutbound = m.fromMe;
                       const time = new Date(m.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                      // Mensagens do tipo SISTEMA (ex: transferência, encerramento) em formato Pill centralizado
+                      if (m.senderType === 'SYSTEM') {
+                        return (
+                          <div
+                            key={m.id}
+                            style={{
+                              alignSelf: 'center',
+                              margin: '4px 0',
+                              padding: '5px 14px',
+                              borderRadius: '16px',
+                              background: 'rgba(245, 158, 11, 0.1)',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              color: '#FBBF24',
+                              fontSize: '0.73rem',
+                              fontWeight: 600,
+                              textAlign: 'center',
+                              maxWidth: '90%',
+                              lineHeight: 1.35,
+                            }}
+                          >
+                            {m.body}
+                          </div>
+                        );
+                      }
 
                       return (
                         <div

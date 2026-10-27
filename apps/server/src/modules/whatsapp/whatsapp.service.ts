@@ -13,6 +13,8 @@ import { formatCurrency, normalizePhone, renderTemplate } from '../../lib/utils.
 import { usePostgresAuthState } from './baileys-session.js';
 import { handleIncomingMessage } from './whatsapp-bot.js';
 
+import { cleanExpiredSurveys } from './whatsapp-surveys.js';
+
 interface TenantConnection {
   socket: WASocket | null;
   qrCode: string | null;
@@ -44,11 +46,14 @@ class WhatsAppService {
       logger.error({ err }, 'Erro ao restaurar sessões do WhatsApp');
     });
 
-    // Iniciar checagem periódica de lembretes automáticos a cada 60 segundos
+    // Iniciar checagem periódica de lembretes automáticos e expiração de pesquisas a cada 60 segundos
     if (!this.reminderInterval) {
       this.reminderInterval = setInterval(() => {
         this.checkAndSendReminders().catch((err) => {
           logger.error({ err }, 'Erro no worker de lembretes do WhatsApp');
+        });
+        cleanExpiredSurveys().catch((err) => {
+          logger.error({ err }, 'Erro ao limpar pesquisas expiradas do WhatsApp');
         });
       }, 60 * 1000);
     }

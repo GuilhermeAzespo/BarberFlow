@@ -148,6 +148,7 @@ model Tenant {
   whatsAppSessionKeys   WhatsAppSessionKey[]
   whatsAppConversations WhatsAppConversation[]
   whatsAppMessages      WhatsAppMessage[]
+  satisfactionSurveys   SatisfactionSurvey[]
   saasPayments          SaaSPayment[]
   logs                  SystemLog[]
 
@@ -271,9 +272,10 @@ model Professional {
 
   tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user         User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
-  services     ProfessionalService[]
-  appointments Appointment[]
-  avatar       ProfessionalAvatar?
+  services            ProfessionalService[]
+  appointments        Appointment[]
+  satisfactionSurveys SatisfactionSurvey[]
+  avatar              ProfessionalAvatar?
 
   @@index([tenantId, isActive])
 }
@@ -365,8 +367,9 @@ model Appointment {
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
   professional Professional @relation(fields: [professionalId], references: [id], onDelete: Restrict)
-  service      Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  transaction  Transaction?
+  service             Service              @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  transaction         Transaction?
+  satisfactionSurveys SatisfactionSurvey[]
 
   @@index([tenantId, startAt])
   @@index([tenantId, professionalId, startAt])
@@ -474,6 +477,30 @@ model WhatsAppMessage {
   conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, contactJid])
+}
+
+// Pesquisa de Satisfação (Atendimento Humano ou Pós-Corte/Agendamento).
+model SatisfactionSurvey {
+  id             String    @id @default(cuid())
+  tenantId       String
+  type           String    // "ATTENDANT" ou "SERVICE"
+  contactJid     String
+  customerPhone  String?
+  customerName   String?
+  rating         Int       // 1 a 5
+  feedback       String?   @db.Text
+  appointmentId  String?
+  conversationId String?
+  professionalId String?
+  createdAt      DateTime  @default(now())
+
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment    Appointment?  @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  professional   Professional? @relation(fields: [professionalId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, type, createdAt])
+  @@index([tenantId, rating])
   @@index([tenantId, contactJid])
 }
 

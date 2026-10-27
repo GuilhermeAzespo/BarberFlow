@@ -25,6 +25,11 @@ interface BotContext {
   availableDates?: string[];
   availableSlots?: { time: string; startAt: string }[];
   cancelableAppointments?: { id: string; summary: string }[];
+  surveyType?: 'ATTENDANT' | 'SERVICE';
+  surveyStartedAt?: number;
+  surveyId?: string;
+  appointmentId?: string;
+  attendantName?: string;
 }
 
 export async function handleIncomingMessage(params: {
@@ -181,15 +186,61 @@ export async function handleIncomingMessage(params: {
     return;
   }
 
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  let state = conversation.state;
+  let context = (conversation.context as BotContext) || {};
+
+  // Verifica se está em pesquisa de satisfação e se o tempo limite de 1 hora expirou
+  if (state.startsWith('SURVEY_')) {
+    const surveyStartedAt = context.surveyStartedAt;
+    if (surveyStartedAt && Date.now() - surveyStartedAt > ONE_HOUR_MS) {
+      logger.info({ tenantId, senderJid, state }, 'Pesquisa de satisfação expirada por inatividade (>1h). Liberando conversa para o menu inicial.');
+      await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+      state = 'MENU';
+      context = {};
+    }
+  }
+
   // Comandos de reinício
-  if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'olá' || cleanText === 'ola' || cleanText === 'oi' || cleanText === 'voltar') {
-    await updateConversation(tenantId, senderJid, 'MENU', {});
+  if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'olá' || cleanText === 'ola' || cleanText === 'oi' || cleanText === 'voltar' || cleanText === 'cancelar') {
+    await updateConversation(tenantId, senderJid, 'MENU', {}, false);
     await sendMenu(reply, tenant, waConfig, finalCustomerName);
     return;
   }
 
-  const state = conversation.state;
-  const context = (conversation.context as BotContext) || {};
+  // Falar com atendente (opção 5 do menu ou comando textual)
+  if (
+    (state === 'MENU' && rawInput === '5') ||
+    cleanText === '5' ||
+    cleanText === 'atendente' ||
+    cleanText === 'falar com atendente' ||
+    cleanText === 'falar com o atendente' ||
+    cleanText === 'falar com um atendente' ||
+    cleanText === 'humano' ||
+    cleanText === 'suporte'
+  ) {
+    await updateConversation(tenantId, senderJid, 'HUMAN_ATTENDANT', {}, true);
+
+    // Registra aviso de sistema no histórico da conversa para o painel de atendimento
+    await prisma.whatsAppMessage.create({
+      data: {
+        tenantId,
+        conversationId: conversation.id,
+        contactJid: senderJid,
+        fromMe: true,
+        senderType: 'SYSTEM',
+        body: `🔔 Cliente solicitou atendimento humano pelo WhatsApp em ${DateTime.now().setZone(tenant.timezone).toFormat('dd/MM/yyyy HH:mm')}. Histórico da data atual disponível.`,
+        status: 'SENT',
+      },
+    });
+
+    await reply(
+      `🔔 *Transferido para um Atendente:*\n` +
+      `Olá, ${finalCustomerName}! Sua conversa foi encaminhada para nossa equipe de atendimento humano.\n\n` +
+      `Um de nossos atendentes responderá em breve por aqui. Se a qualquer momento desejar voltar ao menu do robô, basta digitar *menu*. 😊`
+    );
+    return;
+  }
 
   switch (state) {
     case 'MENU': {
@@ -568,6 +619,140 @@ export async function handleIncomingMessage(params: {
 
       await updateConversation(tenantId, senderJid, 'MENU', {});
       await reply(cancelText);
+      break;
+    }
+
+    case 'SURVEY_ATTENDANT_RATING': {
+      const rating = parseInt(rawInput, 10);
+      if (isNaN(rating) || rating < 1 || rating > 5) {
+        await reply(
+          `⚠️ Por favor, responda com uma nota de *1 a 5*:\n\n` +
+          `*1* - Muito ruim 😡\n` +
+          `*2* - Ruim 🙁\n` +
+          `*3* - Regular 😐\n` +
+          `*4* - Bom 🙂\n` +
+          `*5* - Excelente 🤩\n\n` +
+          `_Envie o número de 1 a 5 ou digite *menu* para voltar._`
+        );
+        return;
+      }
+
+      // Registra a avaliação (Nível 1) no banco
+      const survey = await prisma.satisfactionSurvey.create({
+        data: {
+          tenantId,
+          type: 'ATTENDANT',
+          contactJid: senderJid,
+          customerPhone: normalizedPhone || conversation.phone,
+          customerName: finalCustomerName,
+          rating,
+          conversationId: conversation.id,
+        },
+      });
+
+      // Avança para o Nível 2: Detalhes ou sugestão de melhoria
+      await updateConversation(tenantId, senderJid, 'SURVEY_ATTENDANT_FEEDBACK', {
+        ...context,
+        surveyId: survey.id,
+        surveyStartedAt: Date.now(),
+      });
+
+      await reply(
+        `Obrigado pela sua nota! ⭐\n\n` +
+        `Para finalizarmos, gostaria de deixar algum detalhe, elogio ou sugestão de melhoria sobre o atendimento recebido?\n\n` +
+        `_(Envie sua mensagem em texto ou responda *não* se preferir não comentar)_`
+      );
+      break;
+    }
+
+    case 'SURVEY_ATTENDANT_FEEDBACK': {
+      const lower = rawInput.toLowerCase();
+      const isNegative = ['não', 'nao', 'nop', 'nada', 'nenhum', 'não quero', 'nao quero', 'não obrigado', 'nao obrigado', 'ok'].includes(lower);
+
+      if (!isNegative && context.surveyId) {
+        await prisma.satisfactionSurvey.update({
+          where: { id: context.surveyId },
+          data: { feedback: rawInput },
+        }).catch((err) => {
+          logger.error({ err }, 'Erro ao atualizar feedback da pesquisa de atendimento');
+        });
+      }
+
+      // Finaliza a pesquisa e libera o chat para o menu inicial
+      await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+      await reply(
+        `🎉 *Agradecemos o seu feedback!*\n` +
+        `Sua opinião é fundamental para aprimorarmos continuamente o atendimento da equipe.\n\n` +
+        `Sempre que precisar, envie *menu* para ver opções e agendamentos. Tenha um excelente dia! 💈`
+      );
+      break;
+    }
+
+    case 'SURVEY_SERVICE_RATING': {
+      const rating = parseInt(rawInput, 10);
+      if (isNaN(rating) || rating < 1 || rating > 5) {
+        await reply(
+          `⚠️ Por favor, responda com uma nota de *1 a 5* sobre o serviço:\n\n` +
+          `*1* - Muito ruim 😡\n` +
+          `*2* - Ruim 🙁\n` +
+          `*3* - Regular 😐\n` +
+          `*4* - Bom 🙂\n` +
+          `*5* - Excelente 🤩\n\n` +
+          `_Envie o número de 1 a 5 ou digite *menu* para voltar._`
+        );
+        return;
+      }
+
+      // Registra a avaliação (Nível 1) no banco
+      const survey = await prisma.satisfactionSurvey.create({
+        data: {
+          tenantId,
+          type: 'SERVICE',
+          contactJid: senderJid,
+          customerPhone: normalizedPhone || conversation.phone,
+          customerName: finalCustomerName,
+          rating,
+          appointmentId: context.appointmentId || null,
+          professionalId: context.professionalId || null,
+          conversationId: conversation.id,
+        },
+      });
+
+      // Avança para o Nível 2: Detalhes ou sugestão de melhoria
+      await updateConversation(tenantId, senderJid, 'SURVEY_SERVICE_FEEDBACK', {
+        ...context,
+        surveyId: survey.id,
+        surveyStartedAt: Date.now(),
+      });
+
+      await reply(
+        `Obrigado pela sua nota! ⭐\n\n` +
+        `Gostaria de deixar algum detalhe sobre o corte ou alguma sugestão de melhoria para o profissional/salão?\n\n` +
+        `_(Envie sua mensagem em texto ou responda *não* se preferir não comentar)_`
+      );
+      break;
+    }
+
+    case 'SURVEY_SERVICE_FEEDBACK': {
+      const lower = rawInput.toLowerCase();
+      const isNegative = ['não', 'nao', 'nop', 'nada', 'nenhum', 'não quero', 'nao quero', 'não obrigado', 'nao obrigado', 'ok'].includes(lower);
+
+      if (!isNegative && context.surveyId) {
+        await prisma.satisfactionSurvey.update({
+          where: { id: context.surveyId },
+          data: { feedback: rawInput },
+        }).catch((err) => {
+          logger.error({ err }, 'Erro ao atualizar feedback da pesquisa de serviço');
+        });
+      }
+
+      // Finaliza a pesquisa e libera o chat para o menu inicial
+      await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+      await reply(
+        `🎉 *Agradecemos a sua avaliação!*\n` +
+        `Seu retorno é muito importante e nos ajuda a manter o padrão de excelência dos nossos serviços.\n\n` +
+        `Quando quiser agendar seu próximo horário, basta nos enviar um *olá* ou *menu*! ✂️💈`
+      );
       break;
     }
 

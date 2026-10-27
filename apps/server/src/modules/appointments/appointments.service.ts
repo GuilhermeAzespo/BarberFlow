@@ -4,6 +4,8 @@ import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { assertAppointmentLimit } from '../../lib/tenant-access.js';
 import { normalizePhone, timeToMinutes, weekdayOf } from '../../lib/utils.js';
+import { logger } from '../../lib/logger.js';
+import { triggerAppointmentSurvey } from '../whatsapp/whatsapp-surveys.js';
 
 /** Status que ocupam a agenda do profissional. */
 export const BLOCKING_STATUSES: AppointmentStatus[] = ['SCHEDULED', 'CONFIRMED', 'DELAYED'];
@@ -397,7 +399,7 @@ export async function changeAppointmentStatus(params: {
   }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
       if (params.status === 'COMPLETED' && !current.transaction) {
         await tx.transaction.create({
           data: {
@@ -427,6 +429,17 @@ export async function changeAppointmentStatus(params: {
         include: appointmentInclude,
       });
     });
+
+    if (params.status === 'COMPLETED') {
+      triggerAppointmentSurvey({
+        tenantId: params.tenantId,
+        appointmentId: current.id,
+      }).catch((err) => {
+        logger.error({ err, tenantId: params.tenantId, appointmentId: current.id }, 'Erro ao disparar pesquisa de corte');
+      });
+    }
+
+    return updated;
   } catch (error) {
     if (isOverlapConstraintError(error)) throw HttpError.conflict('O horário deste agendamento já foi ocupado', 'SLOT_TAKEN');
     throw error;

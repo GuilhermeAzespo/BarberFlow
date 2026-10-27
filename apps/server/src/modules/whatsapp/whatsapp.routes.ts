@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { DateTime } from 'luxon';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { normalizePhone } from '../../lib/utils.js';
@@ -193,9 +194,11 @@ whatsAppRouter.get('/unread', async (req, res) => {
 });
 
 // Buscar histórico de mensagens de uma conversa específica com cruzamento de dados do cliente
+// e trazendo prioritariamente o histórico de atendimento da data atual (hoje)
 whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
   const tenantId = req.tenantId!;
   const { id } = req.params;
+  const loadAll = req.query.all === 'true';
 
   const conversation = await prisma.whatsAppConversation.findFirst({
     where: { id, tenantId },
@@ -224,11 +227,49 @@ whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
     }
   }
 
-  const messages = await prisma.whatsAppMessage.findMany({
-    where: { conversationId: id, tenantId },
-    orderBy: { createdAt: 'asc' },
-    take: 120,
+  // Define o início do dia atual com base no fuso horário do salão
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { timezone: true },
   });
+  const tz = tenant?.timezone || 'America/Sao_Paulo';
+  const startOfToday = DateTime.now().setZone(tz).startOf('day').toJSDate();
+
+  const totalMessagesCount = await prisma.whatsAppMessage.count({
+    where: { conversationId: id, tenantId },
+  });
+
+  const todayMessagesCount = await prisma.whatsAppMessage.count({
+    where: { conversationId: id, tenantId, createdAt: { gte: startOfToday } },
+  });
+
+  let messages;
+  let hasOlderMessages = false;
+
+  if (loadAll) {
+    messages = await prisma.whatsAppMessage.findMany({
+      where: { conversationId: id, tenantId },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+    });
+    hasOlderMessages = false;
+  } else if (todayMessagesCount > 0) {
+    // Traz o histórico do atendimento da data atual
+    messages = await prisma.whatsAppMessage.findMany({
+      where: { conversationId: id, tenantId, createdAt: { gte: startOfToday } },
+      orderBy: { createdAt: 'asc' },
+    });
+    hasOlderMessages = totalMessagesCount > todayMessagesCount;
+  } else {
+    // Se hoje não houver mensagens ainda, traz as últimas mensagens anteriores
+    messages = await prisma.whatsAppMessage.findMany({
+      where: { conversationId: id, tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+    });
+    messages.reverse();
+    hasOlderMessages = totalMessagesCount > messages.length;
+  }
 
   return res.json({
     conversation: {
@@ -237,6 +278,9 @@ whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
       customer: customer || null,
     },
     messages,
+    hasOlderMessages,
+    totalMessagesCount,
+    todayMessagesCount,
   });
 });
 
@@ -387,4 +431,116 @@ whatsAppRouter.patch('/conversations/:id/transfer', async (req, res) => {
 
     return res.json({ success: true, conversation: updated });
   }
+});
+
+// Fechar chat do atendente, devolver ao bot e disparar pesquisa de satisfação referente ao atendimento (2 Níveis)
+whatsAppRouter.post('/conversations/:id/close', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const { id } = req.params;
+
+  const conversation = await prisma.whatsAppConversation.findFirst({
+    where: { id, tenantId },
+  });
+  if (!conversation) throw HttpError.notFound('Conversa não encontrada');
+
+  const target = conversation.contactJid || conversation.phone;
+  if (!target) throw HttpError.badRequest('Contato não possui identificador do WhatsApp válido');
+
+  // Identifica o atendente logado no sistema
+  let rawSenderName = 'Atendente';
+  if (req.auth?.userId) {
+    const u = await prisma.user.findUnique({
+      where: { id: req.auth.userId },
+      select: { name: true },
+    });
+    if (u?.name) rawSenderName = u.name;
+  }
+  const attendantShortName = formatAttendantShortName(rawSenderName);
+
+  // Pesquisa de Satisfação referente ao atendimento humano (Nível 1: Nota de 1 a 5)
+  const surveyMessage =
+    `👋 *Atendimento Encerrado*\n` +
+    `Seu atendimento com *${attendantShortName}* foi finalizado.\n\n` +
+    `Para nos ajudar a manter a qualidade, como você avalia o atendimento recebido hoje?\n\n` +
+    `*1* - Muito ruim 😡\n` +
+    `*2* - Ruim 🙁\n` +
+    `*3* - Regular 😐\n` +
+    `*4* - Bom 🙂\n` +
+    `*5* - Excelente 🤩\n\n` +
+    `_Responda com uma nota de 1 a 5._`;
+
+  // Envia no WhatsApp se conectado
+  await whatsAppService.sendMessage(tenantId, target, surveyMessage).catch(() => null);
+
+  // Registra avisos no histórico
+  const systemNotice = `Atendimento humano encerrado por ${attendantShortName}. Pesquisa de satisfação enviada ao cliente.`;
+  await prisma.whatsAppMessage.create({
+    data: {
+      tenantId,
+      conversationId: id,
+      contactJid: conversation.contactJid,
+      fromMe: true,
+      senderType: 'SYSTEM',
+      body: systemNotice,
+      status: 'SENT',
+    },
+  });
+
+  await prisma.whatsAppMessage.create({
+    data: {
+      tenantId,
+      conversationId: id,
+      contactJid: conversation.contactJid,
+      fromMe: true,
+      senderType: 'BOT',
+      body: surveyMessage,
+      status: 'SENT',
+    },
+  });
+
+  // Atualiza conversa para liberar para o bot em modo de pesquisa de satisfação do atendimento
+  const updated = await prisma.whatsAppConversation.update({
+    where: { id },
+    data: {
+      isAttendant: false,
+      state: 'SURVEY_ATTENDANT_RATING',
+      context: {
+        surveyType: 'ATTENDANT',
+        surveyStartedAt: Date.now(),
+        attendantName: attendantShortName,
+      },
+      lastMessage: surveyMessage,
+      lastMessageAt: new Date(),
+    },
+  });
+
+  return res.json({ success: true, conversation: updated });
+});
+
+// Listar pesquisas de satisfação do salão
+whatsAppRouter.get('/surveys', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 100);
+
+  const surveys = await prisma.satisfactionSurvey.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    include: {
+      professional: { select: { id: true, name: true } },
+      appointment: { select: { id: true, startAt: true, service: { select: { name: true } } } },
+    },
+  });
+
+  const total = await prisma.satisfactionSurvey.count({ where: { tenantId } });
+  const avg = await prisma.satisfactionSurvey.aggregate({
+    where: { tenantId },
+    _avg: { rating: true },
+  });
+
+  return res.json({
+    surveys,
+    total,
+    averageRating: avg._avg.rating ? Number(avg._avg.rating.toFixed(2)) : null,
+  });
 });
