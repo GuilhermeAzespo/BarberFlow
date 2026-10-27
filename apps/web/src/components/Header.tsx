@@ -230,59 +230,84 @@ export function Header() {
         </>
       )}
 
-      <header className="glass-panel" style={{ borderRadius: 0, borderTop: 0, borderLeft: 0, borderRight: 0, padding: '10px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 40, minHeight: '74px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2 }}>
-            {tenant ? tenant.name : 'BarberFlow'}
-          </h2>
-          <Link
-            href="/planos"
-            title="Clique para ver detalhes do plano e limites"
-            style={{
-              fontSize: '0.8rem',
-              color: 'var(--primary)',
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              fontWeight: 700,
-              background: 'rgba(229, 179, 56, 0.1)',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              border: '1px solid rgba(229, 179, 56, 0.25)',
-              marginTop: '2px',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <Crown size={12} />
-            <span>{user?.role === 'SUPER_ADMIN' ? 'Painel Master SaaS' : `Plano ${subscription?.plan.name || 'Starter'}`}</span>
-          </Link>
+      <header
+        className="glass-panel"
+        style={{
+          borderRadius: 0,
+          borderTop: 0,
+          borderLeft: 0,
+          borderRight: 0,
+          padding: 'var(--header-padding, 10px 24px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 40,
+          minHeight: '68px',
+          gap: '12px',
+          transition: 'padding 0.2s ease',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flexShrink: 1 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2
+              className="compact-title text-nowrap-ellipsis"
+              style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2, maxWidth: '180px', margin: 0 }}
+            >
+              {tenant ? tenant.name : 'BarberFlow'}
+            </h2>
+            <Link
+              href="/planos"
+              title="Clique para ver detalhes do plano e limites"
+              style={{
+                fontSize: '0.76rem',
+                color: 'var(--primary)',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 700,
+                background: 'rgba(229, 179, 56, 0.1)',
+                padding: '1px 7px',
+                borderRadius: '6px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+                marginTop: '2px',
+                transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Crown size={11} />
+              <span>{user?.role === 'SUPER_ADMIN' ? 'Painel Master' : `Plano ${subscription?.plan.name || 'Starter'}`}</span>
+            </Link>
+          </div>
+
+          {access?.warning && (
+            <div
+              title={access.warning}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '3px 10px',
+                borderRadius: '20px',
+                background: 'rgba(245, 158, 11, 0.15)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: '#FBBF24',
+                fontSize: '0.74rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '280px',
+                flexShrink: 1,
+              }}
+            >
+              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+              <span className="text-nowrap-ellipsis">{access.warning}</span>
+            </div>
+          )}
         </div>
 
-        {access?.warning && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 12px',
-              borderRadius: '20px',
-              background: 'rgba(245, 158, 11, 0.15)',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-              color: '#FBBF24',
-              fontSize: '0.78rem',
-              fontWeight: 500,
-              marginLeft: '12px',
-            }}
-          >
-            <AlertTriangle size={14} />
-            <span>{access.warning}</span>
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
         {/* Logo do Salão na Direita (ou BarberFlow se não configurada) */}
         {tenant?.logoUrl ? (
           <Link
@@ -301,9 +326,9 @@ export function Header() {
               src={tenant.logoUrl}
               alt={tenant.name}
               style={{
-                height: '52px',
+                height: '44px',
                 width: 'auto',
-                maxWidth: '140px',
+                maxWidth: '120px',
                 objectFit: 'contain',
                 borderRadius: '8px',
                 filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35))',
@@ -326,7 +351,7 @@ export function Header() {
               src="/logo.png"
               alt="BarberFlow"
               style={{
-                height: '52px',
+                height: '44px',
                 width: 'auto',
                 objectFit: 'contain',
                 filter: 'drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45))',
@@ -342,13 +367,14 @@ export function Header() {
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '6px 14px',
+              padding: '5px 12px',
               borderRadius: '8px',
               background: 'rgba(139, 92, 246, 0.15)',
               border: '1px solid rgba(139, 92, 246, 0.3)',
               color: '#A78BFA',
-              fontSize: '0.82rem',
+              fontSize: '0.80rem',
               fontWeight: 600,
+              whiteSpace: 'nowrap',
             }}
           >
             <Shield size={14} />
@@ -363,18 +389,19 @@ export function Header() {
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
-            padding: '6px 12px',
+            padding: '5px 10px',
             borderRadius: '20px',
             background: 'rgba(229, 179, 56, 0.1)',
             border: '1px solid rgba(229, 179, 56, 0.3)',
             color: 'var(--primary)',
-            fontSize: '0.8rem',
+            fontSize: '0.78rem',
             fontWeight: 700,
             textDecoration: 'none',
             transition: 'all 0.15s ease',
+            whiteSpace: 'nowrap',
           }}
         >
-          <Sparkles size={14} />
+          <Sparkles size={13} />
           <span>Novidades</span>
           <span
             style={{
@@ -449,7 +476,8 @@ export function Header() {
                   position: 'absolute',
                   right: 0,
                   top: 'calc(100% + 10px)',
-                  width: '380px',
+                  width: '360px',
+                  maxWidth: 'calc(100vw - 32px)',
                   borderRadius: '12px',
                   padding: '14px',
                   background: 'rgba(15, 21, 32, 0.98)',
@@ -693,24 +721,37 @@ export function Header() {
           </div>
         )}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
           <div
             style={{
-              width: '34px',
-              height: '34px',
+              width: '32px',
+              height: '32px',
               borderRadius: '50%',
               background: 'rgba(255, 255, 255, 0.08)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               color: 'var(--text-main)',
+              flexShrink: 0,
             }}
           >
-            <UserIcon size={16} />
+            <UserIcon size={15} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)' }}>{user?.name}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user?.email}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span
+              title={user?.name}
+              className="text-nowrap-ellipsis"
+              style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', maxWidth: '140px' }}
+            >
+              {user?.name}
+            </span>
+            <span
+              title={user?.email}
+              className="hide-on-compact text-nowrap-ellipsis"
+              style={{ fontSize: '0.72rem', color: 'var(--text-muted)', maxWidth: '140px' }}
+            >
+              {user?.email}
+            </span>
           </div>
         </div>
 

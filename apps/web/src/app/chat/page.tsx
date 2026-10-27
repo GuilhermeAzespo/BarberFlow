@@ -300,22 +300,23 @@ function ChatPageContent() {
           {/* ──────────────── PAINEL ESQUERDO: LISTA DE CONVERSAS ──────────────── */}
           <aside
             style={{
-              width: '380px',
+              width: 'var(--chat-sidebar-width, 320px)',
               borderRight: '1px solid var(--border-color)',
               background: 'rgba(11, 15, 23, 0.98)',
               display: 'flex',
               flexDirection: 'column',
               flexShrink: 0,
+              transition: 'width 0.2s ease',
             }}
           >
             {/* Header da Coluna */}
-            <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   <div
                     style={{
-                      width: '32px',
-                      height: '32px',
+                      width: '28px',
+                      height: '28px',
                       borderRadius: '8px',
                       background: 'rgba(37, 211, 102, 0.15)',
                       border: '1px solid rgba(37, 211, 102, 0.35)',
@@ -323,15 +324,16 @@ function ChatPageContent() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: '#25D366',
+                      flexShrink: 0,
                     }}
                   >
-                    <MessageCircle size={18} />
+                    <MessageCircle size={16} />
                   </div>
-                  <div>
-                    <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, lineHeight: 1.2 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h2 className="text-nowrap-ellipsis" style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, lineHeight: 1.2 }}>
                       Atendimento / Chat
                     </h2>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    <span className="text-nowrap-ellipsis hide-on-compact" style={{ fontSize: '0.70rem', color: 'var(--text-muted)', display: 'block' }}>
                       Conversas ao vivo do WhatsApp
                     </span>
                   </div>
@@ -345,15 +347,16 @@ function ChatPageContent() {
                     background: 'rgba(255, 255, 255, 0.05)',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '6px',
-                    padding: '6px',
+                    padding: '5px',
                     color: 'var(--text-muted)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    flexShrink: 0,
                   }}
                 >
-                  <RefreshCw size={14} />
+                  <RefreshCw size={13} />
                 </button>
               </div>
 
@@ -362,17 +365,17 @@ function ChatPageContent() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '6px',
                   background: 'rgba(0, 0, 0, 0.4)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  padding: '8px 12px',
+                  padding: '6px 10px',
                 }}
               >
-                <Search size={15} color="var(--text-dim)" />
+                <Search size={14} color="var(--text-dim)" style={{ flexShrink: 0 }} />
                 <input
                   type="text"
-                  placeholder="Buscar por cliente, telefone..."
+                  placeholder="Buscar conversa..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   style={{
@@ -380,21 +383,23 @@ function ChatPageContent() {
                     border: 'none',
                     outline: 'none',
                     color: 'var(--text-main)',
-                    fontSize: '0.84rem',
+                    fontSize: '0.80rem',
                     width: '100%',
+                    padding: 0,
                   }}
                 />
               </div>
 
               {/* Filtros em Grid 2x2 - Totalmente responsivo e sem scrollbar */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', marginTop: '8px' }}>
                 <button
                   type="button"
                   onClick={() => setFilterMode('ALL')}
+                  title="Todas as conversas"
                   style={{
-                    padding: '7px 8px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
-                    fontSize: '0.74rem',
+                    fontSize: '0.70rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     border: filterMode === 'ALL' ? '1px solid var(--primary)' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -403,8 +408,9 @@ function ChatPageContent() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '5px',
+                    gap: '4px',
                     transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   <span>💬 Todas ({conversations.length})</span>
@@ -413,10 +419,11 @@ function ChatPageContent() {
                 <button
                   type="button"
                   onClick={() => setFilterMode('UNREAD')}
+                  title="Apenas não lidas"
                   style={{
-                    padding: '7px 8px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
-                    fontSize: '0.74rem',
+                    fontSize: '0.70rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     border: filterMode === 'UNREAD' ? '1px solid #EF4444' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -425,21 +432,23 @@ function ChatPageContent() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '5px',
+                    gap: '4px',
                     transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <Clock size={12} />
+                  <Clock size={11} style={{ flexShrink: 0 }} />
                   <span>Não Lidas ({conversations.filter((c) => c.unreadCount > 0).length})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setFilterMode('ATTENDANT')}
+                  title="Com atendente humano"
                   style={{
-                    padding: '7px 8px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
-                    fontSize: '0.74rem',
+                    fontSize: '0.70rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     border: filterMode === 'ATTENDANT' ? '1px solid #F59E0B' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -448,21 +457,23 @@ function ChatPageContent() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '5px',
+                    gap: '4px',
                     transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <User size={12} />
+                  <User size={11} style={{ flexShrink: 0 }} />
                   <span>Atendente ({conversations.filter((c) => c.isAttendant).length})</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setFilterMode('BOT')}
+                  title="Com robô"
                   style={{
-                    padding: '7px 8px',
+                    padding: '6px 4px',
                     borderRadius: '6px',
-                    fontSize: '0.74rem',
+                    fontSize: '0.70rem',
                     fontWeight: 700,
                     cursor: 'pointer',
                     border: filterMode === 'BOT' ? '1px solid #10B981' : '1px solid rgba(255, 255, 255, 0.08)',
@@ -471,11 +482,12 @@ function ChatPageContent() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '5px',
+                    gap: '4px',
                     transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <Bot size={12} />
+                  <Bot size={11} style={{ flexShrink: 0 }} />
                   <span>Robô ({conversations.filter((c) => !c.isAttendant).length})</span>
                 </button>
               </div>
@@ -504,14 +516,14 @@ function ChatPageContent() {
                       type="button"
                       onClick={() => setSelectedId(conv.id)}
                       style={{
-                        padding: '12px 16px',
+                        padding: '10px 12px',
                         borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                        borderLeft: isSelected ? '4px solid var(--primary)' : '4px solid transparent',
+                        borderLeft: isSelected ? '3px solid var(--primary)' : '3px solid transparent',
                         background: isSelected ? 'rgba(229, 179, 56, 0.08)' : 'transparent',
                         cursor: 'pointer',
                         textAlign: 'left',
                         display: 'flex',
-                        gap: '12px',
+                        gap: '10px',
                         alignItems: 'flex-start',
                         transition: 'background 0.15s ease',
                         borderRight: 'none',
@@ -528,8 +540,8 @@ function ChatPageContent() {
                       {/* Avatar */}
                       <div
                         style={{
-                          width: '40px',
-                          height: '40px',
+                          width: '36px',
+                          height: '36px',
                           borderRadius: '50%',
                           background: conv.isAttendant ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
                           border: `1px solid ${conv.isAttendant ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
@@ -538,19 +550,19 @@ function ChatPageContent() {
                           justifyContent: 'center',
                           color: conv.isAttendant ? '#FBBF24' : '#34D399',
                           flexShrink: 0,
-                          fontSize: '0.85rem',
+                          fontSize: '0.80rem',
                           fontWeight: 700,
                         }}
                       >
-                        {conv.contactName ? conv.contactName.slice(0, 2).toUpperCase() : <User size={18} />}
+                        {conv.contactName ? conv.contactName.slice(0, 2).toUpperCase() : <User size={16} />}
                       </div>
 
                       {/* Informações da conversa */}
-                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span
                             style={{
-                              fontSize: '0.88rem',
+                              fontSize: '0.85rem',
                               fontWeight: isSelected ? 800 : 700,
                               color: isSelected ? '#FFFFFF' : 'var(--text-main)',
                               whiteSpace: 'nowrap',
@@ -560,7 +572,7 @@ function ChatPageContent() {
                           >
                             {conv.contactName || (conv.phone ? formatPhoneDisplay(conv.phone) : 'Cliente')}
                           </span>
-                          <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '6px' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)', flexShrink: 0, marginLeft: '6px' }}>
                             {timeFormatted}
                           </span>
                         </div>
@@ -568,7 +580,7 @@ function ChatPageContent() {
                         {/* Prévia da última mensagem */}
                         <p
                           style={{
-                            fontSize: '0.78rem',
+                            fontSize: '0.75rem',
                             color: conv.unreadCount > 0 ? '#FFFFFF' : 'var(--text-muted)',
                             fontWeight: conv.unreadCount > 0 ? 600 : 400,
                             margin: 0,
@@ -581,19 +593,21 @@ function ChatPageContent() {
                         </p>
 
                         {/* Badges de Status (Atendente vs Bot e Não Lidas) */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', overflow: 'hidden' }}>
                           <span
                             style={{
-                              fontSize: '0.64rem',
+                              fontSize: '0.62rem',
                               fontWeight: 700,
-                              padding: '1px 6px',
+                              padding: '1px 5px',
                               borderRadius: '4px',
                               background: conv.isAttendant ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
                               color: conv.isAttendant ? '#FBBF24' : '#34D399',
                               border: `1px solid ${conv.isAttendant ? 'rgba(245, 158, 11, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '3px',
+                              gap: '2px',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
                             }}
                           >
                             {conv.isAttendant ? '👤 Atendente' : '🤖 Bot'}
@@ -602,13 +616,15 @@ function ChatPageContent() {
                           {conv.customer && (
                             <span
                               style={{
-                                fontSize: '0.62rem',
+                                fontSize: '0.60rem',
                                 fontWeight: 700,
-                                padding: '1px 5px',
+                                padding: '1px 4px',
                                 borderRadius: '4px',
                                 background: 'rgba(229, 179, 56, 0.15)',
                                 color: '#E5B338',
                                 border: '1px solid rgba(229, 179, 56, 0.3)',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
                               }}
                             >
                               Cliente
@@ -616,7 +632,10 @@ function ChatPageContent() {
                           )}
 
                           {conv.phone && (
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)' }}>
+                            <span
+                              className="text-nowrap-ellipsis"
+                              style={{ fontSize: '0.66rem', color: 'var(--text-dim)', minWidth: 0, flex: 1 }}
+                            >
                               {formatPhoneDisplay(conv.phone)}
                             </span>
                           )}
@@ -628,9 +647,10 @@ function ChatPageContent() {
                                 background: '#EF4444',
                                 color: '#FFFFFF',
                                 borderRadius: '10px',
-                                padding: '1px 6px',
-                                fontSize: '0.66rem',
+                                padding: '1px 5px',
+                                fontSize: '0.64rem',
                                 fontWeight: 800,
+                                flexShrink: 0,
                               }}
                             >
                               {conv.unreadCount}
@@ -662,22 +682,23 @@ function ChatPageContent() {
                 {/* Header da Conversa Ativa */}
                 <div
                   style={{
-                    padding: '14px 24px',
+                    padding: '10px 18px',
                     borderBottom: '1px solid var(--border-color)',
                     background: 'rgba(15, 21, 32, 0.85)',
                     backdropFilter: 'blur(10px)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    gap: '16px',
+                    gap: '10px',
                     zIndex: 20,
+                    minHeight: '62px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flexShrink: 1 }}>
                     <div
                       style={{
-                        width: '42px',
-                        height: '42px',
+                        width: '38px',
+                        height: '38px',
                         borderRadius: '50%',
                         background: selectedConv.isAttendant ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.25)',
                         border: `2px solid ${selectedConv.isAttendant ? '#F59E0B' : '#10B981'}`,
@@ -685,33 +706,39 @@ function ChatPageContent() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         color: selectedConv.isAttendant ? '#FBBF24' : '#34D399',
-                        fontSize: '1rem',
+                        fontSize: '0.92rem',
                         fontWeight: 800,
+                        flexShrink: 0,
                       }}
                     >
-                      {selectedConv.contactName ? selectedConv.contactName.slice(0, 2).toUpperCase() : <User size={20} />}
+                      {selectedConv.contactName ? selectedConv.contactName.slice(0, 2).toUpperCase() : <User size={18} />}
                     </div>
 
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                        <h3
+                          className="text-nowrap-ellipsis"
+                          style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-main)', margin: 0, maxWidth: '220px' }}
+                        >
                           {selectedConv.contactName || (selectedConv.phone ? formatPhoneDisplay(selectedConv.phone) : 'Cliente')}
                         </h3>
                         {selectedConv.phone && (
-                          <span style={{ fontSize: '0.80rem', color: 'var(--text-dim)', fontWeight: 500 }}>
+                          <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 500, whiteSpace: 'nowrap', flexShrink: 0 }}>
                             {formatPhoneDisplay(selectedConv.phone)}
                           </span>
                         )}
                         {selectedConv.customer && (
                           <span
                             style={{
-                              fontSize: '0.66rem',
+                              fontSize: '0.62rem',
                               fontWeight: 700,
-                              padding: '2px 8px',
+                              padding: '1px 6px',
                               borderRadius: '4px',
                               background: 'rgba(229, 179, 56, 0.15)',
                               color: '#E5B338',
                               border: '1px solid rgba(229, 179, 56, 0.35)',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
                             }}
                           >
                             Cliente Cadastrado
@@ -719,21 +746,26 @@ function ChatPageContent() {
                         )}
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', minWidth: 0 }}>
                         <span
                           style={{
-                            fontSize: '0.72rem',
+                            fontSize: '0.68rem',
                             fontWeight: 700,
-                            padding: '1px 7px',
+                            padding: '1px 6px',
                             borderRadius: '4px',
                             background: selectedConv.isAttendant ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
                             color: selectedConv.isAttendant ? '#FBBF24' : '#34D399',
                             border: `1px solid ${selectedConv.isAttendant ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
                           }}
                         >
-                          {selectedConv.isAttendant ? '👤 Atendimento Humano Ativo' : '🤖 Robô do WhatsApp Ativo'}
+                          {selectedConv.isAttendant ? '👤 Atendimento Humano' : '🤖 Robô do WhatsApp'}
                         </span>
-                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <span
+                          className="hide-on-compact text-nowrap-ellipsis"
+                          style={{ fontSize: '0.70rem', color: 'var(--text-muted)', maxWidth: '240px' }}
+                        >
                           {selectedConv.isAttendant
                             ? 'O bot está pausado para permitir conversa humana.'
                             : 'O robô está respondendo o menu automaticamente.'}
@@ -743,16 +775,16 @@ function ChatPageContent() {
                   </div>
 
                   {/* Ações da Conversa */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                     {/* Botão de Transferência (Atendente <-> Robô) */}
                     <button
                       type="button"
                       onClick={handleToggleTransfer}
                       disabled={transferring}
                       style={{
-                        padding: '8px 14px',
+                        padding: '6px 12px',
                         borderRadius: '8px',
-                        fontSize: '0.82rem',
+                        fontSize: '0.78rem',
                         fontWeight: 700,
                         cursor: transferring ? 'not-allowed' : 'pointer',
                         border: selectedConv.isAttendant ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
@@ -760,19 +792,20 @@ function ChatPageContent() {
                         color: selectedConv.isAttendant ? '#34D399' : '#FBBF24',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
+                        gap: '5px',
                         transition: 'all 0.15s ease',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {selectedConv.isAttendant ? (
                         <>
-                          <Bot size={15} />
+                          <Bot size={14} />
                           <span>Devolver para o Robô</span>
                         </>
                       ) : (
                         <>
-                          <Headphones size={15} />
-                          <span>Assumir / Transferir para Atendente</span>
+                          <Headphones size={14} />
+                          <span>Assumir Atendimento</span>
                         </>
                       )}
                     </button>
@@ -780,9 +813,9 @@ function ChatPageContent() {
                     <Link
                       href="/calendar"
                       style={{
-                        padding: '8px 12px',
+                        padding: '6px 10px',
                         borderRadius: '8px',
-                        fontSize: '0.82rem',
+                        fontSize: '0.78rem',
                         fontWeight: 600,
                         background: 'rgba(255, 255, 255, 0.05)',
                         border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -790,10 +823,11 @@ function ChatPageContent() {
                         textDecoration: 'none',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      <Calendar size={15} color="var(--primary)" />
+                      <Calendar size={14} color="var(--primary)" />
                       <span>Ver Agenda</span>
                     </Link>
                   </div>
@@ -804,10 +838,10 @@ function ChatPageContent() {
                   style={{
                     flex: 1,
                     overflowY: 'auto',
-                    padding: '20px 24px',
+                    padding: '14px 18px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '12px',
+                    gap: '10px',
                   }}
                 >
                   {loadingMessages ? (
@@ -816,8 +850,8 @@ function ChatPageContent() {
                     </div>
                   ) : messages.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '50px 20px', color: 'var(--text-muted)' }}>
-                      <p style={{ fontSize: '0.92rem', fontWeight: 600 }}>Nenhuma mensagem registrada nesta conversa ainda.</p>
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                      <p style={{ fontSize: '0.90rem', fontWeight: 600 }}>Nenhuma mensagem registrada nesta conversa ainda.</p>
+                      <p style={{ fontSize: '0.76rem', color: 'var(--text-dim)', marginTop: '4px' }}>
                         Envie uma mensagem abaixo para falar com o cliente no WhatsApp.
                       </p>
                     </div>
@@ -833,29 +867,29 @@ function ChatPageContent() {
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: isOutbound ? 'flex-end' : 'flex-start',
-                            maxWidth: '75%',
+                            maxWidth: '82%',
                             alignSelf: isOutbound ? 'flex-end' : 'flex-start',
                           }}
                         >
                           {/* Nome / Tipo do Remetente */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px', padding: '0 4px' }}>
-                            <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)', fontWeight: 600 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '2px', padding: '0 4px' }}>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                               {isOutbound
                                 ? m.senderType === 'BOT'
-                                  ? '🤖 Robô BarberFlow'
+                                  ? '🤖 Robô'
                                   : m.senderType === 'SYSTEM'
                                   ? '⚙️ Sistema'
-                                  : `👤 ${m.senderName || attendantShortName}`
+                                  : `👤 ${attendantShortName}`
                                 : m.senderName || selectedConv.contactName || 'Cliente'}
                             </span>
-                            <span style={{ fontSize: '0.66rem', color: 'rgba(255, 255, 255, 0.35)' }}>• {time}</span>
+                            <span style={{ fontSize: '0.64rem', color: 'rgba(255, 255, 255, 0.35)', whiteSpace: 'nowrap' }}>• {time}</span>
                           </div>
 
                           {/* Balão de Mensagem */}
                           <div
                             style={{
-                              padding: '10px 14px',
-                              borderRadius: isOutbound ? '14px 14px 2px 14px' : '14px 14px 14px 2px',
+                              padding: '8px 12px',
+                              borderRadius: isOutbound ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                               background: isOutbound
                                 ? m.senderType === 'BOT'
                                   ? 'rgba(16, 185, 129, 0.15)'
@@ -867,8 +901,8 @@ function ChatPageContent() {
                                   : '1px solid rgba(229, 179, 56, 0.45)'
                                 : '1px solid rgba(255, 255, 255, 0.1)',
                               color: '#F3F4F6',
-                              fontSize: '0.88rem',
-                              lineHeight: 1.45,
+                              fontSize: '0.86rem',
+                              lineHeight: 1.4,
                               whiteSpace: 'pre-wrap',
                               wordBreak: 'break-word',
                               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
@@ -882,7 +916,7 @@ function ChatPageContent() {
                                 const content = match[2];
                                 return (
                                   <div>
-                                    <div style={{ fontWeight: 800, color: '#FBBF24', marginBottom: '4px', fontSize: '0.82rem' }}>
+                                    <div style={{ fontWeight: 800, color: '#FBBF24', marginBottom: '3px', fontSize: '0.80rem' }}>
                                       {header}
                                     </div>
                                     <div>{content}</div>
@@ -902,7 +936,7 @@ function ChatPageContent() {
                 {/* Respostas Rápidas (Chips de Sugestão) */}
                 <div
                   style={{
-                    padding: '8px 24px',
+                    padding: '6px 18px',
                     borderTop: '1px solid rgba(255, 255, 255, 0.05)',
                     background: 'rgba(15, 21, 32, 0.6)',
                     display: 'flex',
@@ -911,7 +945,7 @@ function ChatPageContent() {
                     overflowX: 'auto',
                   }}
                 >
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, flexShrink: 0, marginRight: '4px' }}>
+                  <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)', fontWeight: 700, flexShrink: 0, marginRight: '4px' }}>
                     Respostas rápidas:
                   </span>
                   {QUICK_REPLIES.map((reply, i) => (
@@ -920,9 +954,9 @@ function ChatPageContent() {
                       type="button"
                       onClick={() => setInputText(reply)}
                       style={{
-                        padding: '4px 10px',
-                        borderRadius: '16px',
-                        fontSize: '0.74rem',
+                        padding: '3px 8px',
+                        borderRadius: '14px',
+                        fontSize: '0.70rem',
                         color: 'var(--text-muted)',
                         background: 'rgba(255, 255, 255, 0.04)',
                         border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -947,32 +981,33 @@ function ChatPageContent() {
                 {/* Barra de Digitação e Envio */}
                 <div
                   style={{
-                    padding: '12px 24px 16px 24px',
+                    padding: '10px 18px 12px 18px',
                     borderTop: '1px solid var(--border-color)',
                     background: 'rgba(11, 15, 23, 0.95)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '8px',
+                    gap: '6px',
                   }}
                 >
                   {/* Identificação do Atendente Ativo */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', flexWrap: 'wrap', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 2px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                       <div
                         style={{
-                          width: '8px',
-                          height: '8px',
+                          width: '7px',
+                          height: '7px',
                           borderRadius: '50%',
                           background: '#FBBF24',
                           boxShadow: '0 0 6px rgba(251, 191, 36, 0.6)',
+                          flexShrink: 0,
                         }}
                       />
-                      <span style={{ fontSize: '0.74rem', color: '#FBBF24', fontWeight: 600 }}>
-                        Enviando no WhatsApp como: <strong>{attendantShortName}</strong>
+                      <span className="text-nowrap-ellipsis" style={{ fontSize: '0.72rem', color: '#FBBF24', fontWeight: 600 }}>
+                        Enviando como: <strong>{attendantShortName}</strong>
                       </span>
                     </div>
-                    <span style={{ fontSize: '0.70rem', color: 'var(--text-dim)' }}>
-                      O nome do atendente é incluído automaticamente na mensagem
+                    <span className="hide-on-compact" style={{ fontSize: '0.68rem', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                      O nome do atendente é incluído automaticamente
                     </span>
                   </div>
 
@@ -981,7 +1016,7 @@ function ChatPageContent() {
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '12px',
+                      gap: '10px',
                     }}
                   >
                     <input
@@ -989,19 +1024,19 @@ function ChatPageContent() {
                       required
                       placeholder={
                         selectedConv.isAttendant
-                          ? `Digite sua mensagem... (será enviada como "${attendantShortName}: <sua mensagem>")`
-                          : 'Digite uma mensagem (ao enviar, a conversa será assumida por você)...'
+                          ? `Digite sua mensagem... (enviada como "${attendantShortName}: <mensagem>")`
+                          : 'Digite uma mensagem (ao enviar, o atendimento será assumido)...'
                       }
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
                       style={{
                         flex: 1,
-                        padding: '12px 16px',
+                        padding: '10px 14px',
                         borderRadius: '8px',
                         background: 'rgba(0, 0, 0, 0.45)',
                         border: '1px solid var(--border-color)',
                         color: 'var(--text-main)',
-                        fontSize: '0.90rem',
+                        fontSize: '0.86rem',
                         outline: 'none',
                       }}
                     />
@@ -1010,23 +1045,25 @@ function ChatPageContent() {
                       type="submit"
                       disabled={sending || !inputText.trim()}
                       style={{
-                        padding: '12px 20px',
+                        padding: '10px 16px',
                         borderRadius: '8px',
                         fontWeight: 700,
-                        fontSize: '0.88rem',
+                        fontSize: '0.84rem',
                         cursor: sending || !inputText.trim() ? 'not-allowed' : 'pointer',
                         background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
                         color: '#0B0F17',
                         border: 'none',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
+                        gap: '6px',
                         boxShadow: '0 2px 12px rgba(37, 211, 102, 0.35)',
                         transition: 'transform 0.1s ease',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
                       }}
                     >
-                      <span>{sending ? 'Enviando...' : 'Enviar no WhatsApp'}</span>
-                      <Send size={15} />
+                      <span>{sending ? 'Enviando...' : 'Enviar'}</span>
+                      <Send size={14} />
                     </button>
                   </form>
                 </div>

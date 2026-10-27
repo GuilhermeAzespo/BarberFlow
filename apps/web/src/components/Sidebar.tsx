@@ -42,7 +42,7 @@ export function Sidebar() {
     <aside
       className="glass-panel"
       style={{
-        width: '260px',
+        width: 'var(--sidebar-width, 240px)',
         height: '100vh',
         maxHeight: '100vh',
         position: 'sticky',
@@ -51,13 +51,14 @@ export function Sidebar() {
         borderTop: 0,
         borderBottom: 0,
         borderLeft: 0,
-        padding: '20px 14px',
+        padding: '16px 10px',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
         flexShrink: 0,
         zIndex: 30,
         overflow: 'hidden',
+        transition: 'width 0.2s ease, padding 0.2s ease',
       }}
     >
       {/* Container de navegação com scroll interno suave quando necessário */}
@@ -115,13 +116,14 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                title={item.label}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '12px',
-                  padding: '9px 12px',
+                  gap: '10px',
+                  padding: '8px 10px',
                   borderRadius: '10px',
-                  fontSize: '0.88rem',
+                  fontSize: '0.84rem',
                   fontWeight: active ? 600 : 500,
                   color: active ? '#0B0F17' : item.highlight ? '#FBBF24' : 'var(--text-muted)',
                   background: active
@@ -131,21 +133,27 @@ export function Sidebar() {
                     : 'transparent',
                   transition: 'all 0.2s ease',
                   border: item.highlight && !active ? '1px solid rgba(245, 158, 11, 0.2)' : '1px solid transparent',
+                  position: 'relative',
+                  minWidth: 0,
                 }}
               >
-                <Icon size={17} color={active ? '#0B0F17' : item.highlight ? '#FBBF24' : 'currentColor'} />
-                <span>{item.label}</span>
+                <Icon size={17} style={{ flexShrink: 0 }} color={active ? '#0B0F17' : item.highlight ? '#FBBF24' : 'currentColor'} />
+                <span className="sidebar-label text-nowrap-ellipsis" style={{ flex: 1, minWidth: 0 }}>
+                  {item.label}
+                </span>
                 {item.key === 'chat' && whatsappUnreadCount > 0 && (
                   <span
+                    className="sidebar-badge"
                     style={{
                       marginLeft: 'auto',
                       background: active ? '#0B0F17' : '#EF4444',
                       color: active ? '#E5B338' : '#FFFFFF',
                       borderRadius: '10px',
                       padding: '1px 6px',
-                      fontSize: '0.68rem',
+                      fontSize: '0.66rem',
                       fontWeight: 800,
                       boxShadow: active ? 'none' : '0 0 8px rgba(239, 68, 68, 0.7)',
+                      flexShrink: 0,
                     }}
                   >
                     {whatsappUnreadCount}
@@ -164,14 +172,15 @@ export function Sidebar() {
 
           <Link
             href="/novidades"
+            title="Novidades"
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '10px',
-              padding: '9px 12px',
+              gap: '8px',
+              padding: '8px 10px',
               borderRadius: '10px',
-              fontSize: '0.86rem',
+              fontSize: '0.82rem',
               fontWeight: pathname === '/novidades' ? 700 : 500,
               color: pathname === '/novidades' ? '#0B0F17' : '#E5B338',
               background: pathname === '/novidades'
@@ -179,21 +188,24 @@ export function Sidebar() {
                 : 'rgba(229, 179, 56, 0.08)',
               border: pathname === '/novidades' ? 'none' : '1px solid rgba(229, 179, 56, 0.2)',
               transition: 'all 0.2s ease',
+              minWidth: 0,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Sparkles size={16} />
-              <span>Novidades</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <Sparkles size={16} style={{ flexShrink: 0 }} />
+              <span className="sidebar-label text-nowrap-ellipsis">Novidades</span>
             </div>
             <span
+              className="sidebar-badge"
               style={{
-                fontSize: '0.68rem',
+                fontSize: '0.66rem',
                 fontWeight: 800,
-                padding: '2px 6px',
+                padding: '2px 5px',
                 borderRadius: '6px',
                 background: pathname === '/novidades' ? 'rgba(0,0,0,0.3)' : 'rgba(229, 179, 56, 0.25)',
                 color: pathname === '/novidades' ? '#0B0F17' : '#E5B338',
                 letterSpacing: '0.04em',
+                flexShrink: 0,
               }}
             >
               {SYSTEM_VERSION}
@@ -202,25 +214,27 @@ export function Sidebar() {
 
           <Link
             href="/planos"
+            title="Planos & Upgrade"
             style={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: '10px',
-              padding: '9px 12px',
+              gap: '8px',
+              padding: '8px 10px',
               borderRadius: '10px',
-              fontSize: '0.86rem',
+              fontSize: '0.82rem',
               fontWeight: pathname === '/planos' ? 700 : 500,
               color: pathname === '/planos' ? '#0B0F17' : 'var(--text-muted)',
               background: pathname === '/planos'
                 ? 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)'
                 : 'transparent',
               transition: 'all 0.2s ease',
+              minWidth: 0,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Crown size={16} color={pathname === '/planos' ? '#0B0F17' : 'var(--primary)'} />
-              <span>Planos & Upgrade</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <Crown size={16} style={{ flexShrink: 0 }} color={pathname === '/planos' ? '#0B0F17' : 'var(--primary)'} />
+              <span className="sidebar-label text-nowrap-ellipsis">Planos & Upgrade</span>
             </div>
             {subscription && (
               <span
