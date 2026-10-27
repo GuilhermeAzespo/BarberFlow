@@ -154,7 +154,8 @@ export default function SuperAdminPage() {
   const { toast, confirm } = useToast();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'mercadopago' | 'logs'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
+  const [activeIntegrationTab, setActiveIntegrationTab] = useState<'mercadopago' | 'whatsapp' | 'others'>('mercadopago');
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [plans, setPlans] = useState<PlanItem[]>([]);
@@ -680,7 +681,7 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* Navegação por Abas Master (Estilo Segmented Luxury • Sem quebra de linha) */}
+        {/* Navegação por Abas Master (Estilo Segmented Luxury Responsivo) */}
         <div
           style={{
             display: 'flex',
@@ -691,16 +692,14 @@ export default function SuperAdminPage() {
             border: '1px solid var(--border-color)',
             borderRadius: '14px',
             marginBottom: '28px',
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-            WebkitOverflowScrolling: 'touch',
+            flexWrap: 'wrap',
           }}
         >
           <button
             type="button"
             onClick={() => setActiveTab('tenants')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
               border: activeTab === 'tenants' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'tenants' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
@@ -725,7 +724,7 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('plans')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
               border: activeTab === 'plans' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'plans' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
@@ -750,7 +749,7 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('growth')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
               border: activeTab === 'growth' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'growth' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
@@ -775,7 +774,7 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('smtp')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
               border: activeTab === 'smtp' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'smtp' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
@@ -798,15 +797,15 @@ export default function SuperAdminPage() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('mercadopago')}
+            onClick={() => setActiveTab('integrations')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
-              border: activeTab === 'mercadopago' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
-              background: activeTab === 'mercadopago' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
-              color: activeTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
-              boxShadow: activeTab === 'mercadopago' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
-              fontWeight: activeTab === 'mercadopago' ? 700 : 600,
+              border: activeTab === 'integrations' || activeTab === 'mercadopago' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'integrations' || activeTab === 'mercadopago' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+              color: activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
+              boxShadow: activeTab === 'integrations' || activeTab === 'mercadopago' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'integrations' || activeTab === 'mercadopago' ? 700 : 600,
               fontSize: '0.88rem',
               display: 'inline-flex',
               alignItems: 'center',
@@ -817,8 +816,8 @@ export default function SuperAdminPage() {
               transition: 'all 0.15s ease',
             }}
           >
-            <CreditCard size={16} color={activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
-            <span>Integração Mercado Pago</span>
+            <Layers size={16} color={activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
+            <span>Integração</span>
             {mpConfig?.isConfigured && (
               <span
                 style={{
@@ -841,7 +840,7 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('logs')}
             style={{
-              padding: '10px 18px',
+              padding: '9px 16px',
               borderRadius: '10px',
               border: activeTab === 'logs' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'logs' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
@@ -1467,9 +1466,169 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* ───────────────── ABA: Integração Mercado Pago ───────────────── */}
-        {activeTab === 'mercadopago' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        {/* ───────────────── ABA: Central de Integrações (Hub Modular) ───────────────── */}
+        {(activeTab === 'integrations' || activeTab === 'mercadopago') && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Barra Seletora de Integrações */}
+            <div
+              className="glass-panel"
+              style={{
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '14px',
+                borderLeft: '4px solid var(--primary)',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Layers size={18} color="var(--primary)" />
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>
+                    Painel de Integrações
+                  </h2>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Selecione o serviço para gerenciar chaves de API, webhooks e parâmetros de conexão.
+                </p>
+              </div>
+
+              {/* Sub-menu de Integrações */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(10, 14, 23, 0.7)',
+                  padding: '5px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveIntegrationTab('mercadopago')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: activeIntegrationTab === 'mercadopago' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+                    background: activeIntegrationTab === 'mercadopago' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+                    color: activeIntegrationTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
+                    fontWeight: activeIntegrationTab === 'mercadopago' ? 700 : 500,
+                    fontSize: '0.84rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <CreditCard size={15} color={activeIntegrationTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
+                  <span>Integração Mercado Pago</span>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      background: mpConfig?.isConfigured
+                        ? mpConfig.mpSandbox
+                          ? 'rgba(245, 158, 11, 0.2)'
+                          : 'rgba(16, 185, 129, 0.2)'
+                        : 'rgba(239, 68, 68, 0.15)',
+                      color: mpConfig?.isConfigured
+                        ? mpConfig.mpSandbox
+                          ? '#FBBF24'
+                          : '#10B981'
+                        : '#9CA3AF',
+                      border: `1px solid ${
+                        mpConfig?.isConfigured
+                          ? mpConfig.mpSandbox
+                            ? 'rgba(245, 158, 11, 0.4)'
+                            : 'rgba(16, 185, 129, 0.4)'
+                          : 'rgba(255, 255, 255, 0.1)'
+                      }`,
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {mpConfig?.isConfigured ? (mpConfig.mpSandbox ? 'SANDBOX' : 'PRODUÇÃO') : 'INATIVO'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveIntegrationTab('whatsapp')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: activeIntegrationTab === 'whatsapp' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+                    background: activeIntegrationTab === 'whatsapp' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+                    color: activeIntegrationTab === 'whatsapp' ? 'var(--primary)' : 'var(--text-muted)',
+                    fontWeight: activeIntegrationTab === 'whatsapp' ? 700 : 500,
+                    fontSize: '0.84rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Smartphone size={15} color={activeIntegrationTab === 'whatsapp' ? 'var(--primary)' : 'currentColor'} />
+                  <span>WhatsApp API</span>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      color: 'var(--text-dim)',
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    EM BREVE
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveIntegrationTab('others')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: activeIntegrationTab === 'others' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+                    background: activeIntegrationTab === 'others' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+                    color: activeIntegrationTab === 'others' ? 'var(--primary)' : 'var(--text-muted)',
+                    fontWeight: activeIntegrationTab === 'others' ? 700 : 500,
+                    fontSize: '0.84rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Globe size={15} color={activeIntegrationTab === 'others' ? 'var(--primary)' : 'currentColor'} />
+                  <span>Outras Integrações</span>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      color: 'var(--text-dim)',
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    FUTURO
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo da Integração Mercado Pago */}
+            {activeIntegrationTab === 'mercadopago' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Header de Status */}
             <div
               className="glass-panel"
@@ -1933,6 +2092,106 @@ export default function SuperAdminPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+            {/* Conteúdo WhatsApp API (Roadmap) */}
+            {activeIntegrationTab === 'whatsapp' && (
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '48px 24px',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '16px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '16px',
+                    background: 'rgba(37, 211, 102, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#25D366',
+                  }}
+                >
+                  <Smartphone size={30} />
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                  Integração WhatsApp Business / Evolution API
+                </h3>
+                <p style={{ maxWidth: '540px', color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.6, margin: 0 }}>
+                  Em breve você poderá gerenciar múltiplos servidores de WhatsApp, conexão com QR Code, disparos automáticos de lembretes e mensagens de confirmação de agendamentos diretamente por este menu.
+                </p>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '4px 14px',
+                    borderRadius: '20px',
+                    background: 'rgba(229, 179, 56, 0.15)',
+                    color: 'var(--primary)',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    fontWeight: 600,
+                  }}
+                >
+                  Previsto no Roadmap
+                </span>
+              </div>
+            )}
+
+            {/* Conteúdo Outras Integrações (Roadmap) */}
+            {activeIntegrationTab === 'others' && (
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '48px 24px',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '16px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '16px',
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#818CF8',
+                  }}
+                >
+                  <Globe size={30} />
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                  Novos Gateways de Pagamento (Asaas, Stripe, etc.)
+                </h3>
+                <p style={{ maxWidth: '540px', color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.6, margin: 0 }}>
+                  Esta seção foi desenhada para comportar de forma modular qualquer novo provedor de faturamento ou pagamento que desejar integrar ao BarberFlow no futuro.
+                </p>
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '4px 14px',
+                    borderRadius: '20px',
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818CF8',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    fontWeight: 600,
+                  }}
+                >
+                  Arquitetura Modular Pronta
+                </span>
+              </div>
+            )}
           </div>
         )}
 
