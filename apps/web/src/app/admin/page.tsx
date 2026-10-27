@@ -817,23 +817,7 @@ export default function SuperAdminPage() {
             }}
           >
             <Layers size={16} color={activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
-            <span>Integração</span>
-            {mpConfig?.isConfigured && (
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  background: mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                  color: mpConfig.mpSandbox ? '#FBBF24' : '#10B981',
-                  border: `1px solid ${mpConfig.mpSandbox ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
-                  padding: '2px 7px',
-                  borderRadius: '6px',
-                  fontWeight: 700,
-                  letterSpacing: '0.04em',
-                }}
-              >
-                {mpConfig.mpSandbox ? 'SANDBOX' : 'PRODUÇÃO'}
-              </span>
-            )}
+            <span>Integrações</span>
           </button>
 
           <button
