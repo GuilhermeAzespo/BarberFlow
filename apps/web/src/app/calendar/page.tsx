@@ -309,9 +309,11 @@ export default function CalendarPage() {
   }, [appointments]);
 
   const handleCellClick = (day: DateTime, hour: number) => {
-    const today = DateTime.now().setZone(timezone).startOf('day');
-    if (day.startOf('day') < today) {
-      toast.error('Não é permitido agendar em datas anteriores a hoje.');
+    const now = DateTime.now().setZone(timezone);
+    const cellTime = day.set({ hour, minute: 0, second: 0, millisecond: 0 });
+    // Bloqueia dias passados ou horários que já passaram hoje
+    if (cellTime < now.minus({ minutes: 5 })) {
+      toast.error('Não é permitido agendar em horários ou datas que já passaram.');
       return;
     }
     setSelectedDate(day);
@@ -326,7 +328,12 @@ export default function CalendarPage() {
   };
 
   const handleOpenNewModal = () => {
-    setSelectedDate(DateTime.now().setZone(timezone));
+    const now = DateTime.now().setZone(timezone);
+    setSelectedDate(now);
+    // Sugere o próximo horário disponível a partir de agora
+    const nextHour = now.minute > 30 ? now.plus({ hours: 1 }).hour : now.hour;
+    const nextMinute = now.minute > 30 ? '00' : '30';
+    setNewTime(`${String(Math.min(22, Math.max(7, nextHour))).padStart(2, '0')}:${nextMinute}`);
     if (isRestrictedProfessional && loggedInProfId) {
       setNewProfId(loggedInProfId);
     } else if (selectedProfId !== 'ALL') {
@@ -340,17 +347,19 @@ export default function CalendarPage() {
     e.preventDefault();
     setErrorMsg(null);
 
-    const today = DateTime.now().setZone(timezone).startOf('day');
-    if (selectedDate.startOf('day') < today) {
-      setErrorMsg('Não é permitido agendar em datas anteriores a hoje.');
+    const now = DateTime.now().setZone(timezone);
+    const [h, m] = newTime.split(':').map(Number);
+    const startAtDt = selectedDate.set({ hour: h, minute: m, second: 0, millisecond: 0 });
+
+    if (startAtDt < now.minus({ minutes: 2 })) {
+      setErrorMsg('Não é permitido agendar em datas ou horários que já passaram.');
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const [h, m] = newTime.split(':').map(Number);
-      const startAt = selectedDate.set({ hour: h, minute: m, second: 0, millisecond: 0 }).toJSDate();
+      const startAt = startAtDt.toJSDate();
 
       await api.post('/api/appointments', {
         serviceId: newServiceId,
@@ -1339,40 +1348,47 @@ export default function CalendarPage() {
                         }}
                       >
                         {/* Linhas Horizontais de Cada Hora */}
-                        {HOURS.map((hr) => (
-                          <div
-                            key={hr}
-                            onClick={() => handleCellClick(d, hr)}
-                            title={isPastDay ? 'Data passada (não é permitido agendar)' : `Clique para agendar em ${d.toFormat('dd/MM')} às ${String(hr).padStart(2, '0')}:00`}
-                            style={{
-                              height: `${HOUR_HEIGHT}px`,
-                              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                              cursor: isPastDay ? 'not-allowed' : 'pointer',
-                              position: 'relative',
-                              transition: 'background 0.15s ease',
-                              opacity: isPastDay ? 0.65 : 1,
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isPastDay) {
-                                e.currentTarget.style.background = 'rgba(229, 179, 56, 0.06)';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = 'transparent';
-                            }}
-                          >
-                            {/* Linha discreta de meia hora (:30) */}
+                        {HOURS.map((hr) => {
+                          const isPastCell = isPastDay || (isToday && hr < now.hour);
+
+                          return (
                             <div
+                              key={hr}
+                              onClick={() => handleCellClick(d, hr)}
+                              title={isPastCell ? 'Horário já passado (não é permitido agendar)' : `Clique para agendar em ${d.toFormat('dd/MM')} às ${String(hr).padStart(2, '0')}:00`}
                               style={{
-                                position: 'absolute',
-                                top: `${HOUR_HEIGHT / 2}px`,
-                                left: 0,
-                                right: 0,
-                                borderBottom: '1px dashed rgba(255, 255, 255, 0.025)',
+                                height: `${HOUR_HEIGHT}px`,
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                cursor: isPastCell ? 'not-allowed' : 'pointer',
+                                position: 'relative',
+                                transition: 'background 0.15s ease',
+                                opacity: isPastCell ? 0.55 : 1,
+                                background: isPastCell ? 'rgba(0, 0, 0, 0.22)' : 'transparent',
                               }}
-                            />
-                          </div>
-                        ))}
+                              onMouseEnter={(e) => {
+                                if (!isPastCell) {
+                                  e.currentTarget.style.background = 'rgba(229, 179, 56, 0.06)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isPastCell) {
+                                  e.currentTarget.style.background = 'transparent';
+                                }
+                              }}
+                            >
+                              {/* Linha discreta de meia hora (:30) */}
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: `${HOUR_HEIGHT / 2}px`,
+                                  left: 0,
+                                  right: 0,
+                                  borderBottom: '1px dashed rgba(255, 255, 255, 0.025)',
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
 
                         {/* Linha Indicadora do Horário Atual (Signature Teams Feature) */}
                         {isToday && isCurrentTimeInRange && (
@@ -1418,8 +1434,8 @@ export default function CalendarPage() {
                           );
 
                           const top = (startMinutes / 60) * HOUR_HEIGHT;
-                          // Altura com mínimo garantido de 44px para acomodar com folga horário e nome do cliente
-                          const height = Math.max(44, (durationMinutes / 60) * HOUR_HEIGHT - 2);
+                          // Altura com mínimo de 50px para total legibilidade do nome do cliente, horário e status
+                          const height = Math.max(50, (durationMinutes / 60) * HOUR_HEIGHT - 2);
 
                           // Cálculo de posicionamento horizontal (lado a lado se sobrepor)
                           const widthPercent = 100 / totalCols;
@@ -1450,7 +1466,7 @@ export default function CalendarPage() {
                                   : isCompleted
                                   ? 'rgba(16, 185, 129, 0.16)'
                                   : isDelayed
-                                  ? 'rgba(239, 68, 68, 0.22)'
+                                  ? 'rgba(239, 68, 68, 0.25)'
                                   : 'rgba(24, 30, 44, 0.95)',
                                 border: `1px solid ${
                                   isCanceled
@@ -1458,12 +1474,12 @@ export default function CalendarPage() {
                                     : isCompleted
                                     ? 'rgba(16, 185, 129, 0.4)'
                                     : isDelayed
-                                    ? 'rgba(239, 68, 68, 0.6)'
+                                    ? 'rgba(239, 68, 68, 0.65)'
                                     : 'rgba(255, 255, 255, 0.12)'
                                 }`,
                                 borderLeft: `4px solid ${isCanceled ? '#F43F5E' : isDelayed ? '#EF4444' : profColor}`,
                                 borderRadius: '6px',
-                                padding: height > 60 ? '6px 8px' : '4px 7px',
+                                padding: height > 65 ? '6px 8px' : '3px 7px',
                                 cursor: 'pointer',
                                 zIndex: 10,
                                 overflow: 'hidden',
@@ -1485,70 +1501,83 @@ export default function CalendarPage() {
                                 e.currentTarget.style.boxShadow = isDelayed ? '0 4px 14px rgba(239, 68, 68, 0.35)' : '0 4px 12px rgba(0, 0, 0, 0.4)';
                               }}
                             >
-                              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                {/* Linha 1: Horário e Status */}
+                              <div style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                                {/* Linha 1: NOME DO CLIENTE EM DESTAQUE ABSOLUTO + STATUS */}
                                 <div
                                   style={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
-                                    gap: '4px',
+                                    gap: '6px',
                                     lineHeight: 1.15,
+                                    minWidth: 0,
                                   }}
                                 >
                                   <span
                                     style={{
-                                      fontFamily: 'monospace, monospace',
-                                      fontSize: height > 55 ? '0.74rem' : '0.68rem',
-                                      fontWeight: 700,
-                                      color: 'rgba(255, 255, 255, 0.88)',
+                                      fontWeight: 800,
+                                      fontSize: height > 65 ? '0.86rem' : '0.80rem',
+                                      color: '#FFFFFF',
                                       whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      letterSpacing: '0.01em',
+                                      flex: 1,
                                     }}
                                   >
-                                    {startDateTime.toFormat('HH:mm')} - {endDateTime.toFormat('HH:mm')}
+                                    {app.customer.name}
                                   </span>
 
-                                  {isCompleted && (
-                                    <span
-                                      style={{
-                                        color: '#10B981',
-                                        fontSize: '0.64rem',
-                                        fontWeight: 800,
-                                        background: 'rgba(16, 185, 129, 0.2)',
-                                        padding: '1px 5px',
-                                        borderRadius: '3px',
-                                        lineHeight: 1,
-                                      }}
-                                    >
-                                      ✓ CONCLUÍDO
-                                    </span>
-                                  )}
                                   {isDelayed && (
                                     <span
                                       style={{
                                         color: '#EF4444',
-                                        fontSize: '0.62rem',
+                                        fontSize: '0.58rem',
                                         fontWeight: 800,
-                                        background: 'rgba(239, 68, 68, 0.25)',
-                                        border: '1px solid rgba(239, 68, 68, 0.45)',
-                                        padding: '1px 5px',
+                                        background: 'rgba(239, 68, 68, 0.3)',
+                                        border: '1px solid rgba(239, 68, 68, 0.55)',
+                                        padding: '1px 4px',
                                         borderRadius: '3px',
                                         lineHeight: 1,
+                                        flexShrink: 0,
+                                        whiteSpace: 'nowrap',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '2px',
                                       }}
                                     >
                                       ⚠️ ATRASADO
+                                    </span>
+                                  )}
+                                  {isCompleted && (
+                                    <span
+                                      style={{
+                                        color: '#10B981',
+                                        fontSize: '0.60rem',
+                                        fontWeight: 800,
+                                        background: 'rgba(16, 185, 129, 0.2)',
+                                        padding: '1px 4px',
+                                        borderRadius: '3px',
+                                        lineHeight: 1,
+                                        flexShrink: 0,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      ✓
                                     </span>
                                   )}
                                   {isCanceled && (
                                     <span
                                       style={{
                                         color: '#FB7185',
-                                        fontSize: '0.62rem',
+                                        fontSize: '0.58rem',
                                         fontWeight: 800,
                                         background: 'rgba(244, 63, 94, 0.2)',
-                                        padding: '1px 5px',
+                                        padding: '1px 4px',
                                         borderRadius: '3px',
                                         lineHeight: 1,
+                                        flexShrink: 0,
+                                        whiteSpace: 'nowrap',
                                       }}
                                     >
                                       CANCELADO
@@ -1556,46 +1585,35 @@ export default function CalendarPage() {
                                   )}
                                 </div>
 
-                                {/* Linha 2: Nome do Cliente (EM DESTAQUE, TOTALMENTE VISÍVEL) */}
+                                {/* Linha 2: Horário e Serviço */}
                                 <div
                                   style={{
                                     display: 'flex',
-                                    alignItems: 'baseline',
-                                    gap: '6px',
-                                    fontWeight: 700,
-                                    fontSize: height > 55 ? '0.84rem' : '0.78rem',
-                                    color: '#FFFFFF',
-                                    lineHeight: 1.25,
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    fontSize: '0.71rem',
+                                    color: isDelayed ? '#FCA5A5' : 'rgba(255, 255, 255, 0.75)',
+                                    lineHeight: 1.2,
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
                                     textOverflow: 'ellipsis',
+                                    minWidth: 0,
                                   }}
                                 >
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {app.customer.name}
+                                  <span style={{ fontFamily: 'monospace, monospace', fontWeight: 700 }}>
+                                    {startDateTime.toFormat('HH:mm')} - {endDateTime.toFormat('HH:mm')}
                                   </span>
-                                  {/* Em slots compactos (<= 55px), exibe o serviço ao lado se couber */}
-                                  {height <= 55 && app.service?.name && (
-                                    <span
-                                      style={{
-                                        fontWeight: 500,
-                                        fontSize: '0.70rem',
-                                        color: 'var(--text-muted)',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      • {app.service.name}
-                                    </span>
-                                  )}
+                                  <span>•</span>
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {app.service.name}
+                                  </span>
                                 </div>
 
-                                {/* Linha 3: Serviço e Barbeiro (quando houver mais altura, > 55px) */}
-                                {height > 55 && (
+                                {/* Linha 3: Profissional (se tiver mais altura, > 65px) */}
+                                {height > 65 && (
                                   <div
                                     style={{
-                                      fontSize: '0.73rem',
+                                      fontSize: '0.68rem',
                                       color: 'var(--text-muted)',
                                       whiteSpace: 'nowrap',
                                       overflow: 'hidden',
@@ -1606,9 +1624,18 @@ export default function CalendarPage() {
                                       gap: '4px',
                                     }}
                                   >
-                                    <span>{app.service.name}</span>
+                                    <span
+                                      style={{
+                                        width: '6px',
+                                        height: '6px',
+                                        borderRadius: '50%',
+                                        background: profColor,
+                                        display: 'inline-block',
+                                      }}
+                                    />
+                                    <span style={{ color: profColor, fontWeight: 600 }}>{app.professional.name}</span>
                                     <span>•</span>
-                                    <span>{app.professional.name}</span>
+                                    <span>{formatBRL(app.priceCents)}</span>
                                   </div>
                                 )}
                               </div>
@@ -1790,6 +1817,11 @@ export default function CalendarPage() {
               Horário de Início *
             </label>
             <TimePicker value={newTime} onChange={setNewTime} placeholder="10:00" />
+            {selectedDate.hasSame(DateTime.now().setZone(timezone), 'day') && (
+              <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                Horário atual do salão: <strong style={{ color: 'var(--primary)' }}>{DateTime.now().setZone(timezone).toFormat('HH:mm')}</strong> (selecione um horário posterior)
+              </span>
+            )}
           </div>
 
           <div>

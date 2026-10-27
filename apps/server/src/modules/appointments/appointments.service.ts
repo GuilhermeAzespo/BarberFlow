@@ -184,8 +184,9 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   const end = start.plus({ minutes: service.durationMinutes });
 
   const now = DateTime.now().setZone(tenant.timezone);
-  if (start < now.startOf('day')) {
-    throw HttpError.badRequest('Não é permitido agendar em datas anteriores a hoje.');
+  // Não permitir agendamento no passado (datas anteriores ou horários já passados de hoje)
+  if (start < now.minus({ minutes: 2 })) {
+    throw HttpError.badRequest('Não é permitido agendar em datas ou horários que já passaram.');
   }
 
   if (input.enforceBusinessHours !== false) {
