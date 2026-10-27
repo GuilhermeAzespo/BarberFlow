@@ -357,28 +357,31 @@ class WhatsAppService {
     });
   }
 
-  async sendMessage(tenantId: string, phone: string, text: string): Promise<boolean> {
+  async sendMessage(tenantId: string, phoneOrJid: string, text: string): Promise<boolean> {
     const conn = this.connections.get(tenantId);
     if (!conn?.socket || conn.status !== 'CONNECTED') {
       logger.warn({ tenantId, memoryStatus: conn?.status ?? 'SEM_CONEXAO', hasSocket: Boolean(conn?.socket) }, 'Envio ignorado: WhatsApp não está conectado neste servidor');
       return false;
     }
 
-    const cleanPhone = normalizePhone(phone);
-    if (!cleanPhone) return false;
+    let jid = phoneOrJid;
+    if (!phoneOrJid.includes('@')) {
+      const cleanPhone = normalizePhone(phoneOrJid);
+      if (!cleanPhone) return false;
 
-    // Confirma que o número existe no WhatsApp e usa o JID oficial retornado (ex.: ajusta o 9º dígito).
-    let jid = `${cleanPhone}@s.whatsapp.net`;
-    try {
-      const [lookup] = (await conn.socket.onWhatsApp(jid)) ?? [];
-      if (lookup && !lookup.exists) {
-        logger.warn({ tenantId, phone: cleanPhone }, 'Número não encontrado no WhatsApp');
-        throw HttpError.badRequest('Este número não foi encontrado no WhatsApp. Confira o DDD e o número.');
+      // Confirma que o número existe no WhatsApp e usa o JID oficial retornado (ex.: ajusta o 9º dígito).
+      jid = `${cleanPhone}@s.whatsapp.net`;
+      try {
+        const [lookup] = (await conn.socket.onWhatsApp(jid)) ?? [];
+        if (lookup && !lookup.exists) {
+          logger.warn({ tenantId, phone: cleanPhone }, 'Número não encontrado no WhatsApp');
+          throw HttpError.badRequest('Este número não foi encontrado no WhatsApp. Confira o DDD e o número.');
+        }
+        if (lookup?.jid) jid = lookup.jid;
+      } catch (err) {
+        if (err instanceof HttpError) throw err;
+        logger.warn({ err, tenantId, phone: cleanPhone }, 'Falha ao validar número com onWhatsApp; usando JID padrão');
       }
-      if (lookup?.jid) jid = lookup.jid;
-    } catch (err) {
-      if (err instanceof HttpError) throw err;
-      logger.warn({ err, tenantId, phone: cleanPhone }, 'Falha ao validar número com onWhatsApp; usando JID padrão');
     }
 
     const sent = await conn.socket.sendMessage(jid, { text });

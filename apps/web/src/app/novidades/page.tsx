@@ -46,6 +46,29 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v2-7',
+    version: 'v2.7',
+    date: '27 de Outubro de 2026',
+    title: 'Chat ao Vivo com WhatsApp, Transferência para Atendente, Status Atrasado e Bloqueio de Horários Passados',
+    category: 'WHATSAPP',
+    categoryLabel: 'Grande Lançamento',
+    badgeColor: '#10B981',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    summary:
+      'Lançamento da nova Central de Atendimento e Chat ao Vivo (/chat), permitindo conversar em tempo real com clientes do WhatsApp diretamente pelo painel e alternar entre o robô e o atendente humano com 1 clique. Além disso, adicionamos o status Atrasado com alertas internos no Salão, notificação de atraso ao cliente e bloqueio rigoroso de horários passados.',
+    highlights: [
+      'Aba de Atendimento / Chat ao Vivo (/chat): visualize conversas do WhatsApp em tempo real, leia mensagens e envie respostas instantâneas para os clientes pelo painel.',
+      'Transferência para Atendente Humano: pause o robô com 1 clique para falar diretamente com o cliente sem mensagens automáticas interferindo, e devolva para o bot quando terminar.',
+      'Opção "Falar com Atendente" no Bot: clientes que escolhem a opção 5 no WhatsApp são automaticamente transferidos para a fila de atendimento humano.',
+      'Novo Status "Atrasado" (DELAYED): detecção automática de atendimentos que ultrapassaram o horário de término previsto sem conclusão pelo barbeiro ou salão.',
+      'Sino de Notificações Internas no Topo (Header): alerta visual em tempo real mostrando cortes com atraso para a equipe do salão.',
+      'Notificação de Atraso ao Cliente: botão rápido no agendamento para disparar aviso amigável no WhatsApp do cliente com link para resposta imediata.',
+      'Bloqueio Universal de Horários e Datas Passadas: o sistema agora impede qualquer agendamento em datas ou horários que já passaram hoje, na agenda, na vitrine e no bot.',
+      'Cards da Agenda Otimizados: nome do cliente em destaque absoluto na primeira linha do card, eliminando cortes de texto e garantindo leitura nítida em qualquer resolução.',
+    ],
+    impact: 'Atendimento humanizado e imediato no WhatsApp sem sair do BarberFlow, pontualidade máxima no salão com alertas de atraso e experiência impecável na agenda.',
+  },
+  {
     id: 'v2-6',
     version: 'v2.6',
     date: '24 de Outubro de 2026',

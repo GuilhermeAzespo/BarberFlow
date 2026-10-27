@@ -35,7 +35,7 @@ export async function handleIncomingMessage(params: {
   text: string;
   reply: (text: string) => Promise<void>;
 }): Promise<void> {
-  const { tenantId, senderJid, phoneJid, senderName, text, reply } = params;
+  const { tenantId, senderJid, phoneJid, senderName, text, reply: rawReply } = params;
 
   // Carrega configurações do WhatsApp e dados do salão
   const [tenant, waConfig] = await Promise.all([
@@ -48,9 +48,7 @@ export async function handleIncomingMessage(params: {
     }),
   ]);
 
-  if (!tenant || !waConfig || !waConfig.botEnabled) {
-    return; // Bot desativado ou configuração inexistente
-  }
+  if (!tenant) return;
 
   // Identifica ou atualiza cliente
   const rawPhone = (phoneJid ?? senderJid).replace(/[:@].*$/, '');
@@ -95,14 +93,93 @@ export async function handleIncomingMessage(params: {
         tenantId,
         contactJid: senderJid,
         phone: normalizedPhone,
+        contactName: finalCustomerName,
         state: 'MENU',
+        isAttendant: false,
+        unreadCount: 1,
+        lastMessage: text,
         context: {},
+      },
+    });
+  } else {
+    conversation = await prisma.whatsAppConversation.update({
+      where: { id: conversation.id },
+      data: {
+        contactName: finalCustomerName,
+        phone: normalizedPhone || conversation.phone,
+        lastMessage: text,
+        lastMessageAt: new Date(),
+        unreadCount: { increment: 1 },
       },
     });
   }
 
+  // Registra a mensagem recebida no histórico do chat
+  await prisma.whatsAppMessage.create({
+    data: {
+      tenantId,
+      conversationId: conversation.id,
+      contactJid: senderJid,
+      fromMe: false,
+      senderType: 'CUSTOMER',
+      senderName: finalCustomerName,
+      body: text,
+      status: 'READ',
+    },
+  });
+
+  // Wrapper de resposta que persiste todas as mensagens do bot no histórico
+  const reply = async (replyText: string) => {
+    await rawReply(replyText);
+    try {
+      await prisma.whatsAppMessage.create({
+        data: {
+          tenantId,
+          conversationId: conversation.id,
+          contactJid: senderJid,
+          fromMe: true,
+          senderType: 'BOT',
+          senderName: tenant.name,
+          body: replyText,
+          status: 'SENT',
+        },
+      });
+      await prisma.whatsAppConversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessage: replyText,
+          lastMessageAt: new Date(),
+        },
+      });
+    } catch (err) {
+      logger.error({ err, tenantId, senderJid }, 'Erro ao gravar mensagem do bot no histórico');
+    }
+  };
+
   const cleanText = text.trim().toLowerCase();
   const rawInput = text.trim();
+
+  // Se a conversa já foi transferida para um atendente humano:
+  if (conversation.isAttendant) {
+    // Se o cliente quiser voltar ao bot automático
+    if (cleanText === 'menu' || cleanText === 'bot' || cleanText === 'voltar') {
+      await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+      await reply(`🤖 *Atendimento Automático Retomado:*\nOlá, ${finalCustomerName}! O assistente do BarberFlow foi reativado para te atender.`);
+      if (waConfig && waConfig.botEnabled) {
+        await sendMenu(reply, tenant, waConfig, finalCustomerName);
+      }
+      return;
+    }
+
+    // O bot fica em silêncio absoluto para o atendente humano conversar
+    logger.info({ tenantId, senderJid }, 'Mensagem recebida em conversa atribuída a atendente humano (bot em silêncio)');
+    return;
+  }
+
+  // Se o bot estiver desativado nas configurações do salão
+  if (!waConfig || !waConfig.botEnabled) {
+    return;
+  }
 
   // Comandos de reinício
   if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'olá' || cleanText === 'ola' || cleanText === 'oi' || cleanText === 'voltar') {
@@ -218,8 +295,11 @@ export async function handleIncomingMessage(params: {
         }
         msg += `\n_Digite *menu* para retornar ao início._`;
         await reply(msg);
-      } else if (rawInput === '5') {
-        await reply(`Um atendente da *${tenant.name}* responderá em breve nesta conversa. Por favor, aguarde! 😊`);
+      } else if (rawInput === '5' || cleanText.includes('atendente') || cleanText.includes('humano') || cleanText.includes('suporte')) {
+        await updateConversation(tenantId, senderJid, 'HUMAN_ATTENDANT', {}, true);
+        await reply(
+          `🔔 *Transferido para um Atendente:*\nOlá, ${finalCustomerName}! Sua conversa foi encaminhada para nossa equipe de atendimento humano.\n\nUm de nossos atendentes responderá em breve por aqui. Se a qualquer momento desejar voltar ao menu do robô, basta digitar *menu*. 😊`
+        );
       } else {
         await sendMenu(reply, tenant, waConfig, finalCustomerName);
       }
@@ -499,13 +579,14 @@ export async function handleIncomingMessage(params: {
   }
 }
 
-async function updateConversation(tenantId: string, contactJid: string, state: string, context: BotContext) {
+async function updateConversation(tenantId: string, contactJid: string, state: string, context: BotContext, isAttendant?: boolean) {
   await prisma.whatsAppConversation.upsert({
     where: { tenantId_contactJid: { tenantId, contactJid } },
     update: {
       state,
       context: context as Prisma.InputJsonValue,
       lastMessageAt: new Date(),
+      ...(isAttendant !== undefined ? { isAttendant } : {}),
     },
     create: {
       tenantId,
@@ -513,6 +594,7 @@ async function updateConversation(tenantId: string, contactJid: string, state: s
       state,
       context: context as Prisma.InputJsonValue,
       lastMessageAt: new Date(),
+      ...(isAttendant !== undefined ? { isAttendant } : {}),
     },
   });
 }

@@ -97,3 +97,178 @@ whatsAppRouter.post('/send-test', requireRole('OWNER', 'MANAGER'), async (req, r
 
   res.json({ success: true, message: 'Mensagem de teste enviada com sucesso!' });
 });
+
+// ───────────────────────────── Chat / Atendimento Humano ─────────────────────────────
+
+// Listar conversas ativas do WhatsApp
+whatsAppRouter.get('/conversations', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const conversations = await prisma.whatsAppConversation.findMany({
+    where: { tenantId },
+    orderBy: { lastMessageAt: 'desc' },
+    take: 50,
+  });
+
+  return res.json({ conversations });
+});
+
+// Buscar histórico de mensagens de uma conversa específica
+whatsAppRouter.get('/conversations/:id/messages', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const { id } = req.params;
+
+  const conversation = await prisma.whatsAppConversation.findFirst({
+    where: { id, tenantId },
+  });
+  if (!conversation) throw HttpError.notFound('Conversa não encontrada');
+
+  if (conversation.unreadCount > 0) {
+    await prisma.whatsAppConversation.update({
+      where: { id },
+      data: { unreadCount: 0 },
+    });
+  }
+
+  const messages = await prisma.whatsAppMessage.findMany({
+    where: { conversationId: id, tenantId },
+    orderBy: { createdAt: 'asc' },
+    take: 120,
+  });
+
+  return res.json({ conversation, messages });
+});
+
+const sendChatMessageSchema = z.object({
+  text: z.string().trim().min(1, 'A mensagem não pode ser vazia'),
+});
+
+// Atendente envia mensagem no WhatsApp para o cliente
+whatsAppRouter.post('/conversations/:id/messages', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const { id } = req.params;
+  const { text } = sendChatMessageSchema.parse(req.body);
+
+  const conversation = await prisma.whatsAppConversation.findFirst({
+    where: { id, tenantId },
+  });
+  if (!conversation) throw HttpError.notFound('Conversa não encontrada');
+
+  const target = conversation.contactJid || conversation.phone;
+  if (!target) throw HttpError.badRequest('Contato não possui identificador do WhatsApp válido');
+
+  const sent = await whatsAppService.sendMessage(tenantId, target, text);
+  if (!sent) {
+    throw HttpError.badRequest('Falha ao enviar mensagem. Certifique-se de que o WhatsApp do salão está conectado em /whatsapp.');
+  }
+
+  let senderName = 'Atendente';
+  if (req.auth?.userId) {
+    const u = await prisma.user.findUnique({
+      where: { id: req.auth.userId },
+      select: { name: true },
+    });
+    if (u?.name) senderName = u.name;
+  }
+
+  const message = await prisma.whatsAppMessage.create({
+    data: {
+      tenantId,
+      conversationId: id,
+      contactJid: conversation.contactJid,
+      fromMe: true,
+      senderType: 'ATTENDANT',
+      senderName,
+      body: text,
+      status: 'SENT',
+    },
+  });
+
+  await prisma.whatsAppConversation.update({
+    where: { id },
+    data: {
+      lastMessage: text,
+      lastMessageAt: new Date(),
+      isAttendant: true,
+      state: 'HUMAN_ATTENDANT',
+    },
+  });
+
+  return res.json({ success: true, message });
+});
+
+const transferConversationSchema = z.object({
+  toAttendant: z.boolean(),
+});
+
+// Transferir conversa para atendente ou devolver para o robô
+whatsAppRouter.patch('/conversations/:id/transfer', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const { id } = req.params;
+  const { toAttendant } = transferConversationSchema.parse(req.body);
+
+  const conversation = await prisma.whatsAppConversation.findFirst({
+    where: { id, tenantId },
+  });
+  if (!conversation) throw HttpError.notFound('Conversa não encontrada');
+
+  const target = conversation.contactJid || conversation.phone;
+
+  if (toAttendant) {
+    const notifyText = '🔔 *Atendimento Humano:* Olá! Um atendente da equipe assumiu esta conversa e está pronto para te ajudar.';
+    if (target) {
+      await whatsAppService.sendMessage(tenantId, target, notifyText).catch(() => null);
+      await prisma.whatsAppMessage.create({
+        data: {
+          tenantId,
+          conversationId: id,
+          contactJid: conversation.contactJid,
+          fromMe: true,
+          senderType: 'SYSTEM',
+          body: notifyText,
+          status: 'SENT',
+        },
+      });
+    }
+
+    const updated = await prisma.whatsAppConversation.update({
+      where: { id },
+      data: {
+        isAttendant: true,
+        state: 'HUMAN_ATTENDANT',
+        lastMessage: notifyText,
+        lastMessageAt: new Date(),
+      },
+    });
+
+    return res.json({ success: true, conversation: updated });
+  } else {
+    const notifyText = '🤖 *Atendimento Automático Retomado:* O assistente virtual do BarberFlow foi reativado. Digite *menu* para ver os horários e serviços.';
+    if (target) {
+      await whatsAppService.sendMessage(tenantId, target, notifyText).catch(() => null);
+      await prisma.whatsAppMessage.create({
+        data: {
+          tenantId,
+          conversationId: id,
+          contactJid: conversation.contactJid,
+          fromMe: true,
+          senderType: 'SYSTEM',
+          body: notifyText,
+          status: 'SENT',
+        },
+      });
+    }
+
+    const updated = await prisma.whatsAppConversation.update({
+      where: { id },
+      data: {
+        isAttendant: false,
+        state: 'MENU',
+        context: {},
+        lastMessage: notifyText,
+        lastMessageAt: new Date(),
+      },
+    });
+
+    return res.json({ success: true, conversation: updated });
+  }
+});

@@ -147,6 +147,7 @@ model Tenant {
   whatsAppConfig        WhatsAppConfig?
   whatsAppSessionKeys   WhatsAppSessionKey[]
   whatsAppConversations WhatsAppConversation[]
+  whatsAppMessages      WhatsAppMessage[]
   saasPayments          SaaSPayment[]
   logs                  SystemLog[]
 
@@ -433,21 +434,47 @@ model WhatsAppSessionKey {
   @@unique([tenantId, key])
 }
 
-// Estado da conversa do bot por contato (máquina de estados do agendamento).
+// Estado da conversa do bot / chat de atendimento por contato.
 model WhatsAppConversation {
-  id            String   @id @default(cuid())
+  id            String            @id @default(cuid())
   tenantId      String
   contactJid    String
   phone         String?
-  state         String   @default("MENU")
-  context       Json     @default("{}")
-  lastMessageAt DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  contactName   String?
+  state         String            @default("MENU")
+  isAttendant   Boolean           @default(false)
+  unreadCount   Int               @default(0)
+  lastMessage   String?           @db.Text
+  context       Json              @default("{}")
+  lastMessageAt DateTime          @default(now())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages WhatsAppMessage[]
 
   @@unique([tenantId, contactJid])
+  @@index([tenantId, isAttendant, lastMessageAt])
+}
+
+// Histórico de mensagens do chat do WhatsApp (recebidas e enviadas).
+model WhatsAppMessage {
+  id             String   @id @default(cuid())
+  tenantId       String
+  conversationId String
+  contactJid     String
+  fromMe         Boolean  @default(false)
+  senderType     String   @default("CUSTOMER") // CUSTOMER, BOT, ATTENDANT, SYSTEM
+  senderName     String?
+  body           String   @db.Text
+  status         String   @default("SENT") // SENT, DELIVERED, READ
+  createdAt      DateTime @default(now())
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation WhatsAppConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, contactJid])
 }
 
 // ───────────────────────────── Observabilidade ─────────────────────────────

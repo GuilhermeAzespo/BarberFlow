@@ -11,6 +11,7 @@ import {
   UserCheck,
   DollarSign,
   MessageSquare,
+  MessageCircle,
   Settings,
   Sparkles,
   Crown,
@@ -25,7 +26,8 @@ export const ALL_MENU_KEYS = [
   { key: 'services', label: 'Serviços & Preços', href: '/services', icon: Scissors },
   { key: 'customers', label: 'Clientes', href: '/customers', icon: UserCheck },
   { key: 'finance', label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
-  { key: 'whatsapp', label: 'Bot WhatsApp', href: '/whatsapp', icon: MessageSquare, highlight: true },
+  { key: 'chat', label: 'Atendimento / Chat', href: '/chat', icon: MessageCircle, highlight: true },
+  { key: 'whatsapp', label: 'Bot WhatsApp', href: '/whatsapp', icon: MessageSquare },
   { key: 'settings', label: 'Configurações', href: '/settings', icon: Settings },
 ];
 
