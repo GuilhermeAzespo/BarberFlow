@@ -124,6 +124,8 @@ export default function SettingsPage() {
   const [groupBreakStart, setGroupBreakStart] = useState('12:00');
   const [groupBreakEnd, setGroupBreakEnd] = useState('13:00');
   const [scheduleAppliedMsg, setScheduleAppliedMsg] = useState<string | null>(null);
+  const [applyingSchedule, setApplyingSchedule] = useState(false);
+  const [togglingWeekday, setTogglingWeekday] = useState<number | null>(null);
 
   // Media
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -248,21 +250,47 @@ export default function SettingsPage() {
       setSlotIntervalMinutes(res.tenant.slotIntervalMinutes || 30);
       setLogoPreview(res.tenant.logoUrl || null);
       setCoverPreview(res.tenant.coverUrl || null);
-      // Se os horários vieram com o padrão legado 12:00 às 13:00 (não configurado pelo usuário),
-      // limpa breakStart e breakEnd para que vá direto sem pausa
-      const loadedHours = (res.businessHours || []).map((h) => {
-        if (h.breakStart === '12:00' && h.breakEnd === '13:00') {
-          return { ...h, breakStart: null, breakEnd: null };
+      // Garante os 7 dias completos da semana (0 = Domingo a 6 = Sábado)
+      const fullWeek: BusinessHour[] = [0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
+        const found = (res.businessHours || []).find((h) => h.weekday === dayIdx);
+        if (found) {
+          const bs = found.breakStart === '12:00' && found.breakEnd === '13:00' ? null : found.breakStart;
+          const be = found.breakStart === '12:00' && found.breakEnd === '13:00' ? null : found.breakEnd;
+          return {
+            ...found,
+            openTime: found.openTime || '09:00',
+            closeTime: found.closeTime || (dayIdx === 6 ? '17:00' : '19:00'),
+            breakStart: bs || null,
+            breakEnd: be || null,
+          };
         }
-        return h;
+        return {
+          weekday: dayIdx,
+          isOpen: dayIdx >= 1 && dayIdx <= 6,
+          openTime: '09:00',
+          closeTime: dayIdx === 6 ? '17:00' : '19:00',
+          breakStart: null,
+          breakEnd: null,
+        };
       });
-      setBusinessHours(loadedHours);
+      setBusinessHours(fullWeek);
+
+      // Sincroniza os dias selecionados no grupo com os dias que realmente estão abertos no banco
+      const openWeekdays = fullWeek.filter((h) => h.isOpen).map((h) => h.weekday);
+      setSelectedDays(openWeekdays.length > 0 ? openWeekdays : [1, 2, 3, 4, 5]);
+
+      // Sincroniza os horários de início e fim padrão a partir dos dias abertos
+      const firstOpen = fullWeek.find((h) => h.isOpen);
+      if (firstOpen) {
+        if (firstOpen.openTime) setGroupOpenTime(firstOpen.openTime);
+        if (firstOpen.closeTime) setGroupCloseTime(firstOpen.closeTime);
+      }
 
       // Sincroniza se existe algum intervalo ativo configurado
-      const anyDayHasBreak = loadedHours.some((h) => h.isOpen && h.breakStart && h.breakEnd);
+      const anyDayHasBreak = fullWeek.some((h) => h.isOpen && h.breakStart && h.breakEnd);
       setHasBreak(anyDayHasBreak);
       if (anyDayHasBreak) {
-        const firstWithBreak = loadedHours.find((h) => h.isOpen && h.breakStart && h.breakEnd);
+        const firstWithBreak = fullWeek.find((h) => h.isOpen && h.breakStart && h.breakEnd);
         if (firstWithBreak?.breakStart && firstWithBreak?.breakEnd) {
           setGroupBreakStart(firstWithBreak.breakStart);
           setGroupBreakEnd(firstWithBreak.breakEnd);
@@ -377,9 +405,53 @@ export default function SettingsPage() {
   };
 
   const handleHourChange = (weekday: number, field: keyof BusinessHour, value: unknown) => {
-    setBusinessHours((prev) =>
-      prev.map((h) => (h.weekday === weekday ? { ...h, [field]: value } : h)),
+    setBusinessHours((prev) => {
+      const next = prev.map((h) => (h.weekday === weekday ? { ...h, [field]: value } : h));
+      if (field === 'isOpen') {
+        if (value) {
+          setSelectedDays((sd) => (sd.includes(weekday) ? sd : [...sd, weekday].sort((a, b) => a - b)));
+        } else {
+          setSelectedDays((sd) => sd.filter((d) => d !== weekday));
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleToggleDayStatus = async (weekday: number) => {
+    const target = businessHours.find((h) => h.weekday === weekday);
+    if (!target) return;
+    const newIsOpen = !target.isOpen;
+
+    const nextHours = businessHours.map((h) =>
+      h.weekday === weekday ? { ...h, isOpen: newIsOpen } : h,
     );
+    setBusinessHours(nextHours);
+
+    if (newIsOpen) {
+      setSelectedDays((prev) => (prev.includes(weekday) ? prev : [...prev, weekday].sort((a, b) => a - b)));
+    } else {
+      setSelectedDays((prev) => prev.filter((d) => d !== weekday));
+    }
+
+    setTogglingWeekday(weekday);
+    try {
+      await api.put('/api/tenant/business-hours', {
+        businessHours: nextHours.map((h) => ({
+          weekday: h.weekday,
+          isOpen: h.isOpen,
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          breakStart: h.isOpen && h.breakStart ? h.breakStart : null,
+          breakEnd: h.isOpen && h.breakEnd ? h.breakEnd : null,
+        })),
+      });
+      toast.success(`${weekdayNames[weekday]} agora está ${newIsOpen ? 'ABERTO' : 'FECHADO'}!`);
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao atualizar status do dia.');
+    } finally {
+      setTogglingWeekday(null);
+    }
   };
 
   const handleToggleAllDays = (checked: boolean) => {
@@ -392,19 +464,23 @@ export default function SettingsPage() {
 
   const handleToggleDay = (day: number) => {
     setSelectedDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b),
     );
   };
 
-  const handleApplyGroupSchedule = () => {
+  const handleApplyGroupSchedule = async () => {
     if (selectedDays.length === 0) {
+      toast.warning('Selecione ao menos um dia da semana para aplicar os horários.');
       setErrorMsg('Selecione ao menos um dia da semana para aplicar os horários.');
       setTimeout(() => setErrorMsg(null), 3500);
       return;
     }
 
-    setBusinessHours((prev) =>
-      prev.map((h) => {
+    setApplyingSchedule(true);
+    setErrorMsg(null);
+
+    try {
+      const updatedHours = businessHours.map((h) => {
         if (selectedDays.includes(h.weekday)) {
           return {
             ...h,
@@ -416,11 +492,45 @@ export default function SettingsPage() {
           };
         }
         return h;
-      }),
-    );
+      });
 
-    setScheduleAppliedMsg(`Horários aplicados com sucesso para ${selectedDays.length} dia(s)!`);
-    setTimeout(() => setScheduleAppliedMsg(null), 3000);
+      // Salva imediatamente no banco de dados para garantir persistência mesmo após refresh
+      const res = await api.put<{ businessHours: BusinessHour[] }>('/api/tenant/business-hours', {
+        businessHours: updatedHours.map((h) => ({
+          weekday: h.weekday,
+          isOpen: h.isOpen,
+          openTime: h.openTime,
+          closeTime: h.closeTime,
+          breakStart: h.isOpen && h.breakStart ? h.breakStart : null,
+          breakEnd: h.isOpen && h.breakEnd ? h.breakEnd : null,
+        })),
+      });
+
+      const savedHours = (res.businessHours || updatedHours).map((h) => {
+        if (h.breakStart === '12:00' && h.breakEnd === '13:00') {
+          return { ...h, breakStart: null, breakEnd: null };
+        }
+        return h;
+      });
+
+      setBusinessHours(savedHours);
+
+      // Sincroniza dias selecionados com os dias que ficaram abertos
+      const openDays = savedHours.filter((h) => h.isOpen).map((h) => h.weekday);
+      setSelectedDays(openDays);
+
+      const dayNamesList = selectedDays.map((d) => weekdayNames[d]).join(', ');
+      toast.success(`Horários salvos e aplicados com sucesso para ${selectedDays.length} dia(s)!`);
+      setScheduleAppliedMsg(`Horários salvos e aplicados com sucesso para ${selectedDays.length} dia(s)!`);
+      setTimeout(() => setScheduleAppliedMsg(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof ApiError ? err.message : 'Falha ao salvar horários de atendimento.';
+      toast.error(msg);
+      setErrorMsg(msg);
+      setTimeout(() => setErrorMsg(null), 4000);
+    } finally {
+      setApplyingSchedule(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -1812,6 +1922,7 @@ export default function SettingsPage() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                       <button
                         type="button"
+                        disabled={applyingSchedule}
                         onClick={handleApplyGroupSchedule}
                         className="gold-gradient-primary gold-glow"
                         style={{
@@ -1819,14 +1930,19 @@ export default function SettingsPage() {
                           borderRadius: '8px',
                           fontSize: '0.92rem',
                           fontWeight: 700,
-                          cursor: 'pointer',
+                          cursor: applyingSchedule ? 'wait' : 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
+                          opacity: applyingSchedule ? 0.7 : 1,
                         }}
                       >
                         <Check size={18} />
-                        <span>Aplicar aos {selectedDays.length} dias selecionados</span>
+                        <span>
+                          {applyingSchedule
+                            ? 'Salvando e aplicando horários...'
+                            : `Aplicar aos ${selectedDays.length} dias selecionados`}
+                        </span>
                       </button>
 
                       {scheduleAppliedMsg && (
@@ -1974,8 +2090,9 @@ export default function SettingsPage() {
                               <div>
                                 <button
                                   type="button"
-                                  onClick={() => handleHourChange(hour.weekday, 'isOpen', !hour.isOpen)}
-                                  title="Clique para alternar Aberto/Fechado"
+                                  disabled={togglingWeekday === hour.weekday}
+                                  onClick={() => handleToggleDayStatus(hour.weekday)}
+                                  title="Clique para alternar Aberto/Fechado e salvar"
                                   style={{
                                     width: '80px',
                                     padding: '4px 0',
@@ -1983,14 +2100,15 @@ export default function SettingsPage() {
                                     borderRadius: '6px',
                                     fontSize: '0.74rem',
                                     fontWeight: 700,
-                                    cursor: 'pointer',
+                                    cursor: togglingWeekday === hour.weekday ? 'wait' : 'pointer',
                                     background: hour.isOpen ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.15)',
                                     color: hour.isOpen ? '#10B981' : '#FB7185',
                                     border: `1px solid ${hour.isOpen ? 'rgba(16, 185, 129, 0.35)' : 'rgba(244, 63, 94, 0.35)'}`,
                                     transition: 'all 0.15s ease',
+                                    opacity: togglingWeekday === hour.weekday ? 0.6 : 1,
                                   }}
                                 >
-                                  {hour.isOpen ? 'ABERTO' : 'FECHADO'}
+                                  {togglingWeekday === hour.weekday ? '...' : hour.isOpen ? 'ABERTO' : 'FECHADO'}
                                 </button>
                               </div>
 
