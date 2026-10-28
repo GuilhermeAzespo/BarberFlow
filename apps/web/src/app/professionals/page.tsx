@@ -113,7 +113,7 @@ const ROLE_PRESETS: PresetDefinition[] = [
     badgeBg: 'rgba(229, 179, 56, 0.15)',
     defaultRoleTitle: 'Administrador / Gerente',
     isServiceWorker: false,
-    allowedMenus: ['dashboard', 'calendar', 'professionals', 'services', 'customers', 'finance', 'whatsapp', 'settings'],
+    allowedMenus: ['dashboard', 'calendar', 'professionals', 'services', 'customers', 'finance', 'reports', 'whatsapp', 'settings'],
     canViewAllAppointments: true,
     canManageAppointments: true,
     canManageCustomers: true,

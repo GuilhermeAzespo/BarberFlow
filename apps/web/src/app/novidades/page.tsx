@@ -46,6 +46,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v2-9',
+    version: 'v2.9',
+    date: '28 de Outubro de 2026',
+    title: 'Nova Central de Relatórios: Pesquisas de Satisfação (NPS), Produtividade de Cortes por Barbeiro e Agendamentos & Cancelamentos',
+    category: 'NEW',
+    categoryLabel: 'Grande Lançamento',
+    badgeColor: '#E5B338',
+    badgeBg: 'rgba(229, 179, 56, 0.15)',
+    summary:
+      'Lançamento oficial da nova aba de Relatórios (/reports) no menu lateral com inteligência analítica completa: métricas de NPS e satisfação com mural de depoimentos, ranking de produtividade e faturamento por barbeiro com ticket médio e relatório analítico de agendamentos com taxas de cancelamento e no-show.',
+    highlights: [
+      'Relatório de Pesquisa de Satisfação: Média geral, CSAT (% positivo), NPS Score (-100 a +100), distribuição de notas de 1 a 5 com emojis e barras visuais, comparativo de canal (Atendente vs Barbeiro), ranking de satisfação por profissional e mural completo de sugestões/depoimentos textuais.',
+      'Relatório de Quantidade de Cortes por Barbeiro: Ranking de produtividade com pódios (#1 Ouro, #2 Prata, #3 Bronze), total de cortes concluídos, faturamento bruto em R$, ticket médio individual, percentual de participação no salão, nota média e serviços mais executados por cada barbeiro.',
+      'Relatório de Agendamentos & Cancelamentos: Acompanhamento de agendados, confirmados, realizados, cancelados e faltas (No-Show), taxa de conversão vs cancelamento, impacto financeiro (receita realizada vs receita perdida), distribuição por origem (Bot WhatsApp, Vitrine Online ou Painel) e tabela detalhada com motivos de cancelamento.',
+      'Filtros Globais Inteligentes: Seleção rápida por presets (Hoje, 7 Dias, 30 Dias, Este Mês, Mês Anterior, Ano Atual), intervalo de datas customizado e filtro por profissional.',
+      'Exportação em CSV: Baixe relatórios completos em formato planilha CSV com um único clique para auditoria e controle externo.',
+    ],
+    impact: 'Visão executiva 360° para donos de barbearias e gestores avaliarem a qualidade do atendimento, faturamento por colaborador e gargalos de cancelamento.',
+  },
+  {
     id: 'v2-8',
     version: 'v2.8',
     date: '27 de Outubro de 2026',

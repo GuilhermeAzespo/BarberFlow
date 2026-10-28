@@ -23,6 +23,7 @@ import { whatsAppRouter } from './modules/whatsapp/whatsapp.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
 import { superAdminRouter } from './modules/superadmin/superadmin.routes.js';
 import { billingRouter } from './modules/billing/billing.routes.js';
+import { reportsRouter } from './modules/reports/reports.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 
@@ -80,6 +81,7 @@ app.use('/api/appointments', requireAuth, requireTenant, appointmentsRouter);
 app.use('/api/finance', requireAuth, requireTenant, requireMenuPermission('finance'), financeRouter);
 app.use('/api/whatsapp', requireAuth, requireTenant, requireMenuPermission('whatsapp'), whatsAppRouter);
 app.use('/api/dashboard', requireAuth, requireTenant, requireMenuPermission('dashboard'), dashboardRouter);
+app.use('/api/reports', requireAuth, requireTenant, requireMenuPermission('reports'), reportsRouter);
 app.use('/api/billing', requireAuth, requireTenant, billingRouter);
 
 // Rotas do Super Admin do SaaS
