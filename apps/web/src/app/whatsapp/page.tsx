@@ -12,6 +12,9 @@ import {
   AlertCircle,
   Clock,
   Sparkles,
+  Star,
+  UserCheck,
+  Scissors,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
@@ -36,6 +39,10 @@ interface WhatsAppConfig {
   cancellationMessage: string;
   reminderEnabled: boolean;
   reminderHoursBefore: number;
+  attendantSurveyEnabled?: boolean;
+  attendantSurveyMessage?: string | null;
+  serviceSurveyEnabled?: boolean;
+  serviceSurveyMessage?: string | null;
 }
 
 export default function WhatsAppHubPage() {
@@ -489,6 +496,133 @@ export default function WhatsAppHubPage() {
                       value={config.cancellationMessage}
                       onChange={(e) => setConfig({ ...config, cancellationMessage: e.target.value })}
                     />
+                  </div>
+
+                  {/* Divisor Visual de Pesquisas de Satisfação */}
+                  <div
+                    style={{
+                      margin: '12px 0 4px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Star size={18} color="var(--primary)" />
+                    <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                      Pesquisas de Satisfação Automáticas (NPS)
+                    </span>
+                  </div>
+
+                  {/* 1. Pesquisa de Satisfação: Atendimento Humano */}
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(255, 255, 255, 0.07)',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <UserCheck size={18} color="var(--primary)" />
+                        <div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                            Pesquisa • Atendimento Humano
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Disparada automaticamente no WhatsApp ao encerrar o chat com o atendente
+                          </div>
+                        </div>
+                      </div>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <input
+                          type="checkbox"
+                          checked={config.attendantSurveyEnabled ?? true}
+                          onChange={(e) => setConfig({ ...config, attendantSurveyEnabled: e.target.checked })}
+                          style={{ width: '16px', height: '16px' }}
+                        />
+                        <span style={{ color: (config.attendantSurveyEnabled ?? true) ? '#34D399' : 'var(--text-muted)' }}>
+                          {(config.attendantSurveyEnabled ?? true) ? 'Pesquisa Ativa' : 'Pesquisa Desativada'}
+                        </span>
+                      </label>
+                    </div>
+
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                      Tags suportadas: <code>&#123;nome&#125;</code>, <code>&#123;atendente&#125;</code>, <code>&#123;salao&#125;</code>
+                    </p>
+
+                    <div style={{ opacity: (config.attendantSurveyEnabled ?? true) ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 500, marginBottom: '6px' }}>
+                        Mensagem da Avaliação de Atendimento:
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={config.attendantSurveyMessage ?? ''}
+                        onChange={(e) => setConfig({ ...config, attendantSurveyMessage: e.target.value })}
+                        placeholder="Mensagem da pesquisa enviada ao encerrar atendimento..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* 2. Pesquisa de Satisfação: Barbeiro / Cabeleireiro (Pós-Corte) */}
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(255, 255, 255, 0.07)',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Scissors size={18} color="var(--primary)" />
+                        <div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                            Pesquisa • Pós-Serviço (Barbeiro / Cabeleireiro)
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            Disparada automaticamente no WhatsApp quando o agendamento é marcado como concluído
+                          </div>
+                        </div>
+                      </div>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                        <input
+                          type="checkbox"
+                          checked={config.serviceSurveyEnabled ?? true}
+                          onChange={(e) => setConfig({ ...config, serviceSurveyEnabled: e.target.checked })}
+                          style={{ width: '16px', height: '16px' }}
+                        />
+                        <span style={{ color: (config.serviceSurveyEnabled ?? true) ? '#34D399' : 'var(--text-muted)' }}>
+                          {(config.serviceSurveyEnabled ?? true) ? 'Pesquisa Ativa' : 'Pesquisa Desativada'}
+                        </span>
+                      </label>
+                    </div>
+
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>
+                      Tags suportadas: <code>&#123;nome&#125;</code>, <code>&#123;profissional&#125;</code>, <code>&#123;servico&#125;</code>, <code>&#123;salao&#125;</code>
+                    </p>
+
+                    <div style={{ opacity: (config.serviceSurveyEnabled ?? true) ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 500, marginBottom: '6px' }}>
+                        Mensagem da Avaliação do Barbeiro / Serviço:
+                      </label>
+                      <textarea
+                        rows={5}
+                        value={config.serviceSurveyMessage ?? ''}
+                        onChange={(e) => setConfig({ ...config, serviceSurveyMessage: e.target.value })}
+                        placeholder="Mensagem da pesquisa enviada após o corte..."
+                      />
+                    </div>
                   </div>
 
                   <button

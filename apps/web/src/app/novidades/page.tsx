@@ -59,13 +59,14 @@ const CHANGELOG_DATA: ChangelogItem[] = [
     highlights: [
       'Pesquisa de Satisfação de Atendimento Humano (2 Níveis): ao encerrar o chat, a conversa é imediatamente liberada para o assistente virtual e o cliente recebe a avaliação: Nível 1 com nota de 1 a 5 (com emojis de muito ruim a excelente) e Nível 2 para sugestão de melhoria ou detalhes.',
       'Pesquisa de Satisfação Pós-Corte/Agendamento: assim que o barbeiro ou profissional conclui um agendamento (status CONCLUÍDO), o cliente recebe automaticamente no WhatsApp uma pesquisa para avaliar o corte e o profissional.',
+      'Controle Individual de Ativação e Templates na Aba de Bot (/whatsapp): agora você pode ativar ou desativar individualmente a pesquisa de atendimento humano e a pesquisa pós-corte do barbeiro, além de editar e personalizar o template de mensagem de cada uma com tags dinâmicas ({nome}, {atendente}, {profissional}, {servico}, {salao}).',
       'Timeout Inteligente de 1 Hora: se o cliente não responder à pesquisa de satisfação dentro de 1 hora, a conversa é finalizada e liberada automaticamente para o menu inicial com opções de agendamento.',
       'Botão "Encerrar Atendimento" no Chat (/chat): botão dedicado com confirmação no cabeçalho do chat ativo para finalizar o atendimento humano, pausar o operador e enviar a pesquisa.',
       'Histórico de Atendimento Focado na Data Atual: ao abrir a conversa transferida no painel, o sistema traz prioritariamente as mensagens de hoje (data atual), com botão opcional para expandir o histórico de dias anteriores caso necessário.',
       'Opção "5 - Falar com Atendente" no Menu do WhatsApp: nova opção no menu principal e reconhecimento automático de comandos textuais ("atendente", "falar com atendente", "humano", "suporte"), direcionando instantaneamente para a equipe.',
       'Mensagens de Sistema Estilizadas no Chat: avisos de transferência e encerramento com design em pílula elegante no fluxo da conversa.',
     ],
-    impact: 'Controle de qualidade e métricas reais de satisfação do cliente em cada corte e suporte, agilidade máxima para atendentes e transição perfeita entre robô e humano.',
+    impact: 'Controle de qualidade e métricas reais de satisfação do cliente em cada corte e suporte, customização total de templates de pesquisa e transição perfeita entre robô e humano.',
   },
   {
     id: 'v2-7',

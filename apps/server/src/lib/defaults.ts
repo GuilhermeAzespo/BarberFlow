@@ -19,6 +19,10 @@ export const DEFAULT_WHATSAPP_MESSAGES = {
     '⏰ Olá, {nome}! Passando para lembrar do seu horário na *{salao}*:\n\n✂️ {servico} com {profissional}\n📅 {data} às {hora}\n\nCaso não possa comparecer, envie *menu* para cancelar.',
   cancellationMessage:
     '❌ Seu agendamento de *{servico}* em {data} às {hora} foi cancelado.\nQuando quiser remarcar, é só mandar uma mensagem! 😉',
+  attendantSurveyMessage:
+    '👋 *Atendimento Encerrado*\nSeu atendimento com *{atendente}* foi finalizado.\n\nPara nos ajudar a manter a qualidade, como você avalia o atendimento recebido hoje?\n\n*1* - Muito ruim 😡\n*2* - Ruim 🙁\n*3* - Regular 😐\n*4* - Bom 🙂\n*5* - Excelente 🤩\n\n_Responda com uma nota de 1 a 5._',
+  serviceSurveyMessage:
+    '✂️ *Pesquisa de Satisfação*\nOlá, {nome}! Esperamos que tenha gostado do seu atendimento na *{salao}*!\n\nComo você avalia o serviço/corte realizado por *{profissional}* hoje?\n\n*1* - Muito ruim 😡\n*2* - Ruim 🙁\n*3* - Regular 😐\n*4* - Bom 🙂\n*5* - Excelente 🤩\n\n_Responda com um número de 1 a 5._',
 };
 
 export const DEFAULT_PLANS = [

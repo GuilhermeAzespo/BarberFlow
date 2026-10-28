@@ -1,6 +1,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { whatsAppService } from './whatsapp.service.js';
+import { renderTemplate } from '../../lib/utils.js';
+import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
@@ -50,10 +52,21 @@ export async function triggerAppointmentSurvey(params: {
     // Verifica se o WhatsApp está configurado e conectado para o salão
     const waConfig = await prisma.whatsAppConfig.findUnique({
       where: { tenantId },
-      select: { botEnabled: true, status: true },
+      select: {
+        botEnabled: true,
+        status: true,
+        serviceSurveyEnabled: true,
+        serviceSurveyMessage: true,
+      },
     });
     if (!waConfig || waConfig.status !== 'CONNECTED' || !waConfig.botEnabled) {
       logger.info({ tenantId, appointmentId }, 'Pesquisa pós-corte não enviada: WhatsApp desconectado ou bot desabilitado');
+      return false;
+    }
+
+    // Se o salão desativou a pesquisa de corte/serviço:
+    if (waConfig.serviceSurveyEnabled === false) {
+      logger.info({ tenantId, appointmentId }, 'Pesquisa pós-corte não enviada: desativada nas configurações do salão');
       return false;
     }
 
@@ -77,17 +90,14 @@ export async function triggerAppointmentSurvey(params: {
     const customerFirstName = appointment.customer.name.trim().split(/\s+/)[0] || 'Cliente';
     const profName = appointment.professional?.name ? appointment.professional.name.trim().split(/\s+/)[0] : 'nossa equipe';
 
-    // Pergunta de Nível 1: Nota de 1 a 5
-    const surveyText =
-      `✂️ *Pesquisa de Satisfação*\n` +
-      `Olá, ${customerFirstName}! Esperamos que tenha gostado do seu atendimento na *${appointment.tenant.name}*!\n\n` +
-      `Como você avalia o serviço/corte realizado por *${profName}* hoje?\n\n` +
-      `*1* - Muito ruim 😡\n` +
-      `*2* - Ruim 🙁\n` +
-      `*3* - Regular 😐\n` +
-      `*4* - Bom 🙂\n` +
-      `*5* - Excelente 🤩\n\n` +
-      `_Responda com um número de 1 a 5._`;
+    // Pergunta de Nível 1: Nota de 1 a 5 (com base no template configurado)
+    const rawTemplate = waConfig.serviceSurveyMessage || DEFAULT_WHATSAPP_MESSAGES.serviceSurveyMessage;
+    const surveyText = renderTemplate(rawTemplate, {
+      nome: customerFirstName,
+      profissional: profName,
+      servico: appointment.service.name,
+      salao: appointment.tenant.name,
+    });
 
     // Envia a mensagem no WhatsApp
     const sent = await whatsAppService.sendMessage(tenantId, targetPhone, surveyText);

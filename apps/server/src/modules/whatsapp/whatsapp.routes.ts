@@ -3,10 +3,11 @@ import { z } from 'zod';
 import { DateTime } from 'luxon';
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
-import { normalizePhone } from '../../lib/utils.js';
+import { normalizePhone, renderTemplate } from '../../lib/utils.js';
 import { whatsAppService } from './whatsapp.service.js';
 import { requireRole } from '../../middlewares/auth.js';
 import { findCustomerForContact, formatAttendantShortName } from './whatsapp-customer.js';
+import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
 
 export const whatsAppRouter = Router();
 
@@ -18,6 +19,10 @@ const updateConfigSchema = z.object({
   cancellationMessage: z.string().trim().min(5).optional(),
   reminderEnabled: z.boolean().optional(),
   reminderHoursBefore: z.number().int().min(1).max(48).optional(),
+  attendantSurveyEnabled: z.boolean().optional(),
+  attendantSurveyMessage: z.string().trim().min(5).optional(),
+  serviceSurveyEnabled: z.boolean().optional(),
+  serviceSurveyMessage: z.string().trim().min(5).optional(),
 });
 
 const sendTestSchema = z.object({
@@ -68,7 +73,13 @@ whatsAppRouter.get('/config', async (req, res) => {
     where: { tenantId },
   });
   if (!config) throw HttpError.notFound('Configuração do WhatsApp não encontrada');
-  res.json({ config });
+  res.json({
+    config: {
+      ...config,
+      attendantSurveyMessage: config.attendantSurveyMessage || DEFAULT_WHATSAPP_MESSAGES.attendantSurveyMessage,
+      serviceSurveyMessage: config.serviceSurveyMessage || DEFAULT_WHATSAPP_MESSAGES.serviceSurveyMessage,
+    },
+  });
 });
 
 // Atualizar mensagens e regras do bot
@@ -457,17 +468,61 @@ whatsAppRouter.post('/conversations/:id/close', async (req, res) => {
   }
   const attendantShortName = formatAttendantShortName(rawSenderName);
 
-  // Pesquisa de Satisfação referente ao atendimento humano (Nível 1: Nota de 1 a 5)
-  const surveyMessage =
-    `👋 *Atendimento Encerrado*\n` +
-    `Seu atendimento com *${attendantShortName}* foi finalizado.\n\n` +
-    `Para nos ajudar a manter a qualidade, como você avalia o atendimento recebido hoje?\n\n` +
-    `*1* - Muito ruim 😡\n` +
-    `*2* - Ruim 🙁\n` +
-    `*3* - Regular 😐\n` +
-    `*4* - Bom 🙂\n` +
-    `*5* - Excelente 🤩\n\n` +
-    `_Responda com uma nota de 1 a 5._`;
+  const [waConfig, tenant] = await Promise.all([
+    prisma.whatsAppConfig.findUnique({ where: { tenantId } }),
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+  ]);
+
+  // Se a pesquisa de atendimento estiver DESATIVADA nas configurações do salão:
+  if (waConfig?.attendantSurveyEnabled === false) {
+    const exitNotice = `👋 *Atendimento Encerrado*\nSeu atendimento com *${attendantShortName}* foi finalizado. O assistente virtual da *${tenant?.name || 'BarberFlow'}* foi reativado.\n\nEnvie *menu* quando desejar ver opções e horários! 💈`;
+    await whatsAppService.sendMessage(tenantId, target, exitNotice).catch(() => null);
+
+    await prisma.whatsAppMessage.create({
+      data: {
+        tenantId,
+        conversationId: id,
+        contactJid: conversation.contactJid,
+        fromMe: true,
+        senderType: 'SYSTEM',
+        body: `Atendimento humano encerrado por ${attendantShortName}. Conversa devolvida ao robô.`,
+        status: 'SENT',
+      },
+    });
+
+    await prisma.whatsAppMessage.create({
+      data: {
+        tenantId,
+        conversationId: id,
+        contactJid: conversation.contactJid,
+        fromMe: true,
+        senderType: 'BOT',
+        body: exitNotice,
+        status: 'SENT',
+      },
+    });
+
+    const updated = await prisma.whatsAppConversation.update({
+      where: { id },
+      data: {
+        isAttendant: false,
+        state: 'MENU',
+        context: {},
+        lastMessage: exitNotice,
+        lastMessageAt: new Date(),
+      },
+    });
+
+    return res.json({ success: true, conversation: updated, surveySent: false });
+  }
+
+  // Pesquisa de Satisfação ativada: renderiza com o template configurado
+  const rawTemplate = waConfig?.attendantSurveyMessage || DEFAULT_WHATSAPP_MESSAGES.attendantSurveyMessage;
+  const surveyMessage = renderTemplate(rawTemplate, {
+    atendente: attendantShortName,
+    nome: conversation.contactName || 'Cliente',
+    salao: tenant?.name || 'nosso salão',
+  });
 
   // Envia no WhatsApp se conectado
   await whatsAppService.sendMessage(tenantId, target, surveyMessage).catch(() => null);
@@ -514,7 +569,7 @@ whatsAppRouter.post('/conversations/:id/close', async (req, res) => {
     },
   });
 
-  return res.json({ success: true, conversation: updated });
+  return res.json({ success: true, conversation: updated, surveySent: true });
 });
 
 // Listar pesquisas de satisfação do salão

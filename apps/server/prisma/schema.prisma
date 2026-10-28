@@ -414,6 +414,10 @@ model WhatsAppConfig {
   cancellationMessage String         @db.Text
   reminderEnabled     Boolean        @default(true)
   reminderHoursBefore Int            @default(2)
+  attendantSurveyEnabled Boolean     @default(true)
+  attendantSurveyMessage String?     @db.Text
+  serviceSurveyEnabled   Boolean     @default(true)
+  serviceSurveyMessage   String?     @db.Text
   lastConnectedAt     DateTime?
   lastDisconnectedAt  DateTime?
   lastError           String?
