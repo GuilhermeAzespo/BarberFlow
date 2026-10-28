@@ -202,23 +202,34 @@ export async function handleIncomingMessage(params: {
   }
 
   // Comandos de reinício
-  if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'olá' || cleanText === 'ola' || cleanText === 'oi' || cleanText === 'voltar' || cleanText === 'cancelar') {
-    await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+  if (state.startsWith('SURVEY_')) {
+    if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'cancelar' || cleanText === 'voltar') {
+      await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+      await sendMenu(reply, tenant, waConfig, finalCustomerName);
+      return;
+    }
+  } else if (cleanText === 'menu' || cleanText === 'inicio' || cleanText === 'olá' || cleanText === 'ola' || cleanText === 'oi' || cleanText === 'voltar') {
+    await updateConversation(tenantId, senderJid, 'MENU', {});
     await sendMenu(reply, tenant, waConfig, finalCustomerName);
     return;
   }
 
-  // Falar com atendente (opção 5 do menu ou comando textual)
-  if (
-    (state === 'MENU' && rawInput === '5') ||
-    cleanText === '5' ||
-    cleanText === 'atendente' ||
-    cleanText === 'falar com atendente' ||
-    cleanText === 'falar com o atendente' ||
-    cleanText === 'falar com um atendente' ||
-    cleanText === 'humano' ||
-    cleanText === 'suporte'
-  ) {
+  // Falar com atendente:
+  // - Opção 5 do menu principal (apenas quando state for MENU)
+  // - Ou solicitação explícita por palavras-chave ("atendente", "falar com atendente", etc.)
+  // IMPORTANTE: Se o cliente estiver respondendo a uma pesquisa (SURVEY_), notas numéricas (1 a 5) JAMAIS acionam o atendente!
+  const isMenuOption5 = state === 'MENU' && (rawInput === '5' || cleanText === '5');
+  const isExplicitAttendantRequest =
+    !state.startsWith('SURVEY_') &&
+    (cleanText === 'atendente' ||
+      cleanText === 'falar com atendente' ||
+      cleanText === 'falar com o atendente' ||
+      cleanText === 'falar com um atendente' ||
+      cleanText === 'falar com atendente humano' ||
+      cleanText === 'humano' ||
+      cleanText === 'suporte');
+
+  if (isMenuOption5 || isExplicitAttendantRequest) {
     await updateConversation(tenantId, senderJid, 'HUMAN_ATTENDANT', {}, true);
 
     // Registra aviso de sistema no histórico da conversa para o painel de atendimento
@@ -650,12 +661,12 @@ export async function handleIncomingMessage(params: {
         },
       });
 
-      // Avança para o Nível 2: Detalhes ou sugestão de melhoria
+      // Avança para o Nível 2: Detalhes ou sugestão de melhoria (garantindo isAttendant = false)
       await updateConversation(tenantId, senderJid, 'SURVEY_ATTENDANT_FEEDBACK', {
         ...context,
         surveyId: survey.id,
         surveyStartedAt: Date.now(),
-      });
+      }, false);
 
       await reply(
         `Obrigado pela sua nota! ⭐\n\n` +
@@ -718,12 +729,12 @@ export async function handleIncomingMessage(params: {
         },
       });
 
-      // Avança para o Nível 2: Detalhes ou sugestão de melhoria
+      // Avança para o Nível 2: Detalhes ou sugestão de melhoria (garantindo isAttendant = false)
       await updateConversation(tenantId, senderJid, 'SURVEY_SERVICE_FEEDBACK', {
         ...context,
         surveyId: survey.id,
         surveyStartedAt: Date.now(),
-      });
+      }, false);
 
       await reply(
         `Obrigado pela sua nota! ⭐\n\n` +

@@ -128,6 +128,7 @@ function ChatPageContent() {
   const [todayMessagesCount, setTodayMessagesCount] = useState(0);
   const [showingAllHistory, setShowingAllHistory] = useState(false);
   const [closingChat, setClosingChat] = useState(false);
+  const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
   const [inputText, setInputText] = useState('');
   const [loadingList, setLoadingList] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -288,14 +289,15 @@ function ChatPageContent() {
     }
   };
 
-  // Fechar chat do atendimento e disparar pesquisa de satisfação
-  const handleCloseChat = async () => {
+  // Abrir modal customizado de encerramento
+  const handleOpenCloseModal = () => {
     if (!selectedConv || closingChat) return;
+    setIsCloseModalOpen(true);
+  };
 
-    const confirmed = window.confirm(
-      `Deseja realmente encerrar o atendimento com ${selectedConv.contactName || 'o cliente'}?\n\nIsso devolverá a conversa ao robô e enviará automaticamente a pesquisa de satisfação referente ao suporte.`
-    );
-    if (!confirmed) return;
+  // Confirmar encerramento do atendimento e disparar pesquisa de satisfação
+  const handleConfirmCloseChat = async () => {
+    if (!selectedConv || closingChat) return;
 
     setClosingChat(true);
     try {
@@ -309,6 +311,7 @@ function ChatPageContent() {
         )
       );
       await loadMessages(selectedConv.id, true);
+      setIsCloseModalOpen(false);
       toast.success('Atendimento encerrado com sucesso! Pesquisa de satisfação enviada ao cliente.');
     } catch (err: unknown) {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao encerrar atendimento.');
@@ -827,7 +830,7 @@ function ChatPageContent() {
                     {selectedConv.isAttendant && (
                       <button
                         type="button"
-                        onClick={handleCloseChat}
+                        onClick={handleOpenCloseModal}
                         disabled={closingChat}
                         style={{
                           padding: '6px 12px',
@@ -1291,6 +1294,196 @@ function ChatPageContent() {
           </main>
         </div>
       </div>
+
+      {/* ──────────────── MODAL LUXUOSO: CONFIRMAÇÃO DE ENCERRAMENTO & PESQUISA ──────────────── */}
+      {isCloseModalOpen && selectedConv && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            backgroundColor: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            animation: 'fadeIn 0.2s ease-out',
+          }}
+          onClick={() => !closingChat && setIsCloseModalOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              backgroundColor: '#0F1626',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.75), 0 0 35px rgba(239, 68, 68, 0.15)',
+              borderRadius: '16px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '18px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Topo com Ícone e Título */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+              <div
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#F87171',
+                  flexShrink: 0,
+                }}
+              >
+                <CheckCheck size={22} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h3 style={{ margin: 0, fontSize: '1.10rem', fontWeight: 800, color: '#FFFFFF' }}>
+                  Encerrar Atendimento
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                  Deseja realmente encerrar o atendimento com{' '}
+                  <strong style={{ color: '#FBBF24' }}>
+                    {selectedConv.contactName || (selectedConv.phone ? formatPhoneDisplay(selectedConv.phone) : 'o cliente')}
+                  </strong>?
+                </p>
+              </div>
+            </div>
+
+            {/* Cartões Informativos sobre a Ação */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#34D399',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Bot size={16} />
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#E2E8F0', lineHeight: 1.4 }}>
+                  <strong>Devolução para o Robô:</strong> o assistente virtual reassumirá o WhatsApp e o menu será reativado.
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    background: 'rgba(229, 179, 56, 0.15)',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#E5B338',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Sparkles size={16} />
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#E2E8F0', lineHeight: 1.4 }}>
+                  <strong>Pesquisa de Satisfação:</strong> o cliente receberá a avaliação de 1 a 5 e o espaço para sugestão de melhoria.
+                </div>
+              </div>
+            </div>
+
+            {/* Botões de Ação */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={() => !closingChat && setIsCloseModalOpen(false)}
+                disabled={closingChat}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: 'var(--text-muted)',
+                  cursor: closingChat ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#FFFFFF')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmCloseChat}
+                disabled={closingChat}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)',
+                  border: '1px solid rgba(239, 68, 68, 0.5)',
+                  color: '#FFFFFF',
+                  cursor: closingChat ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {closingChat ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Encerrando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCheck size={14} />
+                    <span>Confirmar e Encerrar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
