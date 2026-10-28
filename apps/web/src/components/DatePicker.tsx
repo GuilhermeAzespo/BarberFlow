@@ -82,6 +82,7 @@ export function DatePicker({
   style,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [position, setPosition] = useState<MenuPosition | null>(null);
 
   const parsedValue = useMemo(() => parseYMD(value), [value]);
@@ -191,6 +192,7 @@ export function DatePicker({
   const handleSelectDay = (day: number) => {
     const selected = new Date(viewYear, viewMonth, day);
     onChange(formatYMD(selected));
+    closePicker();
   };
 
   const handleSelectToday = () => {
@@ -198,6 +200,7 @@ export function DatePicker({
     setViewYear(today.getFullYear());
     setViewMonth(today.getMonth());
     onChange(formatYMD(today));
+    closePicker();
   };
 
   const handleClear = (e: React.MouseEvent) => {
@@ -263,6 +266,8 @@ export function DatePicker({
         type="button"
         disabled={disabled}
         onClick={togglePicker}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         className={className}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -273,13 +278,13 @@ export function DatePicker({
           justifyContent: 'space-between',
           gap: '10px',
           padding: '8px 14px',
-          background: open ? 'rgba(229, 179, 56, 0.08)' : 'rgba(0, 0, 0, 0.45)',
-          border: `1px solid ${open ? 'var(--primary)' : 'var(--border-color)'}`,
+          background: open ? 'rgba(229, 179, 56, 0.08)' : isHovered ? '#151c2c' : 'var(--bg-input)',
+          border: `1px solid ${open ? 'var(--primary)' : isHovered ? 'rgba(229, 179, 56, 0.35)' : 'var(--border-color)'}`,
           borderRadius: '8px',
           color: displayValue ? '#F3F4F6' : 'var(--text-dim)',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          boxShadow: open ? '0 0 0 2px rgba(229, 179, 56, 0.25)' : 'none',
-          transition: 'all 0.15s ease-in-out',
+          boxShadow: open ? '0 0 0 3px var(--primary-glow)' : 'none',
+          transition: 'border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease',
           textAlign: 'left',
           outline: 'none',
           userSelect: 'none',
@@ -290,7 +295,7 @@ export function DatePicker({
         <span
           style={{
             fontFamily: 'monospace, monospace',
-            fontSize: '0.94rem',
+            fontSize: triggerStyle.fontSize ?? '0.94rem',
             fontWeight: 700,
             letterSpacing: '0.04em',
             color: displayValue ? '#F9FAFB' : 'var(--text-dim)',
@@ -500,6 +505,7 @@ export function DatePicker({
                           setViewMonth(parsed.getMonth());
                         }
                       }
+                      closePicker();
                     }}
                     style={{
                       aspectRatio: '1 / 1',

@@ -31,6 +31,8 @@ import { api, ApiError } from '../../lib/api';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { useToast } from '../../components/Toast';
+import { Select } from '../../components/Select';
+import { DatePicker } from '../../components/DatePicker';
 
 type ActiveTab = 'satisfaction' | 'cuts' | 'appointments';
 type DatePreset = 'TODAY' | '7D' | '30D' | 'MONTH' | 'LAST_MONTH' | 'YEAR';
@@ -537,114 +539,92 @@ export default function ReportsPage() {
             {/* Inputs de Data Customizada e Seletores de Profissional */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>De:</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => {
-                    setStartDate(e.target.value);
-                    setDatePreset('MONTH'); // desmarca preset
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    background: 'rgba(0, 0, 0, 0.35)',
-                    border: '1px solid var(--border-color)',
-                    color: '#F3F4F6',
-                    fontSize: '0.82rem',
-                  }}
-                />
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600 }}>De:</span>
+                <div style={{ width: '155px' }}>
+                  <DatePicker
+                    value={startDate}
+                    onChange={(val) => {
+                      if (val) {
+                        setStartDate(val);
+                        setDatePreset('MONTH');
+                      }
+                    }}
+                    placeholder="DD/MM/AAAA"
+                    style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Até:</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => {
-                    setEndDate(e.target.value);
-                    setDatePreset('MONTH');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    background: 'rgba(0, 0, 0, 0.35)',
-                    border: '1px solid var(--border-color)',
-                    color: '#F3F4F6',
-                    fontSize: '0.82rem',
-                  }}
-                />
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600 }}>Até:</span>
+                <div style={{ width: '155px' }}>
+                  <DatePicker
+                    value={endDate}
+                    onChange={(val) => {
+                      if (val) {
+                        setEndDate(val);
+                        setDatePreset('MONTH');
+                      }
+                    }}
+                    placeholder="DD/MM/AAAA"
+                    style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                  />
+                </div>
               </div>
 
               {/* Filtro por Profissional */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '220px' }}>
-                <Users size={16} color="var(--primary)" />
-                <select
-                  value={selectedProfessionalId}
-                  onChange={(e) => setSelectedProfessionalId(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: '7px 10px',
-                    borderRadius: '6px',
-                    background: 'rgba(0, 0, 0, 0.35)',
-                    border: '1px solid var(--border-color)',
-                    color: '#F3F4F6',
-                    fontSize: '0.82rem',
-                  }}
-                >
-                  <option value="">Todos os Barbeiros</option>
-                  {professionalsList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <Users size={16} color="var(--primary)" style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <Select
+                    value={selectedProfessionalId}
+                    onChange={(e) => setSelectedProfessionalId(e.target.value)}
+                    style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                  >
+                    <option value="">Todos os Barbeiros</option>
+                    {professionalsList.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
 
               {/* Sub-filtros para Pesquisa de Satisfação */}
               {activeTab === 'satisfaction' && (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Canal:</span>
-                    <select
-                      value={surveyTypeFilter}
-                      onChange={(e) => setSurveyTypeFilter(e.target.value as 'ALL' | 'ATTENDANT' | 'SERVICE')}
-                      style={{
-                        padding: '7px 10px',
-                        borderRadius: '6px',
-                        background: 'rgba(0, 0, 0, 0.35)',
-                        border: '1px solid var(--border-color)',
-                        color: '#F3F4F6',
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      <option value="ALL">Todas as Pesquisas</option>
-                      <option value="ATTENDANT">Atendimento Humano</option>
-                      <option value="SERVICE">Pós-Corte (Barbeiro)</option>
-                    </select>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600 }}>Canal:</span>
+                    <div style={{ width: '190px' }}>
+                      <Select
+                        value={surveyTypeFilter}
+                        onChange={(e) => setSurveyTypeFilter(e.target.value as 'ALL' | 'ATTENDANT' | 'SERVICE')}
+                        style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                      >
+                        <option value="ALL">Todas as Pesquisas</option>
+                        <option value="ATTENDANT">Atendimento Humano</option>
+                        <option value="SERVICE">Pós-Corte (Barbeiro)</option>
+                      </Select>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Nota:</span>
-                    <select
-                      value={surveyRatingFilter}
-                      onChange={(e) => setSurveyRatingFilter(e.target.value)}
-                      style={{
-                        padding: '7px 10px',
-                        borderRadius: '6px',
-                        background: 'rgba(0, 0, 0, 0.35)',
-                        border: '1px solid var(--border-color)',
-                        color: '#F3F4F6',
-                        fontSize: '0.82rem',
-                      }}
-                    >
-                      <option value="ALL">Todas as Notas (1 a 5)</option>
-                      <option value="5">Nota 5 - Excelente 🤩</option>
-                      <option value="4">Nota 4 - Bom 🙂</option>
-                      <option value="3">Nota 3 - Regular 😐</option>
-                      <option value="2">Nota 2 - Ruim 🙁</option>
-                      <option value="1">Nota 1 - Muito Ruim 😡</option>
-                    </select>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600 }}>Nota:</span>
+                    <div style={{ width: '200px' }}>
+                      <Select
+                        value={surveyRatingFilter}
+                        onChange={(e) => setSurveyRatingFilter(e.target.value)}
+                        style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                      >
+                        <option value="ALL">Todas as Notas (1 a 5)</option>
+                        <option value="5">Nota 5 - Excelente 🤩</option>
+                        <option value="4">Nota 4 - Bom 🙂</option>
+                        <option value="3">Nota 3 - Regular 😐</option>
+                        <option value="2">Nota 2 - Ruim 🙁</option>
+                        <option value="1">Nota 1 - Muito Ruim 😡</option>
+                      </Select>
+                    </div>
                   </div>
                 </>
               )}
@@ -652,26 +632,21 @@ export default function ReportsPage() {
               {/* Sub-filtros para Agendamentos */}
               {activeTab === 'appointments' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Status:</span>
-                  <select
-                    value={appointmentStatusFilter}
-                    onChange={(e) => setAppointmentStatusFilter(e.target.value)}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: '6px',
-                      background: 'rgba(0, 0, 0, 0.35)',
-                      border: '1px solid var(--border-color)',
-                      color: '#F3F4F6',
-                      fontSize: '0.82rem',
-                    }}
-                  >
-                    <option value="ALL">Todos os Status</option>
-                    <option value="COMPLETED">Realizados (Concluídos)</option>
-                    <option value="SCHEDULED">Agendados</option>
-                    <option value="CONFIRMED">Confirmados</option>
-                    <option value="CANCELED">Cancelados</option>
-                    <option value="NO_SHOW">Não Compareceu (No-Show)</option>
-                  </select>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600 }}>Status:</span>
+                  <div style={{ width: '220px' }}>
+                    <Select
+                      value={appointmentStatusFilter}
+                      onChange={(e) => setAppointmentStatusFilter(e.target.value)}
+                      style={{ padding: '7px 12px', fontSize: '0.85rem' }}
+                    >
+                      <option value="ALL">Todos os Status</option>
+                      <option value="COMPLETED">Realizados (Concluídos)</option>
+                      <option value="SCHEDULED">Agendados</option>
+                      <option value="CONFIRMED">Confirmados</option>
+                      <option value="CANCELED">Cancelados</option>
+                      <option value="NO_SHOW">Não Compareceu (No-Show)</option>
+                    </Select>
+                  </div>
                 </div>
               )}
             </div>
