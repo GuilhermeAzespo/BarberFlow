@@ -491,7 +491,15 @@ export default function SettingsPage() {
             breakEnd: hasBreak ? groupBreakEnd : null,
           };
         }
-        return h;
+        // Dias que não foram selecionados no grupo passam para FECHADO
+        return {
+          ...h,
+          isOpen: false,
+          openTime: h.openTime || '09:00',
+          closeTime: h.closeTime || '19:00',
+          breakStart: null,
+          breakEnd: null,
+        };
       });
 
       // Salva imediatamente no banco de dados para garantir persistência mesmo após refresh
@@ -499,8 +507,8 @@ export default function SettingsPage() {
         businessHours: updatedHours.map((h) => ({
           weekday: h.weekday,
           isOpen: h.isOpen,
-          openTime: h.openTime,
-          closeTime: h.closeTime,
+          openTime: h.openTime || '09:00',
+          closeTime: h.closeTime || '19:00',
           breakStart: h.isOpen && h.breakStart ? h.breakStart : null,
           breakEnd: h.isOpen && h.breakEnd ? h.breakEnd : null,
         })),
