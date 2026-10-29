@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { Select } from '../../components/Select';
 
 export default function ContatoPage() {
   const { toast } = useToast();
@@ -311,18 +312,12 @@ export default function ContatoPage() {
                   <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-main)' }}>
                     Assunto do Contato
                   </label>
-                  <select
+                  <Select
                     value={form.subject}
                     onChange={(e) => setForm({ ...form, subject: e.target.value })}
                     style={{
-                      width: '100%',
                       padding: '12px 14px',
-                      borderRadius: '8px',
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
                       fontSize: '0.9rem',
-                      outline: 'none',
                     }}
                   >
                     <option value="Contratação / Dúvida Comercial">Quero Contratar / Dúvida Comercial</option>
@@ -331,7 +326,7 @@ export default function ContatoPage() {
                     <option value="Privacidade & LGPD">Privacidade, Dados & LGPD</option>
                     <option value="Parcerias e Integrações">Parcerias e Integrações</option>
                     <option value="Outro assunto">Outro Assunto</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div>
@@ -458,7 +453,7 @@ export default function ContatoPage() {
                   <Mail size={18} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
                   <div>
                     <strong style={{ color: 'var(--text-main)', display: 'block' }}>E-mail de Suporte</strong>
-                    <span style={{ color: 'var(--text-muted)' }}>contato@barberflow.com.br</span>
+                    <span style={{ color: 'var(--text-muted)' }}>contato@azespo.com.br</span>
                   </div>
                 </div>
 

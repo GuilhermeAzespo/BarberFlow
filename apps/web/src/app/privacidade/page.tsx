@@ -203,7 +203,7 @@ export default function PrivacidadePage() {
           <div className="glass-card" style={{ marginTop: '16px', padding: '20px', borderColor: 'rgba(229, 179, 56, 0.4)' }}>
             <p style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
               <Mail size={16} color="var(--primary)" />
-              <span><strong>E-mail de Privacidade:</strong> privacidade@barberflow.com.br</span>
+              <span><strong>E-mail de Privacidade & Atendimento:</strong> contato@azespo.com.br</span>
             </p>
             <p style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <UserCheck size={16} color="var(--primary)" />

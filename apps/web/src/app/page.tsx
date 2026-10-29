@@ -1472,7 +1472,7 @@ export default function LandingPage() {
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
               <li>
                 <span style={{ display: 'block', color: 'var(--text-dim)', fontSize: '0.8rem' }}>E-mail:</span>
-                <a href="mailto:contato@barberflow.com.br" style={{ color: 'var(--primary)' }}>contato@barberflow.com.br</a>
+                <a href="mailto:contato@azespo.com.br" style={{ color: 'var(--primary)' }}>contato@azespo.com.br</a>
               </li>
               <li>
                 <span style={{ display: 'block', color: 'var(--text-dim)', fontSize: '0.8rem' }}>WhatsApp Suporte:</span>
