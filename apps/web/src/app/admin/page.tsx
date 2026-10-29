@@ -53,6 +53,7 @@ import { DateTime } from 'luxon';
 const PERMISSION_METADATA: Array<{
   key: keyof PlanPermissions;
   label: string;
+  shortLabel: string;
   description: string;
   category: string;
   icon: React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>;
@@ -60,6 +61,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'reports',
     label: 'Central de Relatórios & Inteligência',
+    shortLabel: 'Relatórios & BI',
     description: 'Acesso à aba /reports com gráficos de satisfação, produtividade de barbeiros e agendamentos',
     category: 'Relatórios & Inteligência',
     icon: BarChart3,
@@ -67,6 +69,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'satisfactionSurveys',
     label: 'Pesquisas de Satisfação Automatizadas',
+    shortLabel: 'Pesquisas CSAT/NPS',
     description: 'Disparo de avaliação CSAT e NPS para atendente e serviço pós-corte no WhatsApp',
     category: 'WhatsApp & Atendimento',
     icon: Star,
@@ -74,6 +77,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'customBotMessages',
     label: 'Personalização de Mensagens do Bot WhatsApp',
+    shortLabel: 'Bot Personalizado',
     description: 'Permite editar mensagens de boas-vindas, confirmação, cancelamento e lembretes',
     category: 'WhatsApp & Atendimento',
     icon: MessageSquare,
@@ -81,6 +85,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'financialExport',
     label: 'Exportação de Dados e Relatórios em CSV',
+    shortLabel: 'Exportação CSV',
     description: 'Download de planilhas CSV do fluxo de caixa e relatórios analíticos completos',
     category: 'Gestão Financeira',
     icon: Download,
@@ -88,6 +93,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'commissions',
     label: 'Divisão e Comissões de Barbeiros',
+    shortLabel: 'Comissões',
     description: 'Cálculo e rateio automático de comissão por serviço e profissional',
     category: 'Gestão Financeira',
     icon: Percent,
@@ -95,6 +101,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'customDomain',
     label: 'Domínio Próprio & DNS Personalizado',
+    shortLabel: 'Domínio Próprio',
     description: 'Conectar endereço exclusivo do salão com SSL (ex: agendar.seusalão.com.br)',
     category: 'Vitrine & Marca',
     icon: Globe,
@@ -102,6 +109,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'multiUserRoles',
     label: 'Perfis de Acesso de Equipe',
+    shortLabel: 'Perfis de Equipe',
     description: 'Criação de logins com restrição para recepcionistas, gerentes e barbeiros',
     category: 'Gestão de Equipe',
     icon: Users,
@@ -109,6 +117,7 @@ const PERMISSION_METADATA: Array<{
   {
     key: 'prioritySupport',
     label: 'Suporte VIP Prioritário',
+    shortLabel: 'Suporte VIP',
     description: 'Canal preferencial de atendimento rápido e dedicado via WhatsApp',
     category: 'Atendimento',
     icon: Crown,
@@ -1238,7 +1247,7 @@ export default function SuperAdminPage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))',
                 gap: '24px',
               }}
             >
@@ -1324,40 +1333,59 @@ export default function SuperAdminPage() {
                       </div>
 
                       {/* Módulos e Permissões do Sistema */}
-                      <div style={{ marginBottom: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Módulos & Permissões ({activePermCount}/{PERMISSION_METADATA.length})
+                      <div
+                        style={{
+                          marginBottom: '20px',
+                          padding: '12px 14px',
+                          background: 'rgba(255, 255, 255, 0.02)',
+                          borderRadius: '10px',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <ShieldCheck size={14} color="var(--primary)" />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              Módulos do Sistema
+                            </span>
+                          </div>
+                          <span
+                            className={activePermCount === PERMISSION_METADATA.length ? 'badge badge-success' : activePermCount > 0 ? 'badge badge-warning' : 'badge badge-neutral'}
+                            style={{ fontSize: '0.7rem', padding: '2px 7px', fontWeight: 700 }}
+                          >
+                            {activePermCount} de {PERMISSION_METADATA.length} liberados
                           </span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+
+                        {/* Chips flexíveis que quebram de linha naturalmente sem truncar ou estourar */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {PERMISSION_METADATA.map((meta) => {
                             const isAllowed = Boolean(planPermissions[meta.key]);
                             return (
-                              <div
+                              <span
                                 key={meta.key}
                                 style={{
-                                  display: 'flex',
+                                  display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '6px',
-                                  padding: '5px 8px',
+                                  gap: '5px',
+                                  padding: '4px 8px',
                                   borderRadius: '6px',
-                                  fontSize: '0.74rem',
-                                  background: isAllowed ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                                  border: isAllowed ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
-                                  color: isAllowed ? '#10B981' : 'var(--text-dim)',
+                                  fontSize: '0.73rem',
+                                  fontWeight: isAllowed ? 600 : 500,
+                                  background: isAllowed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.025)',
+                                  border: isAllowed ? '1px solid rgba(16, 185, 129, 0.28)' : '1px solid rgba(255, 255, 255, 0.06)',
+                                  color: isAllowed ? '#34D399' : 'var(--text-dim)',
+                                  lineHeight: 1.2,
                                 }}
-                                title={meta.description}
+                                title={`${meta.label}: ${isAllowed ? 'Liberado neste plano' : 'Bloqueado (requer upgrade)'}`}
                               >
                                 {isAllowed ? (
-                                  <CheckCircle2 size={13} color="#10B981" style={{ flexShrink: 0 }} />
+                                  <CheckCircle2 size={12} color="#10B981" style={{ flexShrink: 0 }} />
                                 ) : (
-                                  <Lock size={12} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+                                  <Lock size={11} color="var(--text-dim)" style={{ flexShrink: 0 }} />
                                 )}
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {meta.label}
-                                </span>
-                              </div>
+                                <span>{meta.shortLabel}</span>
+                              </span>
                             );
                           })}
                         </div>
@@ -2813,7 +2841,7 @@ export default function SuperAdminPage() {
               </div>
 
               {/* Grid das Permissões */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
                 {PERMISSION_METADATA.map((meta) => {
                   const isChecked = Boolean(planForm.permissions[meta.key]);
                   const Icon = meta.icon;
