@@ -104,6 +104,7 @@ async function bootstrap() {
       await prisma.plan.update({
         where: { id: existing.id },
         data: {
+          sortOrder: planData.sortOrder,
           features: planData.features,
           badge: planData.badge,
           isHighlighted: planData.isHighlighted,

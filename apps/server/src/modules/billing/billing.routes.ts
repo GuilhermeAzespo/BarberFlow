@@ -57,7 +57,7 @@ billingRouter.get('/status', async (req, res) => {
 
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
   });
 
   res.json({

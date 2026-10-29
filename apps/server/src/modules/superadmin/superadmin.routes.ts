@@ -119,7 +119,9 @@ superAdminRouter.get('/overview', async (_req, res) => {
       where: { status: { in: ['ACTIVE', 'TRIALING'] } },
       include: { plan: { select: { priceCents: true } } },
     }),
-    prisma.plan.findMany({ orderBy: { sortOrder: 'asc' } }),
+    prisma.plan.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
+    }),
   ]);
 
   // Cálculo de MRR (apenas assinaturas ativas)
@@ -472,7 +474,7 @@ superAdminRouter.get('/logs', async (req, res) => {
 // Planos do SaaS: listagem, criação e edição
 superAdminRouter.get('/plans', async (_req, res) => {
   const rawPlans = await prisma.plan.findMany({
-    orderBy: { sortOrder: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
     include: { _count: { select: { subscriptions: true } } },
   });
   const plans = rawPlans.map((p) => ({
@@ -485,9 +487,13 @@ superAdminRouter.get('/plans', async (_req, res) => {
 
 superAdminRouter.post('/plans', async (req, res) => {
   const data = planSchema.parse(req.body);
+  const effectiveSlug = (data.slug || '').toLowerCase();
+  const fixedOrder = effectiveSlug === 'starter' ? 1 : effectiveSlug === 'pro' ? 2 : effectiveSlug === 'premium' ? 3 : data.sortOrder;
+
   const plan = await prisma.plan.create({
     data: {
       ...data,
+      ...(fixedOrder !== undefined ? { sortOrder: fixedOrder } : {}),
       features: (data.features as Prisma.InputJsonValue) ?? undefined,
     },
   });
@@ -502,10 +508,16 @@ superAdminRouter.post('/plans', async (req, res) => {
 
 superAdminRouter.patch('/plans/:id', async (req, res) => {
   const data = planSchema.partial().parse(req.body);
+  const existing = await prisma.plan.findUnique({ where: { id: req.params.id } });
+
+  const effectiveSlug = (data.slug || existing?.slug || '').toLowerCase();
+  const fixedOrder = effectiveSlug === 'starter' ? 1 : effectiveSlug === 'pro' ? 2 : effectiveSlug === 'premium' ? 3 : data.sortOrder;
+
   const plan = await prisma.plan.update({
     where: { id: req.params.id },
     data: {
       ...data,
+      ...(fixedOrder !== undefined ? { sortOrder: fixedOrder } : {}),
       ...(data.features !== undefined ? { features: data.features as Prisma.InputJsonValue } : {}),
     },
   });

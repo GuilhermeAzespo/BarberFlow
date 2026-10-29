@@ -33,8 +33,8 @@ const DEFAULT_HOME_PLANS: PublicPlan[] = [
     id: 'starter',
     name: 'Starter',
     slug: 'starter',
-    description: 'Ideal para barbeiros autônomos que desejam automatizar o WhatsApp.',
-    priceCents: 4990,
+    description: 'Para quem está começando: 1 profissional e bot de WhatsApp.',
+    priceCents: 1999,
     maxProfessionals: 1,
     maxAppointmentsPerMonth: 300,
     whatsappEnabled: true,
@@ -51,8 +51,8 @@ const DEFAULT_HOME_PLANS: PublicPlan[] = [
     id: 'pro',
     name: 'Pro',
     slug: 'pro',
-    description: 'Perfeito para equipes com múltiplos barbeiros e alta demanda.',
-    priceCents: 9990,
+    description: 'Equipes de até 5 profissionais com agendamentos ilimitados.',
+    priceCents: 3999,
     maxProfessionals: 5,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -70,8 +70,8 @@ const DEFAULT_HOME_PLANS: PublicPlan[] = [
     id: 'premium',
     name: 'Premium',
     slug: 'premium',
-    description: 'Para salões de grande porte e redes que necessitam de capacidade total.',
-    priceCents: 19990,
+    description: 'Sem limites para redes e salões de grande porte.',
+    priceCents: 6999,
     maxProfessionals: null,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -86,15 +86,25 @@ const DEFAULT_HOME_PLANS: PublicPlan[] = [
   },
 ];
 
+const sortPlansFixed = <T extends { slug?: string; sortOrder?: number; priceCents?: number }>(list: T[]): T[] => {
+  const ORDER: Record<string, number> = { starter: 1, pro: 2, premium: 3 };
+  return [...list].sort((a, b) => {
+    const orderA = ORDER[(a.slug || '').toLowerCase()] ?? a.sortOrder ?? 99;
+    const orderB = ORDER[(b.slug || '').toLowerCase()] ?? b.sortOrder ?? 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.priceCents || 0) - (b.priceCents || 0);
+  });
+};
+
 export default function LandingPage() {
-  const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_HOME_PLANS);
+  const [plans, setPlans] = useState<PublicPlan[]>(() => sortPlansFixed(DEFAULT_HOME_PLANS));
 
   useEffect(() => {
     api
       .get<{ plans: PublicPlan[] }>('/api/public/plans')
       .then((res) => {
         if (res.plans && res.plans.length > 0) {
-          setPlans(res.plans);
+          setPlans(sortPlansFixed(res.plans));
         }
       })
       .catch(() => {

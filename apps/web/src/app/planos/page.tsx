@@ -70,13 +70,29 @@ const EXPIRATION_MONTHS = [
 const CURRENT_YEAR = new Date().getFullYear();
 const EXPIRATION_YEARS = Array.from({ length: 16 }, (_, i) => String(CURRENT_YEAR + i));
 
+const sortPlansFixed = <T extends { slug?: string; sortOrder?: number; priceCents?: number }>(list: T[]): T[] => {
+  const ORDER: Record<string, number> = {
+    starter: 1,
+    pro: 2,
+    premium: 3,
+  };
+  return [...list].sort((a, b) => {
+    const slugA = (a.slug || '').toLowerCase();
+    const slugB = (b.slug || '').toLowerCase();
+    const orderA = ORDER[slugA] ?? a.sortOrder ?? 99;
+    const orderB = ORDER[slugB] ?? b.sortOrder ?? 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.priceCents || 0) - (b.priceCents || 0);
+  });
+};
+
 const DEFAULT_PLANS: PublicPlan[] = [
   {
     id: 'starter',
     name: 'Starter',
     slug: 'starter',
     description: 'Ideal para barbeiros autônomos que desejam automatizar o WhatsApp e agendamentos.',
-    priceCents: 4990,
+    priceCents: 1999,
     maxProfessionals: 1,
     maxAppointmentsPerMonth: 300,
     whatsappEnabled: true,
@@ -96,7 +112,7 @@ const DEFAULT_PLANS: PublicPlan[] = [
     name: 'Pro',
     slug: 'pro',
     description: 'Perfeito para barbearias em expansão com equipe de barbeiros e alta demanda.',
-    priceCents: 9990,
+    priceCents: 3999,
     maxProfessionals: 5,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -118,7 +134,7 @@ const DEFAULT_PLANS: PublicPlan[] = [
     name: 'Premium',
     slug: 'premium',
     description: 'Para salões consolidados, franquias e redes que necessitam de escala máxima.',
-    priceCents: 19990,
+    priceCents: 6999,
     maxProfessionals: null,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -326,7 +342,7 @@ interface PaymentHistoryItem {
 export default function PlanosPage() {
   const { tenant, subscription, refresh } = useAuth();
   const { toast } = useToast();
-  const [plans, setPlans] = useState<PublicPlan[]>(DEFAULT_PLANS);
+  const [plans, setPlans] = useState<PublicPlan[]>(sortPlansFixed(DEFAULT_PLANS));
   const [activeProfsCount, setActiveProfsCount] = useState<number>(1);
   const [billingInfo, setBillingInfo] = useState<BillingStatusResponse | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
@@ -368,7 +384,7 @@ export default function PlanosPage() {
       const res = await api.get<BillingStatusResponse>('/api/billing/status');
       setBillingInfo(res);
       if (res.plans && res.plans.length > 0) {
-        setPlans(res.plans);
+        setPlans(sortPlansFixed(res.plans));
       }
     } catch {
       // Ignora erro
@@ -930,7 +946,7 @@ export default function PlanosPage() {
                 alignItems: 'stretch',
               }}
             >
-              {plans.map((p) => {
+              {sortPlansFixed(plans).map((p) => {
                 const isCurrent = currentPlanSlug === p.slug.toLowerCase();
                 const isProCard = p.slug.toLowerCase() === 'pro';
 

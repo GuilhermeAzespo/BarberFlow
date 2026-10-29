@@ -291,7 +291,7 @@ publicRouter.post('/tenants/by-slug/:slug/appointments', async (req, res) => {
 publicRouter.get('/plans', async (_req, res) => {
   const plans = await prisma.plan.findMany({
     where: { isActive: true },
-    orderBy: { sortOrder: 'asc' },
+    orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
     select: {
       id: true,
       name: true,

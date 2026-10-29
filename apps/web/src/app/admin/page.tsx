@@ -192,6 +192,16 @@ interface PlanItem {
   };
 }
 
+const sortPlansFixed = <T extends { slug?: string; sortOrder?: number; priceCents?: number }>(list: T[]): T[] => {
+  const ORDER: Record<string, number> = { starter: 1, pro: 2, premium: 3 };
+  return [...list].sort((a, b) => {
+    const orderA = ORDER[(a.slug || '').toLowerCase()] ?? a.sortOrder ?? 99;
+    const orderB = ORDER[(b.slug || '').toLowerCase()] ?? b.sortOrder ?? 99;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.priceCents || 0) - (b.priceCents || 0);
+  });
+};
+
 interface TenantItem {
   id: string;
   name: string;
@@ -355,7 +365,7 @@ export default function SuperAdminPage() {
     try {
       const res = await api.get<SuperAdminOverview>('/api/superadmin/overview');
       setOverview(res);
-      if (res.plans) setPlans(res.plans);
+      if (res.plans) setPlans(sortPlansFixed(res.plans));
     } catch {
       // Ignora erro
     }
@@ -376,7 +386,7 @@ export default function SuperAdminPage() {
   const loadPlans = async () => {
     try {
       const res = await api.get<{ plans: PlanItem[] }>('/api/superadmin/plans');
-      setPlans(res.plans);
+      setPlans(sortPlansFixed(res.plans));
     } catch {
       // Ignora erro
     }
@@ -1251,7 +1261,7 @@ export default function SuperAdminPage() {
                 gap: '24px',
               }}
             >
-              {plans.map((p) => {
+              {sortPlansFixed(plans).map((p) => {
                 const features: string[] =
                   p.featureList && p.featureList.length > 0
                     ? p.featureList
@@ -2604,7 +2614,7 @@ export default function SuperAdminPage() {
                 Alterar Plano do Salão *
               </label>
               <Select value={selectedPlanId} onChange={(e) => setSelectedPlanId(e.target.value)}>
-                {plans.map((p) => (
+                {sortPlansFixed(plans).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} — {formatBRL(p.priceCents)}/mês ({p.slug.toUpperCase()})
                   </option>
