@@ -41,6 +41,7 @@ import {
   Percent,
   Crown,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth, PlanPermissions } from '../../lib/auth-context';
@@ -346,8 +347,9 @@ export default function SuperAdminPage() {
   });
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
-  // Impersonation
+  // Impersonation & Exclusão
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
 
   // Formulário Mercado Pago
   const [mpForm, setMpForm] = useState({
@@ -472,10 +474,34 @@ export default function SuperAdminPage() {
     try {
       const res = await api.post<{ redirectUrl: string }>(`/api/superadmin/tenants/${tenantId}/impersonate`, {});
       await refresh();
-      router.push(res.redirectUrl || '/dashboard');
+      window.location.href = res.redirectUrl || '/dashboard';
     } catch (err: unknown) {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao acessar o salão.');
       setImpersonatingId(null);
+    }
+  };
+
+  // Excluir Salão Definitivamente (Apenas Super Admin)
+  const handleDeleteTenant = async (t: TenantItem) => {
+    const ok = await confirm({
+      title: `Excluir Salão "${t.name}" Permanentemente?`,
+      message: `ATENÇÃO: Esta ação é definitiva e exclusiva do Super Admin.\n\nTodos os profissionais, agendamentos, clientes, conexões de WhatsApp e histórico financeiro do salão "${t.name}" (/${t.slug}) serão apagados permanentemente do banco de dados.\n\nDeseja realmente excluir este salão?`,
+      confirmText: 'Sim, Excluir Salão',
+      cancelText: 'Cancelar',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
+    setDeletingTenantId(t.id);
+    try {
+      await api.delete(`/api/superadmin/tenants/${t.id}`);
+      toast.success(`Salão "${t.name}" excluído com sucesso!`);
+      await Promise.all([loadOverview(), loadTenants(), loadLogs()]);
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao excluir o salão.');
+    } finally {
+      setDeletingTenantId(null);
     }
   };
 
@@ -1230,6 +1256,41 @@ export default function SuperAdminPage() {
                               title="Modificar plano, status da assinatura e limites deste salão"
                             >
                               Plano & Limites
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteTenant(t)}
+                              disabled={deletingTenantId === t.id}
+                              className="glass-card"
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                color: '#EF4444',
+                                borderColor: 'rgba(239, 68, 68, 0.35)',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                cursor: deletingTenantId === t.id ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => {
+                                if (deletingTenantId !== t.id) {
+                                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                                  e.currentTarget.style.borderColor = '#EF4444';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (deletingTenantId !== t.id) {
+                                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                                  e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+                                }
+                              }}
+                              title="Excluir este salão permanentemente (apenas Super Admin)"
+                            >
+                              <Trash2 size={13} />
+                              <span>{deletingTenantId === t.id ? 'Excluindo...' : 'Excluir'}</span>
                             </button>
                           </div>
                         </td>

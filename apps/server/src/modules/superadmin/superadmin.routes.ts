@@ -300,11 +300,12 @@ superAdminRouter.post('/tenants/:id/impersonate', async (req, res) => {
     throw HttpError.badRequest('Este salão não possui nenhum usuário cadastrado para acesso.');
   }
 
-  // Gera o token de impersonação
+  // Gera o token de impersonação incluindo a referência do Super Admin autenticado
   const impersonationToken = signToken({
     sub: targetUser.id,
     tid: tenant.id,
     role: targetUser.role,
+    impersonatedBy: req.auth!.userId,
   });
 
   res.cookie(AUTH_COOKIE, impersonationToken, authCookieOptions());
@@ -325,6 +326,43 @@ superAdminRouter.post('/tenants/:id/impersonate', async (req, res) => {
       name: tenant.name,
       slug: tenant.slug,
     },
+  });
+});
+
+// Excluir Salão / Instância permanentemente (Apenas Super Admin)
+superAdminRouter.delete('/tenants/:id', async (req, res) => {
+  const tenantId = req.params.id;
+
+  if (req.auth?.tenantId && req.auth.tenantId === tenantId) {
+    throw HttpError.badRequest('Não é permitido excluir o salão vinculado diretamente à sua conta principal de Super Admin.');
+  }
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { id: true, name: true, slug: true },
+  });
+
+  if (!tenant) throw HttpError.notFound('Salão não encontrado');
+
+  // Desconecta qualquer sessão ativa do WhatsApp do salão
+  await whatsAppService.disconnectTenant(tenantId).catch(() => {});
+
+  // Remove o tenant (todas as tabelas filhas possuem ON DELETE CASCADE)
+  await prisma.tenant.delete({
+    where: { id: tenantId },
+  });
+
+  await systemLog({
+    tenantId: null,
+    level: 'WARN',
+    source: 'superadmin',
+    message: `Super Admin excluiu permanentemente o salão [${tenant.name}] (${tenant.slug})`,
+    meta: { tenantId, name: tenant.name, slug: tenant.slug, deletedBy: req.auth?.userId },
+  });
+
+  res.json({
+    success: true,
+    message: `O salão "${tenant.name}" foi excluído permanentemente com sucesso.`,
   });
 });
 

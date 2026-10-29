@@ -177,10 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const exitImpersonation = async () => {
     try {
       await api.post('/api/auth/exit-impersonation');
-      await refresh();
-      router.push('/admin');
+      setIsImpersonated(false);
+      window.location.href = '/admin';
     } catch (err) {
       console.error('Falha ao encerrar personificação:', err);
+      setIsImpersonated(false);
+      window.location.href = '/admin';
     }
   };
 

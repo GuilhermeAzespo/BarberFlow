@@ -3,6 +3,7 @@ import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
 import { ToastProvider } from '../components/Toast';
 import { WhatsAppNotificationProvider } from '../lib/whatsapp-notifications-context';
+import { ImpersonationBanner } from '../components/ImpersonationBanner';
 
 export const metadata: Metadata = {
   title: 'BarberFlow — Gestão Inteligente para Barbearias e Salões',
@@ -30,7 +31,10 @@ export default function RootLayout({
       <body>
         <ToastProvider>
           <AuthProvider>
-            <WhatsAppNotificationProvider>{children}</WhatsAppNotificationProvider>
+            <WhatsAppNotificationProvider>
+              <ImpersonationBanner />
+              {children}
+            </WhatsAppNotificationProvider>
           </AuthProvider>
         </ToastProvider>
       </body>
