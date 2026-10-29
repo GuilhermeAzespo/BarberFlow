@@ -11,6 +11,7 @@ import {
 } from '../appointments/appointments.service.js';
 import { logger } from '../../lib/logger.js';
 import { findCustomerForContact } from './whatsapp-customer.js';
+import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
 
 interface BotContext {
   serviceId?: string;
@@ -32,6 +33,367 @@ interface BotContext {
   attendantName?: string;
 }
 
+function parseRelativeDate(text: string, zone: string): { dateStr: string; label: string } | null {
+  const clean = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const now = DateTime.now().setZone(zone);
+
+  if (/\bhoje\b/.test(clean)) {
+    return { dateStr: now.toISODate()!, label: 'Hoje' };
+  }
+  if (/\bdepois de amanha\b/.test(clean)) {
+    const dt = now.plus({ days: 2 });
+    return { dateStr: dt.toISODate()!, label: `${dt.toFormat('dd/LL')} (${WEEKDAY_SHORT[dt.weekday % 7]})` };
+  }
+  if (/\bamanha\b/.test(clean)) {
+    const dt = now.plus({ days: 1 });
+    return { dateStr: dt.toISODate()!, label: 'Amanhã' };
+  }
+
+  const weekdayMap: Record<string, number> = {
+    segunda: 1, seg: 1,
+    terca: 2, ter: 2,
+    quarta: 3, qua: 3,
+    quinta: 4, qui: 4,
+    sexta: 5, sex: 5,
+    sabado: 6, sab: 6,
+    domingo: 7, dom: 7,
+  };
+
+  for (const [dayName, dayNum] of Object.entries(weekdayMap)) {
+    const regex = new RegExp(`\\b${dayName}(?:-feira)?\\b`);
+    if (regex.test(clean)) {
+      let diff = dayNum - now.weekday;
+      if (diff < 0) diff += 7;
+      const dt = now.plus({ days: diff });
+      const label = diff === 0 ? 'Hoje' : diff === 1 ? 'Amanhã' : `${dt.toFormat('dd/LL')} (${WEEKDAY_SHORT[dt.weekday % 7]})`;
+      return { dateStr: dt.toISODate()!, label };
+    }
+  }
+
+  const dateMatch = clean.match(/\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b/);
+  if (dateMatch) {
+    const day = parseInt(dateMatch[1], 10);
+    const month = parseInt(dateMatch[2], 10);
+    let year = dateMatch[3] ? parseInt(dateMatch[3], 10) : now.year;
+    if (year < 100) year += 2000;
+    const dt = DateTime.fromObject({ year, month, day }, { zone });
+    if (dt.isValid) {
+      const isToday = dt.hasSame(now, 'day');
+      const isTomorrow = dt.hasSame(now.plus({ days: 1 }), 'day');
+      const label = isToday ? 'Hoje' : isTomorrow ? 'Amanhã' : `${dt.toFormat('dd/LL/yyyy')}`;
+      return { dateStr: dt.toISODate()!, label };
+    }
+  }
+
+  return null;
+}
+
+function parseTime(text: string): string | null {
+  const clean = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (/\bmeio[- ]?dia\b/.test(clean)) {
+    return '12:00';
+  }
+
+  const hhmm = clean.match(/\b([01]?\d|2[0-3])[:hH]([0-5]\d)\b/);
+  if (hhmm) {
+    const h = hhmm[1].padStart(2, '0');
+    const m = hhmm[2];
+    return `${h}:${m}`;
+  }
+
+  const hourMatch =
+    clean.match(/(?:por volta d[ao]s?|às|as|ás|pras|para as|de|pelas?)\s*([01]?\d|2[0-3])(?:\s*h(?:oras?)?|\b)/i) ||
+    clean.match(/\b([01]?\d|2[0-3])\s*h(?:oras?)?\b/i);
+
+  if (hourMatch) {
+    let hour = parseInt(hourMatch[1], 10);
+    if (hour <= 12 && (clean.includes('tarde') || clean.includes('noite') || clean.includes('pm'))) {
+      hour += 12;
+    }
+    return `${String(hour).padStart(2, '0')}:00`;
+  }
+
+  return null;
+}
+
+function matchService(
+  text: string,
+  services: Array<{ id: string; name: string; priceCents: number; durationMinutes: number }>
+) {
+  const clean = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  let bestMatch: { service: (typeof services)[0]; score: number } | null = null;
+
+  for (const s of services) {
+    const cleanServiceName = s.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    let score = 0;
+
+    if (clean.includes(cleanServiceName)) {
+      score += 100 + cleanServiceName.length;
+    } else {
+      const tokens = cleanServiceName.split(/[\s+/,-]+/).filter((t) => t.length >= 4);
+      for (const token of tokens) {
+        if (clean.includes(token)) {
+          score += 25;
+        }
+      }
+    }
+
+    if (score > (bestMatch?.score ?? 0)) {
+      bestMatch = { service: s, score };
+    }
+  }
+
+  return bestMatch && bestMatch.score >= 25 ? bestMatch.service : null;
+}
+
+function matchProfessional(
+  text: string,
+  professionals: Array<{ id: string; name: string }>
+): { id: string; name: string } | null {
+  const clean = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  for (const p of professionals) {
+    const cleanProfName = p.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const firstName = cleanProfName.split(/[\s()]+/)[0];
+
+    const fullNameRegex = new RegExp(`\\b${cleanProfName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    const firstNameRegex = new RegExp(`\\b${firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+
+    if (fullNameRegex.test(clean) || (firstName && firstName.length >= 3 && firstNameRegex.test(clean))) {
+      return p;
+    }
+  }
+
+  return null;
+}
+
+function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolean, hasProfKeywords: boolean): boolean {
+  const clean = text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (/^[0-9]+$/.test(clean)) return false;
+  if (['oi', 'ola', 'menu', 'inicio', 'voltar', 'bot', 'ajuda'].includes(clean)) return false;
+
+  const bookingKeywords = [
+    'agendar',
+    'agendamento',
+    'marcar',
+    'reservar',
+    'horario',
+    'vaga',
+    'corte',
+    'cortar',
+    'barba',
+    'cabelo',
+    'gostaria',
+    'queria',
+    'quero',
+    'consegue',
+    'tem horario',
+    'tem vaga',
+    'disponivel',
+    'disponibilidade',
+  ];
+
+  const hasBookingKeyword = bookingKeywords.some((kw) => clean.includes(kw));
+
+  return hasBookingKeyword || hasServiceKeywords || hasProfKeywords;
+}
+
+async function trySmartNaturalLanguageBooking(params: {
+  tenantId: string;
+  senderJid: string;
+  text: string;
+  finalCustomerName: string;
+  tenant: { id: string; name: string; timezone: string };
+  waConfig: { confirmationMessage: string; reminderHoursBefore?: number };
+  reply: (text: string) => Promise<void>;
+}): Promise<boolean> {
+  const { tenantId, senderJid, text, finalCustomerName, tenant, reply } = params;
+
+  const [services, professionals] = await Promise.all([
+    prisma.service.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.professional.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+
+  if (services.length === 0) return false;
+
+  const matchedSvc = matchService(text, services);
+  const matchedProf = matchProfessional(text, professionals);
+  const hasIntent = isNaturalLanguageBookingIntent(text, Boolean(matchedSvc), Boolean(matchedProf));
+
+  if (!hasIntent) {
+    return false;
+  }
+
+  const customerFirstName =
+    finalCustomerName && finalCustomerName !== 'Cliente' && !/^\d+$/.test(finalCustomerName)
+      ? finalCustomerName.split(' ')[0]
+      : 'Cliente';
+
+  const selectedService = matchedSvc || services[0];
+  const candidates = await professionalsForService(tenantId, selectedService.id);
+  const matchedCandidate = matchedProf && candidates.some((c) => c.id === matchedProf.id)
+    ? matchedProf
+    : null;
+
+  const chosenProfessionalId = matchedCandidate ? matchedCandidate.id : (candidates[0]?.id || null);
+  const chosenProfessionalName = matchedCandidate
+    ? matchedCandidate.name
+    : (candidates[0]?.name || 'Qualquer profissional disponível');
+
+  const parsedDate = parseRelativeDate(text, tenant.timezone);
+  const now = DateTime.now().setZone(tenant.timezone);
+  const parsedTime = parseTime(text);
+
+  let targetDateStr = parsedDate ? parsedDate.dateStr : now.toISODate()!;
+  let friendlyDateLabel = parsedDate ? parsedDate.label : 'Hoje';
+
+  if (!parsedDate && parsedTime) {
+    const [h, m] = parsedTime.split(':').map(Number);
+    const timeToday = now.set({ hour: h, minute: m, second: 0, millisecond: 0 });
+    if (now > timeToday) {
+      const tomorrow = now.plus({ days: 1 });
+      targetDateStr = tomorrow.toISODate()!;
+      friendlyDateLabel = 'Amanhã';
+    }
+  }
+
+  const { slots } = await getAvailability({
+    tenantId,
+    serviceId: selectedService.id,
+    date: targetDateStr,
+    professionalId: chosenProfessionalId,
+  });
+
+  // Cenário 1: Horário solicitado disponível na agenda
+  if (parsedTime) {
+    const exactSlot = slots.find((s) => s.time === parsedTime);
+    if (exactSlot) {
+      const confirmationMsg =
+        `Fala, ${customerFirstName}! 💈 Verifiquei a agenda do *${chosenProfessionalName}* em tempo real:\n\n` +
+        `✂️ *Serviço:* ${selectedService.name}\n` +
+        `👤 *Profissional:* ${chosenProfessionalName}\n` +
+        `🕒 *Horário:* ${friendlyDateLabel} às ${exactSlot.time}\n` +
+        `💵 *Valor:* ${formatCurrency(selectedService.priceCents)} (${selectedService.durationMinutes} min)\n\n` +
+        `*1* - ✅ Confirmar Agendamento\n` +
+        `*2* - ⏰ Ver outros horários disponíveis\n` +
+        `*0* - ❌ Cancelar\n\n` +
+        `_Responda *1* (ou *sim*) para confirmar!_`;
+
+      await updateConversation(tenantId, senderJid, 'CONFIRMATION', {
+        serviceId: selectedService.id,
+        serviceName: selectedService.name,
+        servicePriceCents: selectedService.priceCents,
+        serviceDuration: selectedService.durationMinutes,
+        professionalId: chosenProfessionalId,
+        professionalName: chosenProfessionalName,
+        date: targetDateStr,
+        time: exactSlot.time,
+        startAt: exactSlot.startAt,
+      });
+
+      await reply(confirmationMsg);
+      return true;
+    }
+  }
+
+  // Cenário 2: Horário pedido ocupado, ou cliente não indicou horário, mas há vagas
+  if (slots.length > 0) {
+    const availableSlots: BotContext['availableSlots'] = [];
+    let msg = parsedTime
+      ? `Fala, ${customerFirstName}! 💈 O horário das *${parsedTime}* já foi preenchido na agenda do *${chosenProfessionalName}*.\n\n` +
+        `Mas encontrei estes outros horários livres para *${friendlyDateLabel}*:\n\n`
+      : `Fala, ${customerFirstName}! 💈 Verifiquei os horários disponíveis para *${selectedService.name}* com *${chosenProfessionalName}* em *${friendlyDateLabel}*:\n\n`;
+
+    slots.slice(0, 10).forEach((s, idx) => {
+      availableSlots.push({ time: s.time, startAt: s.startAt });
+      msg += `*${idx + 1}* - ${s.time}\n`;
+    });
+    msg += `\n_Digite o número do horário desejado ou *menu* para outras opções:_`;
+
+    await updateConversation(tenantId, senderJid, 'SELECT_TIME', {
+      serviceId: selectedService.id,
+      serviceName: selectedService.name,
+      servicePriceCents: selectedService.priceCents,
+      serviceDuration: selectedService.durationMinutes,
+      professionalId: chosenProfessionalId,
+      professionalName: chosenProfessionalName,
+      date: targetDateStr,
+      availableSlots,
+    });
+
+    await reply(msg);
+    return true;
+  }
+
+  // Cenário 3: O dia está lotado, sugere próximas datas
+  const dates = await getAvailableDates({
+    tenantId,
+    serviceId: selectedService.id,
+    professionalId: chosenProfessionalId,
+    lookaheadDays: 14,
+    limit: 5,
+  });
+
+  if (dates.length > 0) {
+    let msg = `Fala, ${customerFirstName}! 💈 Para *${friendlyDateLabel}*, não temos mais horários livres para *${selectedService.name}*.\n\n` +
+              `📅 Encontrei vagas nas seguintes próximas datas:\n\n`;
+    dates.forEach((dStr, idx) => {
+      const dt = DateTime.fromISO(dStr, { zone: tenant.timezone });
+      const weekday = WEEKDAY_SHORT[dt.weekday % 7];
+      msg += `*${idx + 1}* - ${dt.toFormat('dd/LL/yyyy')} (${weekday})\n`;
+    });
+    msg += `\n_Digite o número da data desejada ou *menu* para voltar:_`;
+
+    await updateConversation(tenantId, senderJid, 'SELECT_DATE', {
+      serviceId: selectedService.id,
+      serviceName: selectedService.name,
+      servicePriceCents: selectedService.priceCents,
+      serviceDuration: selectedService.durationMinutes,
+      professionalId: chosenProfessionalId,
+      professionalName: chosenProfessionalName,
+      availableDates: dates,
+    });
+
+    await reply(msg);
+    return true;
+  }
+
+  return false;
+}
+
 export async function handleIncomingMessage(params: {
   tenantId: string;
   senderJid: string;
@@ -40,11 +402,12 @@ export async function handleIncomingMessage(params: {
   senderName?: string;
   text: string;
   reply: (text: string) => Promise<void>;
+  isSimulation?: boolean;
 }): Promise<void> {
-  const { tenantId, senderJid, phoneJid, senderName, text, reply: rawReply } = params;
+  const { tenantId, senderJid, phoneJid, senderName, text, reply: rawReply, isSimulation } = params;
 
   // Carrega configurações do WhatsApp e dados do salão
-  const [tenant, waConfig] = await Promise.all([
+  const [tenant, rawWaConfig] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: tenantId },
       include: { businessHours: { orderBy: { weekday: 'asc' } } },
@@ -55,6 +418,29 @@ export async function handleIncomingMessage(params: {
   ]);
 
   if (!tenant) return;
+
+  const waConfig = rawWaConfig || {
+    id: 'default',
+    tenantId,
+    botEnabled: true,
+    status: 'DISCONNECTED',
+    welcomeMessage: DEFAULT_WHATSAPP_MESSAGES.welcomeMessage,
+    confirmationMessage: DEFAULT_WHATSAPP_MESSAGES.confirmationMessage,
+    reminderMessage: DEFAULT_WHATSAPP_MESSAGES.reminderMessage,
+    cancellationMessage: DEFAULT_WHATSAPP_MESSAGES.cancellationMessage,
+    reminderEnabled: true,
+    reminderHoursBefore: 2,
+    attendantSurveyEnabled: true,
+    attendantSurveyMessage: DEFAULT_WHATSAPP_MESSAGES.attendantSurveyMessage,
+    serviceSurveyEnabled: true,
+    serviceSurveyMessage: DEFAULT_WHATSAPP_MESSAGES.serviceSurveyMessage,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    phoneNumber: null,
+    lastConnectedAt: null,
+    lastDisconnectedAt: null,
+    lastError: null,
+  };
 
   // Identifica ou atualiza cliente cruzando com a base de clientes (/customers)
   const rawPhone = (phoneJid ?? senderJid).replace(/[:@].*$/, '');
@@ -182,7 +568,7 @@ export async function handleIncomingMessage(params: {
   }
 
   // Se o bot estiver desativado nas configurações do salão
-  if (!waConfig || !waConfig.botEnabled) {
+  if (!isSimulation && (!rawWaConfig || !rawWaConfig.botEnabled)) {
     return;
   }
 
@@ -255,6 +641,21 @@ export async function handleIncomingMessage(params: {
 
   switch (state) {
     case 'MENU': {
+      // Tenta fluxo inteligente de agendamento por linguagem natural (ex: "gostaria de agendar um corte degradê com o Lucas hoje às 16h30")
+      const handledSmart = await trySmartNaturalLanguageBooking({
+        tenantId,
+        senderJid,
+        text: rawInput,
+        finalCustomerName,
+        tenant,
+        waConfig,
+        reply,
+      });
+
+      if (handledSmart) {
+        break;
+      }
+
       if (rawInput === '1') {
         // Iniciar fluxo de agendamento: listar serviços
         const services = await prisma.service.findMany({
@@ -376,6 +777,17 @@ export async function handleIncomingMessage(params: {
 
       const selectedIndex = parseInt(rawInput, 10) - 1;
       if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= services.length) {
+        const handledSmart = await trySmartNaturalLanguageBooking({
+          tenantId,
+          senderJid,
+          text: rawInput,
+          finalCustomerName,
+          tenant,
+          waConfig,
+          reply,
+        });
+        if (handledSmart) break;
+
         await reply(`⚠️ Opção inválida. Digite o número correspondente ao serviço ou *menu* para voltar.`);
         return;
       }
@@ -551,7 +963,36 @@ export async function handleIncomingMessage(params: {
     }
 
     case 'CONFIRMATION': {
-      if (rawInput === '1') {
+      const isConfirm = [
+        '1',
+        'sim',
+        'confirmar',
+        'confirma',
+        'confirmado',
+        'ok',
+        'pode ser',
+        'beleza',
+        'combinado',
+        'fechado',
+        'positivo',
+        'claro',
+        'isso',
+        'show',
+      ].includes(cleanText) || cleanText.startsWith('sim') || cleanText.startsWith('confirma');
+
+      const isAnotherTime = [
+        '2',
+        'outro',
+        'outros',
+        'outro horario',
+        'outro horário',
+        'outros horarios',
+        'outros horários',
+        'trocar',
+        'mudar',
+      ].includes(cleanText);
+
+      if (isConfirm) {
         try {
           const appointment = await createAppointment({
             tenantId,
@@ -567,24 +1008,59 @@ export async function handleIncomingMessage(params: {
           });
 
           const dt = DateTime.fromJSDate(appointment.startAt).setZone(tenant.timezone);
+          const now = DateTime.now().setZone(tenant.timezone);
+          const isToday = dt.hasSame(now, 'day');
+          const isTomorrow = dt.hasSame(now.plus({ days: 1 }), 'day');
+          const dateDisplay = isToday ? 'Hoje' : isTomorrow ? 'Amanhã' : dt.toFormat('dd/LL/yyyy');
 
-          const confirmText = renderTemplate(waConfig.confirmationMessage, {
-            nome: finalCustomerName,
-            salao: tenant.name,
-            servico: appointment.service.name,
-            profissional: appointment.professional.name,
-            data: dt.toFormat('dd/LL/yyyy'),
-            hora: dt.toFormat('HH:mm'),
-            valor: formatCurrency(appointment.priceCents),
-          });
+          // Calcula horário do lembrete programado (conforme configurações do salão)
+          const hoursBefore = waConfig?.reminderHoursBefore || 2;
+          const reminderDt = dt.minus({ hours: hoursBefore });
+          const reminderTimeStr = reminderDt.toFormat('HH:mm');
+
+          const confirmedCard =
+            `✓ *Agendamento Confirmado!* 💈\n\n` +
+            `✂️ *Serviço:* ${appointment.service.name}\n` +
+            `👤 *Profissional:* ${appointment.professional.name}\n` +
+            `🕒 *Horário:* ${dateDisplay} às ${dt.toFormat('HH:mm')}\n` +
+            `💵 *Valor:* ${formatCurrency(appointment.priceCents)}\n\n` +
+            `🔔 *Lembrete programado (${reminderTimeStr})*\n\n` +
+            `Te esperamos lá! Se precisar remarcar ou cancelar, basta digitar *menu*. 😊`;
 
           await updateConversation(tenantId, senderJid, 'MENU', {});
-          await reply(confirmText);
+          await reply(confirmedCard);
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : 'Horário indisponível.';
           logger.warn({ err, tenantId, senderJid }, 'Falha no agendamento via bot');
           await reply(`⚠️ Não foi possível confirmar: ${errorMessage}\n\nEnvie *menu* para tentar outro horário.`);
           await updateConversation(tenantId, senderJid, 'MENU', {});
+        }
+      } else if (isAnotherTime && context.serviceId) {
+        const targetDate = context.date || DateTime.now().setZone(tenant.timezone).toISODate()!;
+        const { slots } = await getAvailability({
+          tenantId,
+          serviceId: context.serviceId,
+          date: targetDate,
+          professionalId: context.professionalId,
+        });
+
+        if (slots.length > 0) {
+          const availableSlots: BotContext['availableSlots'] = [];
+          let msg = `⏰ *Escolha outro horário disponível:*\n\n`;
+          slots.slice(0, 12).forEach((s, idx) => {
+            availableSlots.push({ time: s.time, startAt: s.startAt });
+            msg += `*${idx + 1}* - ${s.time}\n`;
+          });
+          msg += `\n_Digite o número do horário desejado:_`;
+
+          await updateConversation(tenantId, senderJid, 'SELECT_TIME', {
+            ...context,
+            availableSlots,
+          });
+          await reply(msg);
+        } else {
+          await updateConversation(tenantId, senderJid, 'MENU', {});
+          await reply(`Não há outros horários nesta data. Digite *1* no menu para escolher outra data!`);
         }
       } else {
         await reply(`Agendamento cancelado. Quando quiser, envie *menu* para começar novamente!`);

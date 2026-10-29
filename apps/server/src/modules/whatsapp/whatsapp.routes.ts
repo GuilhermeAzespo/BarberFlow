@@ -9,6 +9,7 @@ import { requireRole } from '../../middlewares/auth.js';
 import { findCustomerForContact, formatAttendantShortName } from './whatsapp-customer.js';
 import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
 import { assertPlanFeature } from '../../lib/tenant-access.js';
+import { handleIncomingMessage } from './whatsapp-bot.js';
 
 export const whatsAppRouter = Router();
 
@@ -618,4 +619,93 @@ whatsAppRouter.get('/surveys', async (req, res) => {
     total,
     averageRating: avg._avg.rating ? Number(avg._avg.rating.toFixed(2)) : null,
   });
+});
+
+// ───────────────────────────── Simulador do Bot de WhatsApp ─────────────────────────────
+
+const simulateSchema = z.object({
+  message: z.string().trim().min(1, 'Mensagem não pode ser vazia'),
+  customerName: z.string().trim().optional(),
+  reset: z.boolean().optional(),
+});
+
+// Enviar mensagem para o simulador do bot
+whatsAppRouter.post('/simulate', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const { message, customerName = 'Bruno', reset } = simulateSchema.parse(req.body);
+  const simJid = `sim_${req.auth?.userId || 'admin'}@s.whatsapp.net`;
+
+  if (reset) {
+    await prisma.whatsAppMessage.deleteMany({
+      where: { tenantId, contactJid: simJid },
+    }).catch(() => {});
+    await prisma.whatsAppConversation.deleteMany({
+      where: { tenantId, contactJid: simJid },
+    }).catch(() => {});
+  }
+
+  const replies: string[] = [];
+  await handleIncomingMessage({
+    tenantId,
+    senderJid: simJid,
+    senderName: customerName,
+    text: message,
+    reply: async (replyText) => {
+      replies.push(replyText);
+    },
+    isSimulation: true,
+  });
+
+  const conversation = await prisma.whatsAppConversation.findUnique({
+    where: { tenantId_contactJid: { tenantId, contactJid: simJid } },
+  });
+
+  const messages = await prisma.whatsAppMessage.findMany({
+    where: { tenantId, contactJid: simJid },
+    orderBy: { createdAt: 'asc' },
+    take: 50,
+  });
+
+  res.json({
+    success: true,
+    replies,
+    conversation,
+    messages,
+  });
+});
+
+// Obter histórico do simulador
+whatsAppRouter.get('/simulate/history', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const simJid = `sim_${req.auth?.userId || 'admin'}@s.whatsapp.net`;
+
+  const conversation = await prisma.whatsAppConversation.findUnique({
+    where: { tenantId_contactJid: { tenantId, contactJid: simJid } },
+  });
+
+  const messages = await prisma.whatsAppMessage.findMany({
+    where: { tenantId, contactJid: simJid },
+    orderBy: { createdAt: 'asc' },
+    take: 50,
+  });
+
+  res.json({
+    conversation,
+    messages,
+  });
+});
+
+// Resetar histórico do simulador
+whatsAppRouter.post('/simulate/reset', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const simJid = `sim_${req.auth?.userId || 'admin'}@s.whatsapp.net`;
+
+  await prisma.whatsAppMessage.deleteMany({
+    where: { tenantId, contactJid: simJid },
+  }).catch(() => {});
+  await prisma.whatsAppConversation.deleteMany({
+    where: { tenantId, contactJid: simJid },
+  }).catch(() => {});
+
+  res.json({ success: true, message: 'Simulador reiniciado com sucesso.' });
 });
