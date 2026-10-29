@@ -12,6 +12,12 @@ import {
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { logger } from '../../lib/logger.js';
 import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant-access.js';
+import { systemLog } from '../../lib/system-log.js';
+import {
+  getActiveSmtpConfig,
+  sendEmail,
+  buildBarberFlowEmailHtml,
+} from '../../lib/email.js';
 
 export const publicRouter = Router();
 
@@ -387,4 +393,78 @@ publicRouter.get('/address-search', async (req, res) => {
 
   res.json({ results: [] });
 });
+
+const contactMessageSchema = z.object({
+  name: z.string().trim().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
+  email: z.string().trim().email('E-mail informado é inválido'),
+  phone: z.string().trim().max(30).optional().nullable(),
+  barbershopName: z.string().trim().max(100).optional().nullable(),
+  subject: z.string().trim().min(3, 'Assunto é obrigatório').max(150),
+  message: z.string().trim().min(10, 'A mensagem deve ter pelo menos 10 caracteres').max(3000),
+});
+
+/** Envio de mensagem pelo formulário público de contato */
+publicRouter.post('/contact', async (req, res) => {
+  const data = contactMessageSchema.parse(req.body);
+
+  await systemLog({
+    tenantId: null,
+    level: 'INFO',
+    source: 'public:contact',
+    message: `Mensagem de contato recebida de ${data.name} (${data.email}) - Assunto: ${data.subject}`,
+    meta: {
+      name: data.name,
+      email: data.email,
+      phone: data.phone ?? null,
+      barbershopName: data.barbershopName ?? null,
+      subject: data.subject,
+      messageLength: data.message.length,
+    },
+  });
+
+  // Tenta despachar notificação via e-mail se SMTP estiver configurado
+  try {
+    const smtp = await getActiveSmtpConfig();
+    if (smtp) {
+      const recipient = smtp.from.includes('<')
+        ? smtp.from.split('<')[1].replace('>', '').trim()
+        : smtp.from.trim();
+
+      const html = buildBarberFlowEmailHtml({
+        title: 'Nova Mensagem de Contato — BarberFlow',
+        contentHtml:
+          `<p style="margin-bottom: 16px;">Uma nova solicitação de contato foi enviada pelo portal do BarberFlow:</p>` +
+          `<ul style="line-height: 1.8; color: #E2E8F0; margin-bottom: 20px;">` +
+          `<li><strong>Nome:</strong> ${data.name}</li>` +
+          `<li><strong>E-mail:</strong> ${data.email}</li>` +
+          `<li><strong>Telefone / WhatsApp:</strong> ${data.phone || 'Não informado'}</li>` +
+          `<li><strong>Barbearia:</strong> ${data.barbershopName || 'Não informada'}</li>` +
+          `<li><strong>Assunto:</strong> ${data.subject}</li>` +
+          `</ul>` +
+          `<div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 8px; border-left: 3px solid #E5B338;">` +
+          `<strong style="color: #E5B338; display: block; margin-bottom: 6px;">Mensagem:</strong>` +
+          `<p style="margin: 0; color: #F8FAFC; white-space: pre-wrap;">${data.message}</p>` +
+          `</div>`,
+        actionButton: {
+          text: 'Acessar Gestão Master',
+          url: 'https://barberflow.azespo.com.br/admin',
+        },
+      });
+
+      await sendEmail({
+        to: recipient,
+        subject: `[Contato BarberFlow] ${data.subject} — ${data.name}`,
+        html,
+      });
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Não foi possível despachar o e-mail de contato via SMTP');
+  }
+
+  res.json({
+    success: true,
+    message: 'Mensagem recebida com sucesso! Em breve nossa equipe entrará em contato.',
+  });
+});
+
 
