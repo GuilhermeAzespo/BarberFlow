@@ -8,6 +8,7 @@ import { whatsAppService } from './whatsapp.service.js';
 import { requireRole } from '../../middlewares/auth.js';
 import { findCustomerForContact, formatAttendantShortName } from './whatsapp-customer.js';
 import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
+import { assertPlanFeature } from '../../lib/tenant-access.js';
 
 export const whatsAppRouter = Router();
 
@@ -86,6 +87,25 @@ whatsAppRouter.get('/config', async (req, res) => {
 whatsAppRouter.patch('/config', requireRole('OWNER', 'MANAGER'), async (req, res) => {
   const data = updateConfigSchema.parse(req.body);
   const tenantId = req.tenantId!;
+
+  // Validação de plano: mensagens personalizadas
+  const hasCustomMessages = Boolean(
+    data.welcomeMessage || data.confirmationMessage || data.reminderMessage || data.cancellationMessage
+  );
+  if (hasCustomMessages) {
+    await assertPlanFeature(tenantId, 'customBotMessages', 'Personalização de Mensagens do WhatsApp');
+  }
+
+  // Validação de plano: pesquisas de satisfação
+  const hasSurveysConfig = Boolean(
+    data.attendantSurveyEnabled !== undefined ||
+    data.serviceSurveyEnabled !== undefined ||
+    data.attendantSurveyMessage ||
+    data.serviceSurveyMessage
+  );
+  if (hasSurveysConfig) {
+    await assertPlanFeature(tenantId, 'satisfactionSurveys', 'Pesquisas de Satisfação Automatizadas');
+  }
 
   const config = await prisma.whatsAppConfig.update({
     where: { tenantId },

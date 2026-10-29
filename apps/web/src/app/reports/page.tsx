@@ -25,9 +25,12 @@ import {
   UserCheck,
   Phone,
   HelpCircle,
+  Crown,
+  Lock,
 } from 'lucide-react';
 import { DateTime } from 'luxon';
 import { api, ApiError } from '../../lib/api';
+import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { useToast } from '../../components/Toast';
@@ -154,6 +157,8 @@ const formatCurrency = (cents: number) => {
 
 export default function ReportsPage() {
   const { toast } = useToast();
+  const { hasPlanFeature, subscription } = useAuth();
+  const hasReportsAccess = hasPlanFeature('reports');
   const [activeTab, setActiveTab] = useState<ActiveTab>('satisfaction');
 
   // Filtros Globais
@@ -248,8 +253,13 @@ export default function ReportsPage() {
   };
 
   useEffect(() => {
+    if (!hasReportsAccess) {
+      setLoading(false);
+      return;
+    }
     loadActiveReport();
   }, [
+    hasReportsAccess,
     activeTab,
     startDate,
     endDate,
@@ -367,27 +377,133 @@ export default function ReportsPage() {
             </div>
 
             {/* Botão de Exportar */}
-            <button
-              onClick={handleExportCSV}
-              className="glass-card"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '9px 16px',
-                borderRadius: '8px',
-                fontSize: '0.86rem',
-                fontWeight: 600,
-                color: 'var(--text-main)',
-                cursor: 'pointer',
-              }}
-            >
-              <Download size={16} color="var(--primary)" />
-              <span>Exportar CSV</span>
-            </button>
+            {hasReportsAccess && (
+              <button
+                onClick={handleExportCSV}
+                className="glass-card"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  fontSize: '0.86rem',
+                  fontWeight: 600,
+                  color: 'var(--text-main)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Download size={16} color="var(--primary)" />
+                <span>Exportar CSV</span>
+              </button>
+            )}
           </div>
 
-          {/* Abas Principais (Segmented Tabs) */}
+          {!hasReportsAccess ? (
+            <div
+              className="glass-panel gold-glow"
+              style={{
+                padding: '48px 32px',
+                textAlign: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                maxWidth: '740px',
+                margin: '40px auto',
+                borderRadius: '20px',
+              }}
+            >
+              <div
+                style={{
+                  width: '72px',
+                  height: '72px',
+                  borderRadius: '20px',
+                  background: 'linear-gradient(135deg, rgba(229, 179, 56, 0.25), rgba(150, 108, 15, 0.15))',
+                  border: '1px solid rgba(229, 179, 56, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '20px',
+                  boxShadow: '0 0 30px rgba(229, 179, 56, 0.3)',
+                }}
+              >
+                <Crown size={36} color="var(--primary)" />
+              </div>
+
+              <span
+                className="badge badge-warning"
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  marginBottom: '14px',
+                }}
+              >
+                Módulo Exclusivo Planos Pro & Premium
+              </span>
+
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0 0 10px 0', color: 'var(--text-main)' }}>
+                Central de Relatórios & Inteligência
+              </h2>
+
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.96rem', lineHeight: 1.6, maxWidth: '560px', margin: '0 0 28px 0' }}>
+                Seu salão está no plano <strong>{subscription?.plan?.name || 'Starter'}</strong>. Para ter acesso a gráficos analíticos de produtividade por barbeiro, notas e avaliações de clientes (CSAT/NPS) e histórico completo de agendamentos, faça o upgrade para o plano <strong>Pro (R$ 39,99/mês)</strong> ou <strong>Premium</strong>.
+              </p>
+
+              <div
+                style={{
+                  width: '100%',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                  gap: '12px',
+                  textAlign: 'left',
+                  marginBottom: '32px',
+                }}
+              >
+                <div className="glass-card" style={{ padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <Star size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.85rem' }}>Pesquisas automáticas de satisfação (CSAT & NPS)</span>
+                </div>
+                <div className="glass-card" style={{ padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <Scissors size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.85rem' }}>Produtividade e faturamento por barbeiro</span>
+                </div>
+                <div className="glass-card" style={{ padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <Calendar size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.85rem' }}>Taxa de realização, cancelamento e retenção</span>
+                </div>
+                <div className="glass-card" style={{ padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <Download size={18} color="var(--primary)" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.85rem' }}>Exportação de planilhas e relatórios em CSV</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <a
+                  href="/settings"
+                  className="gold-gradient-primary gold-glow"
+                  style={{
+                    padding: '12px 28px',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '0.95rem',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <Crown size={18} />
+                  <span>Fazer Upgrade para o Pro (R$ 39,99/mês)</span>
+                </a>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Abas Principais (Segmented Tabs) */}
           <div
             style={{
               display: 'flex',
@@ -1558,6 +1674,8 @@ export default function ReportsPage() {
                 )}
               </div>
             </div>
+          )}
+          </>
           )}
         </main>
       </div>

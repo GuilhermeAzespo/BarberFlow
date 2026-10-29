@@ -3,8 +3,21 @@ import { z } from 'zod';
 import { DateTime } from 'luxon';
 import type { Prisma, AppointmentStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { assertPlanFeature } from '../../lib/tenant-access.js';
 
 export const reportsRouter = Router();
+
+// Validação de acesso por plano (Pro e Premium)
+reportsRouter.use(async (req, res, next) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) return next();
+  try {
+    await assertPlanFeature(tenantId, 'reports', 'Central de Relatórios & Inteligência');
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 const dateRangeSchema = z.object({
   startDate: z.string().optional(),

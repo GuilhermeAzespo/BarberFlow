@@ -100,7 +100,7 @@ async function bootstrap() {
     const existing = await prisma.plan.findUnique({ where: { slug: planData.slug } });
     if (!existing) {
       await prisma.plan.create({ data: planData });
-    } else if (!existing.features) {
+    } else {
       await prisma.plan.update({
         where: { id: existing.id },
         data: {
@@ -108,6 +108,9 @@ async function bootstrap() {
           badge: planData.badge,
           isHighlighted: planData.isHighlighted,
           description: existing.description || planData.description,
+          priceCents: planData.priceCents,
+          maxProfessionals: planData.maxProfessionals,
+          maxAppointmentsPerMonth: planData.maxAppointmentsPerMonth,
         },
       });
     }

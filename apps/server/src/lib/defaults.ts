@@ -29,8 +29,8 @@ export const DEFAULT_PLANS = [
   {
     slug: 'starter',
     name: 'Starter',
-    description: 'Ideal para barbeiros autônomos que desejam automatizar o WhatsApp.',
-    priceCents: 4990,
+    description: 'Para quem está começando: 1 profissional e bot de WhatsApp.',
+    priceCents: 1999, // R$ 19,99/mês
     maxProfessionals: 1,
     maxAppointmentsPerMonth: 300,
     whatsappEnabled: true,
@@ -38,18 +38,30 @@ export const DEFAULT_PLANS = [
     sortOrder: 1,
     badge: null,
     isHighlighted: false,
-    features: [
-      '1 Profissional',
-      'Até 300 agendamentos/mês',
-      'Bot de WhatsApp integrado',
-      'Fluxo de caixa básico',
-    ],
+    features: {
+      items: [
+        '1 Profissional',
+        'Até 300 agendamentos/mês',
+        'Bot de WhatsApp integrado',
+        'Fluxo de caixa básico',
+      ],
+      permissions: {
+        reports: false,
+        satisfactionSurveys: false,
+        customBotMessages: false,
+        financialExport: false,
+        customDomain: false,
+        commissions: false,
+        multiUserRoles: false,
+        prioritySupport: false,
+      },
+    },
   },
   {
     slug: 'pro',
     name: 'Pro',
-    description: 'Perfeito para equipes com múltiplos barbeiros e alta demanda.',
-    priceCents: 9990,
+    description: 'Equipes de até 5 profissionais com agendamentos ilimitados.',
+    priceCents: 3999, // R$ 39,99/mês
     maxProfessionals: 5,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -57,19 +69,31 @@ export const DEFAULT_PLANS = [
     sortOrder: 2,
     badge: 'MAIS POPULAR',
     isHighlighted: true,
-    features: [
-      'Até 5 Profissionais',
-      'Agendamentos ilimitados',
-      'Bot de WhatsApp personalizado',
-      'Lembretes automáticos',
-      'Relatórios financeiros completos',
-    ],
+    features: {
+      items: [
+        'Até 5 Profissionais',
+        'Agendamentos ilimitados',
+        'Bot de WhatsApp personalizado',
+        'Lembretes automáticos',
+        'Relatórios financeiros completos',
+      ],
+      permissions: {
+        reports: true,
+        satisfactionSurveys: true,
+        customBotMessages: true,
+        financialExport: true,
+        customDomain: false,
+        commissions: true,
+        multiUserRoles: true,
+        prioritySupport: true,
+      },
+    },
   },
   {
     slug: 'premium',
     name: 'Premium',
-    description: 'Para salões de grande porte e redes que necessitam de capacidade total.',
-    priceCents: 19990,
+    description: 'Sem limites para redes e salões de grande porte.',
+    priceCents: 6999, // R$ 69,99/mês
     maxProfessionals: null,
     maxAppointmentsPerMonth: null,
     whatsappEnabled: true,
@@ -77,12 +101,24 @@ export const DEFAULT_PLANS = [
     sortOrder: 3,
     badge: null,
     isHighlighted: false,
-    features: [
-      'Profissionais ilimitados',
-      'Agendamentos ilimitados',
-      'Suporte prioritário',
-      'Todas as funcionalidades inclusas',
-    ],
+    features: {
+      items: [
+        'Profissionais ilimitados',
+        'Agendamentos ilimitados',
+        'Suporte prioritário',
+        'Todas as funcionalidades inclusas',
+      ],
+      permissions: {
+        reports: true,
+        satisfactionSurveys: true,
+        customBotMessages: true,
+        financialExport: true,
+        customDomain: true,
+        commissions: true,
+        multiUserRoles: true,
+        prioritySupport: true,
+      },
+    },
   },
 ];
 

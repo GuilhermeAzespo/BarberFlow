@@ -9,7 +9,12 @@ import { DEFAULT_BUSINESS_HOURS, DEFAULT_WHATSAPP_MESSAGES } from '../../lib/def
 import { HttpError } from '../../lib/http-error.js';
 import { prisma } from '../../lib/prisma.js';
 import { systemLog } from '../../lib/system-log.js';
-import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
+import {
+  effectiveLimits,
+  evaluateTenantAccess,
+  extractPlanPermissions,
+  extractPlanFeatureList,
+} from '../../lib/tenant-access.js';
 import { slugify } from '../../lib/utils.js';
 import { requireAuth } from '../../middlewares/auth.js';
 
@@ -234,7 +239,14 @@ authRouter.get('/me', requireAuth, async (req, res) => {
             sub.currentPeriodEnd
               ? Math.ceil(DateTime.fromJSDate(sub.currentPeriodEnd).diffNow('days').days)
               : null,
-          plan: { id: sub.plan.id, name: sub.plan.name, slug: sub.plan.slug, priceCents: sub.plan.priceCents },
+          plan: {
+            id: sub.plan.id,
+            name: sub.plan.name,
+            slug: sub.plan.slug,
+            priceCents: sub.plan.priceCents,
+            features: extractPlanFeatureList(sub.plan.features),
+            permissions: extractPlanPermissions(sub.plan),
+          },
           limits: effectiveLimits(sub),
         }
       : null,

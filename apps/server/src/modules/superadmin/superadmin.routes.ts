@@ -13,6 +13,7 @@ import {
   sendEmail,
   buildBarberFlowEmailHtml,
 } from '../../lib/email.js';
+import { extractPlanPermissions, extractPlanFeatureList } from '../../lib/tenant-access.js';
 import {
   getActiveMercadoPagoConfig,
   testMercadoPagoConnection,
@@ -49,7 +50,15 @@ const planSchema = z.object({
   sortOrder: z.number().int().default(0),
   badge: z.string().trim().nullable().optional(),
   isHighlighted: z.boolean().default(false),
-  features: z.array(z.string()).optional(),
+  features: z
+    .union([
+      z.array(z.string()),
+      z.object({
+        items: z.array(z.string()).optional(),
+        permissions: z.record(z.string(), z.boolean()).optional(),
+      }),
+    ])
+    .optional(),
 });
 
 const smtpConfigSchema = z.object({
@@ -462,16 +471,26 @@ superAdminRouter.get('/logs', async (req, res) => {
 
 // Planos do SaaS: listagem, criação e edição
 superAdminRouter.get('/plans', async (_req, res) => {
-  const plans = await prisma.plan.findMany({
+  const rawPlans = await prisma.plan.findMany({
     orderBy: { sortOrder: 'asc' },
     include: { _count: { select: { subscriptions: true } } },
   });
+  const plans = rawPlans.map((p) => ({
+    ...p,
+    featureList: extractPlanFeatureList(p.features),
+    permissions: extractPlanPermissions(p),
+  }));
   res.json({ plans });
 });
 
 superAdminRouter.post('/plans', async (req, res) => {
   const data = planSchema.parse(req.body);
-  const plan = await prisma.plan.create({ data });
+  const plan = await prisma.plan.create({
+    data: {
+      ...data,
+      features: (data.features as Prisma.InputJsonValue) ?? undefined,
+    },
+  });
 
   await systemLog({
     source: 'superadmin',
@@ -485,7 +504,10 @@ superAdminRouter.patch('/plans/:id', async (req, res) => {
   const data = planSchema.partial().parse(req.body);
   const plan = await prisma.plan.update({
     where: { id: req.params.id },
-    data,
+    data: {
+      ...data,
+      ...(data.features !== undefined ? { features: data.features as Prisma.InputJsonValue } : {}),
+    },
   });
 
   await systemLog({

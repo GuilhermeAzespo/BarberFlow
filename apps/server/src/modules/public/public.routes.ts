@@ -11,6 +11,7 @@ import {
 } from '../appointments/appointments.service.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { logger } from '../../lib/logger.js';
+import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant-access.js';
 
 export const publicRouter = Router();
 
@@ -305,7 +306,14 @@ publicRouter.get('/plans', async (_req, res) => {
       isHighlighted: true,
     },
   });
-  res.json({ plans });
+
+  const formattedPlans = plans.map((p) => ({
+    ...p,
+    features: extractPlanFeatureList(p.features),
+    permissions: extractPlanPermissions(p),
+  }));
+
+  res.json({ plans: formattedPlans });
 });
 
 /** Pesquisa de endereço / geolocalização com suporte a CEP e Logradouro */

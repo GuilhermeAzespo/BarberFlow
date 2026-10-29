@@ -34,14 +34,119 @@ import {
   Copy,
   Key,
   Globe,
+  BarChart3,
+  Star,
+  MessageSquare,
+  Download,
+  Percent,
+  Crown,
+  ShieldCheck,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
-import { useAuth } from '../../lib/auth-context';
+import { useAuth, PlanPermissions } from '../../lib/auth-context';
 import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
+
+const PERMISSION_METADATA: Array<{
+  key: keyof PlanPermissions;
+  label: string;
+  description: string;
+  category: string;
+  icon: React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>;
+}> = [
+  {
+    key: 'reports',
+    label: 'Central de Relatórios & Inteligência',
+    description: 'Acesso à aba /reports com gráficos de satisfação, produtividade de barbeiros e agendamentos',
+    category: 'Relatórios & Inteligência',
+    icon: BarChart3,
+  },
+  {
+    key: 'satisfactionSurveys',
+    label: 'Pesquisas de Satisfação Automatizadas',
+    description: 'Disparo de avaliação CSAT e NPS para atendente e serviço pós-corte no WhatsApp',
+    category: 'WhatsApp & Atendimento',
+    icon: Star,
+  },
+  {
+    key: 'customBotMessages',
+    label: 'Personalização de Mensagens do Bot WhatsApp',
+    description: 'Permite editar mensagens de boas-vindas, confirmação, cancelamento e lembretes',
+    category: 'WhatsApp & Atendimento',
+    icon: MessageSquare,
+  },
+  {
+    key: 'financialExport',
+    label: 'Exportação de Dados e Relatórios em CSV',
+    description: 'Download de planilhas CSV do fluxo de caixa e relatórios analíticos completos',
+    category: 'Gestão Financeira',
+    icon: Download,
+  },
+  {
+    key: 'commissions',
+    label: 'Divisão e Comissões de Barbeiros',
+    description: 'Cálculo e rateio automático de comissão por serviço e profissional',
+    category: 'Gestão Financeira',
+    icon: Percent,
+  },
+  {
+    key: 'customDomain',
+    label: 'Domínio Próprio & DNS Personalizado',
+    description: 'Conectar endereço exclusivo do salão com SSL (ex: agendar.seusalão.com.br)',
+    category: 'Vitrine & Marca',
+    icon: Globe,
+  },
+  {
+    key: 'multiUserRoles',
+    label: 'Perfis de Acesso de Equipe',
+    description: 'Criação de logins com restrição para recepcionistas, gerentes e barbeiros',
+    category: 'Gestão de Equipe',
+    icon: Users,
+  },
+  {
+    key: 'prioritySupport',
+    label: 'Suporte VIP Prioritário',
+    description: 'Canal preferencial de atendimento rápido e dedicado via WhatsApp',
+    category: 'Atendimento',
+    icon: Crown,
+  },
+];
+
+const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
+  starter: {
+    reports: false,
+    satisfactionSurveys: false,
+    customBotMessages: false,
+    financialExport: false,
+    customDomain: false,
+    commissions: false,
+    multiUserRoles: false,
+    prioritySupport: false,
+  },
+  pro: {
+    reports: true,
+    satisfactionSurveys: true,
+    customBotMessages: true,
+    financialExport: true,
+    customDomain: false,
+    commissions: true,
+    multiUserRoles: true,
+    prioritySupport: false,
+  },
+  premium: {
+    reports: true,
+    satisfactionSurveys: true,
+    customBotMessages: true,
+    financialExport: true,
+    customDomain: true,
+    commissions: true,
+    multiUserRoles: true,
+    prioritySupport: true,
+  },
+};
 
 interface SuperAdminOverview {
   metrics: {
@@ -70,7 +175,9 @@ interface PlanItem {
   sortOrder: number;
   badge?: string | null;
   isHighlighted?: boolean;
-  features?: string[] | null;
+  features?: any;
+  featureList?: string[];
+  permissions?: PlanPermissions;
   _count?: {
     subscriptions: number;
   };
@@ -195,6 +302,7 @@ export default function SuperAdminPage() {
     isHighlighted: false,
     whatsappEnabled: true,
     featuresText: '',
+    permissions: DEFAULT_PERMISSIONS_BY_SLUG.starter,
   });
 
   // Formulário SMTP
@@ -400,7 +508,23 @@ export default function SuperAdminPage() {
   // Abrir Modal de Edição de Plano da Vitrine
   const openEditPlan = (plan: PlanItem) => {
     setSelectedPlan(plan);
-    const features = Array.isArray(plan.features) ? plan.features.join('\n') : '';
+    const featureList =
+      plan.featureList && plan.featureList.length > 0
+        ? plan.featureList
+        : Array.isArray(plan.features)
+        ? plan.features
+        : plan.features?.items && Array.isArray(plan.features.items)
+        ? plan.features.items
+        : [];
+
+    const slugKey = (plan.slug || '').toLowerCase();
+    const fallbackPerms = DEFAULT_PERMISSIONS_BY_SLUG[slugKey] || DEFAULT_PERMISSIONS_BY_SLUG.starter;
+    const permissions: PlanPermissions = plan.permissions
+      ? { ...fallbackPerms, ...plan.permissions }
+      : plan.features?.permissions
+      ? { ...fallbackPerms, ...plan.features.permissions }
+      : { ...fallbackPerms };
+
     setPlanForm({
       name: plan.name,
       slug: plan.slug,
@@ -411,9 +535,101 @@ export default function SuperAdminPage() {
       badge: plan.badge || '',
       isHighlighted: Boolean(plan.isHighlighted),
       whatsappEnabled: plan.whatsappEnabled,
-      featuresText: features,
+      featuresText: featureList.join('\n'),
+      permissions,
     });
     setIsPlanModalOpen(true);
+  };
+
+  const handleTogglePermission = (key: keyof PlanPermissions) => {
+    setPlanForm((prev) => ({
+      ...prev,
+      permissions: {
+        ...prev.permissions,
+        [key]: !prev.permissions[key],
+      },
+    }));
+  };
+
+  const handleApplyPreset = (presetKey: 'starter' | 'pro' | 'premium') => {
+    const preset = DEFAULT_PERMISSIONS_BY_SLUG[presetKey];
+    if (preset) {
+      setPlanForm((prev) => ({
+        ...prev,
+        permissions: { ...preset },
+      }));
+      toast.info(`Permissões predefinidas do plano ${presetKey.toUpperCase()} aplicadas.`);
+    }
+  };
+
+  const handleAutoGenerateFeatures = () => {
+    const items: string[] = [];
+
+    // Limite de profissionais
+    if (planForm.maxProfessionals) {
+      const num = Number(planForm.maxProfessionals);
+      items.push(num === 1 ? '1 Profissional' : `Até ${num} Profissionais`);
+    } else {
+      items.push('Profissionais ilimitados');
+    }
+
+    // Limite de agendamentos
+    if (planForm.maxAppointments) {
+      items.push(`Até ${planForm.maxAppointments} agendamentos/mês`);
+    } else {
+      items.push('Agendamentos ilimitados');
+    }
+
+    // WhatsApp
+    if (planForm.whatsappEnabled) {
+      if (planForm.permissions.customBotMessages) {
+        items.push('Bot de WhatsApp personalizado');
+      } else {
+        items.push('Bot de WhatsApp integrado');
+      }
+    }
+
+    // Módulos
+    if (planForm.permissions.satisfactionSurveys) {
+      items.push('Pesquisas de satisfação automáticas');
+    }
+
+    if (planForm.permissions.reports) {
+      items.push('Central de Relatórios & Inteligência');
+    } else {
+      items.push('Fluxo de caixa básico');
+    }
+
+    if (planForm.permissions.financialExport) {
+      items.push('Exportação financeira completa (CSV)');
+    }
+
+    if (planForm.permissions.commissions) {
+      items.push('Comissões automáticas por barbeiro');
+    }
+
+    if (planForm.permissions.customDomain) {
+      items.push('Domínio próprio e DNS personalizado');
+    }
+
+    if (planForm.permissions.prioritySupport) {
+      items.push('Suporte VIP prioritário no WhatsApp');
+    }
+
+    if (
+      planForm.permissions.reports &&
+      planForm.permissions.satisfactionSurveys &&
+      planForm.permissions.customDomain &&
+      planForm.permissions.prioritySupport
+    ) {
+      items.push('Todas as funcionalidades inclusas');
+    }
+
+    setPlanForm((prev) => ({
+      ...prev,
+      featuresText: Array.from(new Set(items)).join('\n'),
+    }));
+    toast.success('Lista de benefícios gerada a partir das permissões e limites!');
   };
 
   // Salvar Plano da Vitrine
@@ -439,7 +655,10 @@ export default function SuperAdminPage() {
         badge: planForm.badge.trim() || null,
         isHighlighted: planForm.isHighlighted,
         whatsappEnabled: planForm.whatsappEnabled,
-        features,
+        features: {
+          items: features,
+          permissions: planForm.permissions,
+        },
       });
 
       setIsPlanModalOpen(false);
@@ -1024,7 +1243,20 @@ export default function SuperAdminPage() {
               }}
             >
               {plans.map((p) => {
-                const features = Array.isArray(p.features) && p.features.length > 0 ? p.features : [];
+                const features: string[] =
+                  p.featureList && p.featureList.length > 0
+                    ? p.featureList
+                    : Array.isArray(p.features)
+                    ? (p.features as string[])
+                    : p.features?.items && Array.isArray(p.features.items)
+                    ? (p.features.items as string[])
+                    : [];
+
+                const slugKey = (p.slug || '').toLowerCase();
+                const defaultPerms = DEFAULT_PERMISSIONS_BY_SLUG[slugKey] || DEFAULT_PERMISSIONS_BY_SLUG.starter;
+                const planPermissions: PlanPermissions = p.permissions || p.features?.permissions || defaultPerms;
+                const activePermCount = Object.values(planPermissions).filter(Boolean).length;
+
                 return (
                   <div
                     key={p.id}
@@ -1076,7 +1308,7 @@ export default function SuperAdminPage() {
                         <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>/mês</span>
                       </div>
 
-                      <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', fontSize: '0.82rem' }}>
+                      <div style={{ marginBottom: '18px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', fontSize: '0.82rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ color: 'var(--text-muted)' }}>Profissionais:</span>
                           <strong>{p.maxProfessionals ? `Até ${p.maxProfessionals}` : 'Ilimitados'}</strong>
@@ -1091,12 +1323,53 @@ export default function SuperAdminPage() {
                         </div>
                       </div>
 
+                      {/* Módulos e Permissões do Sistema */}
+                      <div style={{ marginBottom: '20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            Módulos & Permissões ({activePermCount}/{PERMISSION_METADATA.length})
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                          {PERMISSION_METADATA.map((meta) => {
+                            const isAllowed = Boolean(planPermissions[meta.key]);
+                            return (
+                              <div
+                                key={meta.key}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '5px 8px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.74rem',
+                                  background: isAllowed ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                                  border: isAllowed ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(255, 255, 255, 0.05)',
+                                  color: isAllowed ? '#10B981' : 'var(--text-dim)',
+                                }}
+                                title={meta.description}
+                              >
+                                {isAllowed ? (
+                                  <CheckCircle2 size={13} color="#10B981" style={{ flexShrink: 0 }} />
+                                ) : (
+                                  <Lock size={12} color="var(--text-dim)" style={{ flexShrink: 0 }} />
+                                )}
+                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {meta.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Benefícios na Vitrine */}
                       <div style={{ marginBottom: '24px' }}>
                         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Benefícios na Home ({features.length})
+                          Benefícios na Vitrine ({features.length})
                         </span>
                         <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px', fontSize: '0.85rem' }}>
-                          {features.map((feat, idx) => (
+                          {features.map((feat: string, idx: number) => (
                             <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <CheckCircle2 size={14} color="#E5B338" />
                               <span>{feat}</span>
@@ -1120,7 +1393,7 @@ export default function SuperAdminPage() {
                       }}
                     >
                       <Edit size={15} />
-                      <span>Editar Preço & Vitrine</span>
+                      <span>Editar Preço, Limites & Permissões</span>
                     </button>
                   </div>
                 );
@@ -2365,7 +2638,7 @@ export default function SuperAdminPage() {
       </Modal>
 
       {/* Modal: Editar Plano da Vitrine */}
-      <Modal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title={`Editar Plano: ${selectedPlan?.name}`} maxWidth="620px">
+      <Modal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title={`Editar Plano: ${selectedPlan?.name}`} maxWidth="780px">
         {selectedPlan && (
           <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -2482,11 +2755,137 @@ export default function SuperAdminPage() {
               </div>
             </div>
 
+            {/* ─── SEÇÃO DE GERENCIAMENTO DE MÓDULOS & PERMISSÕES (O que cada plano faz) ─── */}
+            <div
+              style={{
+                padding: '18px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                borderRadius: '12px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck size={18} color="var(--primary)" />
+                    <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: 700, color: 'var(--primary)' }}>
+                      Módulos & Permissões do Sistema (O que este plano pode fazer)
+                    </h4>
+                  </div>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Marque as funcionalidades ativas para barbearias deste plano. O sistema bloqueia ou libera automaticamente conforme essas opções.
+                  </p>
+                </div>
+
+                {/* Predefinições Rápidas */}
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('starter')}
+                    className="glass-card"
+                    style={{ padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}
+                    title="Aplicar permissões padrão do Starter"
+                  >
+                    Padrão Starter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('pro')}
+                    className="glass-card"
+                    style={{ padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', color: '#FBBF24', borderColor: 'rgba(245, 158, 11, 0.3)' }}
+                    title="Aplicar permissões padrão do Pro"
+                  >
+                    Padrão Pro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('premium')}
+                    className="glass-card"
+                    style={{ padding: '4px 8px', fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', color: '#10B981', borderColor: 'rgba(16, 185, 129, 0.3)' }}
+                    title="Liberar todas as funcionalidades (Premium)"
+                  >
+                    Liberar Tudo (Premium)
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid das Permissões */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
+                {PERMISSION_METADATA.map((meta) => {
+                  const isChecked = Boolean(planForm.permissions[meta.key]);
+                  const Icon = meta.icon;
+                  return (
+                    <label
+                      key={meta.key}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleTogglePermission(meta.key);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: isChecked ? 'rgba(229, 179, 56, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                        border: isChecked ? '1px solid rgba(229, 179, 56, 0.4)' : '1px solid rgba(255, 255, 255, 0.05)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        readOnly
+                        style={{ width: '16px', height: '16px', marginTop: '2px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Icon size={14} color={isChecked ? 'var(--primary)' : 'var(--text-dim)'} />
+                          <strong style={{ fontSize: '0.82rem', color: isChecked ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                            {meta.label}
+                          </strong>
+                        </div>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.73rem', color: isChecked ? 'var(--text-muted)' : 'var(--text-dim)', lineHeight: 1.3 }}>
+                          {meta.description}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                <span>Lista de Benefícios na Vitrine</span>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>1 benefício por linha</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Lista de Benefícios na Vitrine (Landing Page)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAutoGenerateFeatures}
+                  className="glass-card"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 10px',
+                    fontSize: '0.73rem',
+                    fontWeight: 600,
+                    color: 'var(--primary)',
+                    borderColor: 'rgba(229, 179, 56, 0.3)',
+                    cursor: 'pointer',
+                  }}
+                  title="Gera os tópicos da vitrine baseado nos limites e permissões marcadas acima"
+                >
+                  <Sparkles size={12} />
+                  <span>Gerar Tópicos a partir dos Módulos</span>
+                </button>
+              </div>
               <textarea
                 rows={5}
                 placeholder="1 Profissional&#10;Até 300 agendamentos/mês&#10;Bot de WhatsApp integrado&#10;Fluxo de caixa básico"
@@ -2494,6 +2893,9 @@ export default function SuperAdminPage() {
                 onChange={(e) => setPlanForm({ ...planForm, featuresText: e.target.value })}
                 style={{ resize: 'vertical', minHeight: '110px' }}
               />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                Cada linha vira um tópico com ícone de verificado (✓) na tabela de preços para os clientes.
+              </span>
             </div>
 
             <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>

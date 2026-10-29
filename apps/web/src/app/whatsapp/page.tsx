@@ -15,8 +15,11 @@ import {
   Star,
   UserCheck,
   Scissors,
+  Crown,
+  Lock,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
+import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
 import { useToast } from '../../components/Toast';
@@ -47,6 +50,9 @@ interface WhatsAppConfig {
 
 export default function WhatsAppHubPage() {
   const { toast, confirm } = useToast();
+  const { hasPlanFeature } = useAuth();
+  const canCustomBot = hasPlanFeature('customBotMessages');
+  const canSurveys = hasPlanFeature('satisfactionSurveys');
   const [statusData, setStatusData] = useState<WhatsAppStatus | null>(null);
   const [config, setConfig] = useState<WhatsAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -395,6 +401,15 @@ export default function WhatsAppHubPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <MessageSquare size={22} color="var(--primary)" />
                     <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Respostas Automáticas do Bot</h3>
+                    {!canCustomBot && (
+                      <span
+                        className="badge badge-warning"
+                        style={{ fontSize: '0.68rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="Personalização de mensagens disponível nos planos Pro e Premium"
+                      >
+                        <Crown size={12} /> PRO & PREMIUM
+                      </span>
+                    )}
                   </div>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
@@ -513,6 +528,15 @@ export default function WhatsAppHubPage() {
                     <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-main)' }}>
                       Pesquisas de Satisfação Automáticas (NPS)
                     </span>
+                    {!canSurveys && (
+                      <span
+                        className="badge badge-warning"
+                        style={{ fontSize: '0.68rem', padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="Pesquisas automatizadas de satisfação disponíveis nos planos Pro e Premium"
+                      >
+                        <Crown size={12} /> PRO & PREMIUM
+                      </span>
+                    )}
                   </div>
 
                   {/* 1. Pesquisa de Satisfação: Atendimento Humano */}

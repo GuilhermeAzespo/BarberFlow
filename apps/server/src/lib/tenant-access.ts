@@ -113,18 +113,97 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
   return { allowed: true, code: 'OK', message: 'OK' };
 }
 
+export interface PlanPermissions {
+  reports: boolean;              // Central de Relatórios & Inteligência (/reports)
+  satisfactionSurveys: boolean;  // Pesquisas de Satisfação automatizadas (CSAT e NPS)
+  customBotMessages: boolean;    // Personalização de mensagens e templates do WhatsApp
+  financialExport: boolean;      // Exportação de relatórios financeiros e CSV
+  customDomain: boolean;         // Domínio Próprio & DNS Personalizado
+  commissions: boolean;          // Rateio e comissões automáticas por barbeiro
+  multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
+  prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
+}
+
+export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
+  starter: {
+    reports: false,
+    satisfactionSurveys: false,
+    customBotMessages: false,
+    financialExport: false,
+    customDomain: false,
+    commissions: false,
+    multiUserRoles: false,
+    prioritySupport: false,
+  },
+  pro: {
+    reports: true,
+    satisfactionSurveys: true,
+    customBotMessages: true,
+    financialExport: true,
+    customDomain: false,
+    commissions: true,
+    multiUserRoles: true,
+    prioritySupport: true,
+  },
+  premium: {
+    reports: true,
+    satisfactionSurveys: true,
+    customBotMessages: true,
+    financialExport: true,
+    customDomain: true,
+    commissions: true,
+    multiUserRoles: true,
+    prioritySupport: true,
+  },
+};
+
+export function extractPlanPermissions(plan?: { slug?: string; features?: any } | null): PlanPermissions {
+  if (!plan) return DEFAULT_PLAN_PERMISSIONS.starter;
+  const slug = (plan.slug || 'starter').toLowerCase() as 'starter' | 'pro' | 'premium';
+  const base = DEFAULT_PLAN_PERMISSIONS[slug] || DEFAULT_PLAN_PERMISSIONS.starter;
+
+  if (plan.features && typeof plan.features === 'object' && !Array.isArray(plan.features)) {
+    const custom = (plan.features as any).permissions;
+    if (custom && typeof custom === 'object') {
+      return {
+        ...base,
+        ...custom,
+      };
+    }
+  }
+
+  return base;
+}
+
+export function extractPlanFeatureList(features: any): string[] {
+  if (Array.isArray(features)) return features;
+  if (features && typeof features === 'object' && Array.isArray((features as any).items)) {
+    return (features as any).items;
+  }
+  return [];
+}
+
 export interface EffectiveLimits {
   maxProfessionals: number | null;
   maxAppointmentsPerMonth: number | null;
   whatsappEnabled: boolean;
+  permissions: PlanPermissions;
 }
 
 export function effectiveLimits(subscription: (Subscription & { plan: Plan }) | null): EffectiveLimits {
-  if (!subscription) return { maxProfessionals: 0, maxAppointmentsPerMonth: 0, whatsappEnabled: false };
+  if (!subscription) {
+    return {
+      maxProfessionals: 0,
+      maxAppointmentsPerMonth: 0,
+      whatsappEnabled: false,
+      permissions: DEFAULT_PLAN_PERMISSIONS.starter,
+    };
+  }
   return {
     maxProfessionals: subscription.maxProfessionalsOverride ?? subscription.plan.maxProfessionals,
     maxAppointmentsPerMonth: subscription.maxAppointmentsOverride ?? subscription.plan.maxAppointmentsPerMonth,
     whatsappEnabled: subscription.plan.whatsappEnabled,
+    permissions: extractPlanPermissions(subscription.plan),
   };
 }
 
@@ -135,6 +214,21 @@ export async function loadTenant(tenantId: string): Promise<TenantWithSubscripti
   });
   if (!tenant) throw HttpError.notFound('Salão não encontrado');
   return tenant;
+}
+
+export async function assertPlanFeature(
+  tenantId: string,
+  feature: keyof PlanPermissions,
+  featureName?: string,
+): Promise<void> {
+  const tenant = await loadTenant(tenantId);
+  const limits = effectiveLimits(tenant.subscription);
+  if (!limits.permissions[feature]) {
+    const planName = tenant.subscription?.plan?.name || 'Starter';
+    throw HttpError.paymentRequired(
+      `O recurso "${featureName || feature}" não está disponível no plano ${planName}. Faça upgrade para o plano Pro ou Premium para liberar esta funcionalidade.`,
+    );
+  }
 }
 
 export async function assertProfessionalLimit(tenantId: string): Promise<void> {

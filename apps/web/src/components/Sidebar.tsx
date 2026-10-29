@@ -36,7 +36,7 @@ export const ALL_MENU_KEYS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { canAccessMenu, subscription } = useAuth();
+  const { canAccessMenu, subscription, hasPlanFeature } = useAuth();
   const { unreadCount: whatsappUnreadCount } = useWhatsAppNotifications();
   const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
@@ -143,6 +143,25 @@ export function Sidebar() {
                 <span className="sidebar-label text-nowrap-ellipsis" style={{ flex: 1, minWidth: 0 }}>
                   {item.label}
                 </span>
+                {item.key === 'reports' && !hasPlanFeature('reports') && (
+                  <span
+                    className="sidebar-badge"
+                    style={{
+                      marginLeft: 'auto',
+                      background: active ? '#0B0F17' : 'rgba(229, 179, 56, 0.15)',
+                      color: active ? '#E5B338' : '#FBBF24',
+                      border: active ? 'none' : '1px solid rgba(229, 179, 56, 0.35)',
+                      borderRadius: '6px',
+                      padding: '1px 5px',
+                      fontSize: '0.62rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.04em',
+                      flexShrink: 0,
+                    }}
+                  >
+                    PRO
+                  </span>
+                )}
                 {item.key === 'chat' && whatsappUnreadCount > 0 && (
                   <span
                     className="sidebar-badge"

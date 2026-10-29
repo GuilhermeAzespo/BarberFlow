@@ -44,6 +44,17 @@ export interface Tenant {
   status: 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'CANCELED';
 }
 
+export interface PlanPermissions {
+  reports: boolean;              // Central de Relatórios & Inteligência (/reports)
+  satisfactionSurveys: boolean;  // Pesquisas de Satisfação automatizadas (CSAT e NPS)
+  customBotMessages: boolean;    // Personalização de mensagens e templates do WhatsApp
+  financialExport: boolean;      // Exportação de relatórios financeiros e CSV
+  customDomain: boolean;         // Domínio Próprio & DNS Personalizado
+  commissions: boolean;          // Rateio e comissões automáticas por barbeiro
+  multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
+  prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
+}
+
 export interface Subscription {
   status: 'TRIALING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED';
   trialEndsAt?: string | null;
@@ -58,11 +69,14 @@ export interface Subscription {
     name: string;
     slug: string;
     priceCents: number;
+    features?: string[];
+    permissions?: PlanPermissions;
   };
   limits: {
     maxProfessionals: number | null;
     maxAppointmentsPerMonth: number | null;
     whatsappEnabled: boolean;
+    permissions?: PlanPermissions;
   };
 }
 
@@ -82,6 +96,7 @@ interface AuthContextType {
   loading: boolean;
   canAccessMenu: (menuKey: string) => boolean;
   hasPermission: (key: keyof Omit<UserPermissions, 'allowedMenus' | 'preset' | 'roleTitle'>) => boolean;
+  hasPlanFeature: (feature: keyof PlanPermissions) => boolean;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -96,6 +111,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   canAccessMenu: () => true,
   hasPermission: () => true,
+  hasPlanFeature: () => true,
   refresh: async () => {},
   logout: async () => {},
   exitImpersonation: async () => {},
@@ -188,6 +204,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const hasPlanFeature = useCallback(
+    (feature: keyof PlanPermissions): boolean => {
+      if (!user) return false;
+      if (user.role === 'SUPER_ADMIN') return true;
+
+      const limitsPerms = subscription?.limits?.permissions;
+      if (limitsPerms && limitsPerms[feature] !== undefined) {
+        return Boolean(limitsPerms[feature]);
+      }
+      const planPerms = subscription?.plan?.permissions;
+      if (planPerms && planPerms[feature] !== undefined) {
+        return Boolean(planPerms[feature]);
+      }
+
+      const slug = (subscription?.plan?.slug || 'starter').toLowerCase();
+      if (slug === 'premium' || slug === 'master') return true;
+      if (slug === 'pro') return feature !== 'customDomain';
+      return false;
+    },
+    [user, subscription]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -199,6 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         canAccessMenu,
         hasPermission,
+        hasPlanFeature,
         refresh,
         logout,
         exitImpersonation,
