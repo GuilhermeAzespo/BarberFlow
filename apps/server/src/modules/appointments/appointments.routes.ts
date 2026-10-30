@@ -142,6 +142,30 @@ appointmentsRouter.get('/available-dates', async (req, res) => {
   res.json({ dates });
 });
 
+// Listar agendamentos em atraso para notificações e alertas internos (deve vir antes de /:id)
+appointmentsRouter.get('/delayed', async (req, res) => {
+  const tenantId = req.tenantId!;
+  let targetProfId: string | undefined = undefined;
+
+  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
+    const myProfId = await getProfessionalIdForUser(req);
+    if (!myProfId) {
+      return res.json({ delayedAppointments: [], count: 0 });
+    }
+    targetProfId = myProfId;
+  }
+
+  const delayedAppointments = await getDelayedAppointments({
+    tenantId,
+    professionalId: targetProfId,
+  });
+
+  res.json({
+    delayedAppointments,
+    count: delayedAppointments.length,
+  });
+});
+
 // Detalhes de um agendamento
 appointmentsRouter.get('/:id', async (req, res) => {
   const appointment = await prisma.appointment.findFirst({
@@ -270,30 +294,6 @@ appointmentsRouter.delete('/:id', async (req, res) => {
     userId: req.auth?.userId,
   });
   res.json({ appointment });
-});
-
-// Listar agendamentos em atraso para notificações e alertas internos
-appointmentsRouter.get('/delayed', async (req, res) => {
-  const tenantId = req.tenantId!;
-  let targetProfId: string | undefined = undefined;
-
-  if (req.auth?.role === 'PROFESSIONAL' && req.auth.permissions?.canViewAllAppointments !== true) {
-    const myProfId = await getProfessionalIdForUser(req);
-    if (!myProfId) {
-      return res.json({ delayedAppointments: [], count: 0 });
-    }
-    targetProfId = myProfId;
-  }
-
-  const delayedAppointments = await getDelayedAppointments({
-    tenantId,
-    professionalId: targetProfId,
-  });
-
-  res.json({
-    delayedAppointments,
-    count: delayedAppointments.length,
-  });
 });
 
 // Notificar cliente sobre atraso no agendamento (via WhatsApp Bot / WhatsApp link)

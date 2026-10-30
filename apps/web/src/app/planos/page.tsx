@@ -47,10 +47,27 @@ interface PublicPlan {
   maxProfessionals?: number | null;
   maxAppointmentsPerMonth?: number | null;
   whatsappEnabled: boolean;
-  features?: string[] | null;
+  features?: any;
   badge?: string | null;
   isHighlighted?: boolean;
 }
+
+const getPlanFeatures = (plan: PublicPlan): string[] => {
+  if (Array.isArray(plan.features)) return plan.features;
+  if (plan.features && typeof plan.features === 'object') {
+    if (Array.isArray((plan.features as any).items)) {
+      return (plan.features as any).items;
+    }
+  }
+  if (typeof plan.features === 'string') {
+    try {
+      const parsed = JSON.parse(plan.features);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && Array.isArray(parsed.items)) return parsed.items;
+    } catch {}
+  }
+  return [];
+};
 
 const EXPIRATION_MONTHS = [
   { value: '01', label: '01 - Jan' },
@@ -1040,7 +1057,7 @@ export default function PlanosPage() {
 
                       {/* Lista de Recursos */}
                       <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px 0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {(p.features || []).map((feat, i) => (
+                        {getPlanFeatures(p).map((feat, i) => (
                           <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.86rem', color: 'var(--text-main)', lineHeight: 1.4 }}>
                             <Check size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
                             <span>{feat}</span>

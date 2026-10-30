@@ -18,6 +18,11 @@ import {
   PanelLeftOpen,
   Check,
   AlertTriangle,
+  RotateCcw,
+  Eye,
+  Trash2,
+  CalendarSync,
+  Send,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -162,6 +167,23 @@ export default function CalendarPage() {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('PIX');
+
+  // Menu de Contexto (botão direito)
+  interface ContextMenuState {
+    x: number;
+    y: number;
+    app: Appointment;
+  }
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // Reagendamento via menu de contexto / ação rápida
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
+  const [rescheduleApp, setRescheduleApp] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
+  const [rescheduleTime, setRescheduleTime] = useState<string>('10:00');
+  const [rescheduleProfId, setRescheduleProfId] = useState<string>('');
+  const [rescheduleServiceId, setRescheduleServiceId] = useState<string>('');
+  const [savingReschedule, setSavingReschedule] = useState(false);
 
   // Form novo agendamento
   const [customerName, setCustomerName] = useState('');
@@ -449,6 +471,190 @@ export default function CalendarPage() {
       await api.delete(`/api/appointments/${selectedApp.id}`);
       setIsStatusModalOpen(false);
       setSelectedApp(null);
+      await loadData();
+      toast.success('Agendamento cancelado com sucesso.');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao cancelar agendamento.');
+    }
+  };
+
+  // Serviços disponíveis para reagendamento com base no profissional selecionado
+  const rescheduleAvailableServices = useMemo(() => {
+    if (!rescheduleProfId) return services;
+    const prof = professionals.find((p) => p.id === rescheduleProfId);
+    if (prof && prof.serviceIds && prof.serviceIds.length > 0) {
+      const filtered = services.filter((s) => prof.serviceIds!.includes(s.id));
+      if (filtered.length > 0) return filtered;
+    }
+    return services;
+  }, [services, professionals, rescheduleProfId]);
+
+  useEffect(() => {
+    if (rescheduleAvailableServices.length > 0) {
+      const exists = rescheduleAvailableServices.some((s) => s.id === rescheduleServiceId);
+      if (!exists) {
+        setRescheduleServiceId(rescheduleAvailableServices[0].id);
+      }
+    }
+  }, [rescheduleAvailableServices, rescheduleServiceId]);
+
+  // Listener para fechar o menu de contexto ao clicar fora, rolar ou pressionar Esc
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const el = document.getElementById('calendar-context-menu');
+      if (el && !el.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleScroll = () => {
+      setContextMenu(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu]);
+
+  // Handlers do menu de contexto
+  const handleOpenContextMenu = (e: React.MouseEvent, app: Appointment) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const menuWidth = 240;
+    const menuHeight = 320;
+    let x = e.clientX;
+    let y = e.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 12;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 12;
+    }
+
+    setContextMenu({ x, y, app });
+  };
+
+  const handleStartReschedule = (app: Appointment) => {
+    setContextMenu(null);
+    const dt = DateTime.fromISO(app.startAt, { zone: timezone });
+    setRescheduleApp(app);
+    setRescheduleDate(dt.toFormat('yyyy-MM-dd'));
+    setRescheduleTime(dt.toFormat('HH:mm'));
+    setRescheduleProfId(app.professional.id);
+    setRescheduleServiceId(app.service.id);
+    setIsRescheduleModalOpen(true);
+  };
+
+  const handleSaveReschedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rescheduleApp || !rescheduleDate || !rescheduleTime) return;
+
+    const [h, m] = rescheduleTime.split(':').map(Number);
+    const newStartDt = DateTime.fromISO(rescheduleDate, { zone: timezone }).set({
+      hour: h,
+      minute: m,
+      second: 0,
+      millisecond: 0,
+    });
+
+    const nowDate = DateTime.now().setZone(timezone);
+    if (newStartDt < nowDate.minus({ minutes: 5 })) {
+      toast.error('Não é possível reagendar para uma data ou horário que já passou.');
+      return;
+    }
+
+    setSavingReschedule(true);
+    try {
+      await api.patch(`/api/appointments/${rescheduleApp.id}`, {
+        startAt: newStartDt.toJSDate(),
+        professionalId: rescheduleProfId || rescheduleApp.professional.id,
+        serviceId: rescheduleServiceId || rescheduleApp.service.id,
+      });
+      toast.success('Agendamento reagendado com sucesso!');
+      setIsRescheduleModalOpen(false);
+      setRescheduleApp(null);
+      await loadData();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao reagendar atendimento.');
+    } finally {
+      setSavingReschedule(false);
+    }
+  };
+
+  const handleQuickNotifyDelay = async (app: Appointment) => {
+    setContextMenu(null);
+    try {
+      const res = await api.post<{ success: boolean; sentViaBot: boolean; whatsappUrl: string; message: string }>(
+        `/api/appointments/${app.id}/notify-delay`
+      );
+      toast.success(res.message);
+      if (!res.sentViaBot && res.whatsappUrl) {
+        window.open(res.whatsappUrl, '_blank');
+      }
+      await loadData();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao notificar cliente.');
+    }
+  };
+
+  const handleOpenWhatsAppChat = (app: Appointment) => {
+    setContextMenu(null);
+    if (!app.customer?.phone) {
+      toast.error('Cliente sem telefone cadastrado.');
+      return;
+    }
+    const cleanPhone = app.customer.phone.replace(/\D/g, '');
+    const url = `https://wa.me/55${cleanPhone}`;
+    window.open(url, '_blank');
+  };
+
+  const handleQuickMarkDelayed = async (app: Appointment) => {
+    setContextMenu(null);
+    try {
+      await api.patch(`/api/appointments/${app.id}/status`, {
+        status: 'DELAYED',
+      });
+      toast.success('Atendimento marcado como atrasado.');
+      await loadData();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao marcar atraso.');
+    }
+  };
+
+  const handleQuickComplete = (app: Appointment) => {
+    setContextMenu(null);
+    setSelectedApp(app);
+    setIsStatusModalOpen(true);
+  };
+
+  const handleViewDetails = (app: Appointment) => {
+    setContextMenu(null);
+    setSelectedApp(app);
+    setIsStatusModalOpen(true);
+  };
+
+  const handleQuickCancel = async (app: Appointment) => {
+    setContextMenu(null);
+    const ok = await confirm({
+      title: 'Cancelar Agendamento',
+      message: `Deseja realmente cancelar o agendamento de "${app.customer?.name || 'Cliente'}"?`,
+      confirmText: 'Cancelar Agendamento',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
+    try {
+      await api.delete(`/api/appointments/${app.id}`);
       await loadData();
       toast.success('Agendamento cancelado com sucesso.');
     } catch (err: unknown) {
@@ -1454,6 +1660,9 @@ export default function CalendarPage() {
                                 setSelectedApp(app);
                                 setIsStatusModalOpen(true);
                               }}
+                              onContextMenu={(e) => {
+                                handleOpenContextMenu(e, app);
+                              }}
                               title={`${app.customer.name}\n${app.service.name} (${app.service.durationMinutes} min) - ${formatBRL(app.priceCents)}\n${startDateTime.toFormat('HH:mm')} - ${endDateTime.toFormat('HH:mm')}\nProfissional: ${app.professional.name}\nStatus: ${app.status}`}
                               style={{
                                 position: 'absolute',
@@ -2074,6 +2283,323 @@ export default function CalendarPage() {
           </div>
         )}
       </Modal>
+
+      {/* Menu de Contexto (botão direito no agendamento) */}
+      {contextMenu && (
+        <div
+          id="calendar-context-menu"
+          style={{
+            position: 'fixed',
+            top: `${contextMenu.y}px`,
+            left: `${contextMenu.x}px`,
+            width: '240px',
+            background: 'rgba(15, 23, 42, 0.97)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: '10px',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.65), 0 2px 6px rgba(0,0,0,0.4)',
+            padding: '6px',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            userSelect: 'none',
+            animation: 'fadeIn 0.12s ease-out',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header do menu de contexto com dados do agendamento */}
+          <div
+            style={{
+              padding: '6px 8px 8px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              marginBottom: '4px',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                color: '#F8FAFC',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {contextMenu.app.customer?.name || 'Cliente'}
+            </div>
+            <div
+              style={{
+                fontSize: '0.72rem',
+                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: '2px',
+              }}
+            >
+              <span>
+                {DateTime.fromISO(contextMenu.app.startAt, { zone: timezone }).toFormat('HH:mm')}
+              </span>
+              <span>•</span>
+              <span
+                style={{
+                  maxWidth: '140px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {contextMenu.app.service?.name}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="context-menu-item-btn"
+            onClick={() => handleViewDetails(contextMenu.app)}
+          >
+            <Eye size={15} color="#94A3B8" />
+            <span>Ver detalhes</span>
+          </button>
+
+          <button
+            type="button"
+            className="context-menu-item-btn"
+            onClick={() => handleStartReschedule(contextMenu.app)}
+          >
+            <CalendarSync size={15} color="#38BDF8" />
+            <span>Reagendar horário</span>
+          </button>
+
+          {contextMenu.app.customer?.phone && (
+            <button
+              type="button"
+              className="context-menu-item-btn"
+              onClick={() => handleOpenWhatsAppChat(contextMenu.app)}
+            >
+              <MessageCircle size={15} color="#25D366" />
+              <span>Abrir WhatsApp</span>
+            </button>
+          )}
+
+          {contextMenu.app.status !== 'COMPLETED' && (
+            <button
+              type="button"
+              className="context-menu-item-btn"
+              onClick={() => handleQuickNotifyDelay(contextMenu.app)}
+            >
+              <Send size={15} color="#F59E0B" />
+              <span>Notificar atraso (WhatsApp)</span>
+            </button>
+          )}
+
+          {contextMenu.app.status !== 'COMPLETED' && contextMenu.app.status !== 'DELAYED' && (
+            <button
+              type="button"
+              className="context-menu-item-btn"
+              onClick={() => handleQuickMarkDelayed(contextMenu.app)}
+            >
+              <AlertTriangle size={15} color="#EF4444" />
+              <span>Marcar como atrasado</span>
+            </button>
+          )}
+
+          {contextMenu.app.status !== 'COMPLETED' && contextMenu.app.status !== 'CANCELED' && (
+            <button
+              type="button"
+              className="context-menu-item-btn"
+              onClick={() => handleQuickComplete(contextMenu.app)}
+            >
+              <CheckCircle size={15} color="#10B981" />
+              <span>Concluir / Lançar caixa</span>
+            </button>
+          )}
+
+          <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />
+
+          {contextMenu.app.status !== 'CANCELED' && (
+            <button
+              type="button"
+              className="context-menu-item-btn danger"
+              onClick={() => handleQuickCancel(contextMenu.app)}
+            >
+              <Trash2 size={15} color="#FB7185" />
+              <span>Cancelar agendamento</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Modal de Reagendamento Rápido */}
+      <Modal
+        isOpen={isRescheduleModalOpen}
+        onClose={() => {
+          setIsRescheduleModalOpen(false);
+          setRescheduleApp(null);
+        }}
+        title="Reagendar Horário"
+        maxWidth="480px"
+      >
+        {rescheduleApp && (
+          <form onSubmit={handleSaveReschedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div
+              style={{
+                padding: '12px',
+                borderRadius: '8px',
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+              }}
+            >
+              <div style={{ fontSize: '0.82rem', color: '#38BDF8', fontWeight: 600 }}>Agendamento Atual:</div>
+              <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#F1F5F9' }}>
+                {rescheduleApp.customer?.name}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {DateTime.fromISO(rescheduleApp.startAt, { zone: timezone }).toFormat("dd/MM/yyyy 'às' HH:mm")} • {rescheduleApp.service.name} • {rescheduleApp.professional.name}
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+                Nova Data:
+              </label>
+              <input
+                type="date"
+                required
+                value={rescheduleDate}
+                min={DateTime.now().setZone(timezone).toFormat('yyyy-MM-dd')}
+                onChange={(e) => setRescheduleDate(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  color: '#F8FAFC',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+                Novo Horário:
+              </label>
+              <TimePicker
+                value={rescheduleTime}
+                onChange={setRescheduleTime}
+                minuteStep={5}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+                Profissional:
+              </label>
+              <Select
+                value={rescheduleProfId}
+                onChange={(e) => setRescheduleProfId(e.target.value)}
+                disabled={isRestrictedProfessional}
+              >
+                {visibleProfessionals.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+                Serviço:
+              </label>
+              <Select
+                value={rescheduleServiceId}
+                onChange={(e) => setRescheduleServiceId(e.target.value)}
+              >
+                {rescheduleAvailableServices.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.durationMinutes} min) - {formatBRL(s.priceCents)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRescheduleModalOpen(false);
+                  setRescheduleApp(null);
+                }}
+                className="glass-card"
+                style={{
+                  flex: 1,
+                  padding: '10px 16px',
+                  color: 'var(--text-muted)',
+                  fontWeight: 600,
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingReschedule}
+                className="gold-gradient-primary gold-glow"
+                style={{
+                  flex: 2,
+                  padding: '10px 16px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <CalendarSync size={16} />
+                <span>{savingReschedule ? 'Reagendando...' : 'Salvar Novo Horário'}</span>
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      <style jsx global>{`
+        .context-menu-item-btn {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          width: 100%;
+          padding: 8px 10px;
+          border-radius: 6px;
+          border: none;
+          background: transparent;
+          color: #E2E8F0;
+          font-size: 0.82rem;
+          font-weight: 500;
+          cursor: pointer;
+          text-align: left;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .context-menu-item-btn:hover {
+          background: rgba(255, 255, 255, 0.08) !important;
+          color: #FFFFFF !important;
+        }
+        .context-menu-item-btn.danger {
+          color: #FB7185;
+        }
+        .context-menu-item-btn.danger:hover {
+          background: rgba(244, 63, 94, 0.15) !important;
+          color: #FDA4AF !important;
+        }
+      `}</style>
     </div>
   );
 }
