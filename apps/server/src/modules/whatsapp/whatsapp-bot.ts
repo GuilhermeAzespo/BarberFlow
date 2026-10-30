@@ -31,6 +31,8 @@ interface BotContext {
   surveyId?: string;
   appointmentId?: string;
   attendantName?: string;
+  inactivityClosed?: boolean;
+  closedAt?: number;
 }
 
 function parseRelativeDate(text: string, zone: string): { dateStr: string; label: string } | null {
@@ -230,8 +232,6 @@ function isAskingForBusinessHoursOrLocation(clean: string): boolean {
     clean.includes('horarios de funcionamento') ||
     clean.includes('horario de atendimento') ||
     clean.includes('horarios de atendimento') ||
-    clean.includes('horarios disponiveis') ||
-    clean.includes('horario disponivel') ||
     clean.includes('que horas abre') ||
     clean.includes('que horas fecha') ||
     clean.includes('que horas voces abrem') ||
@@ -292,6 +292,7 @@ function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolea
     'marcar',
     'reservar',
     'vaga',
+    'vagas',
     'cortar',
     'barba',
     'cabelo',
@@ -301,14 +302,34 @@ function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolea
     'queria marcar',
     'quero agendar',
     'quero marcar',
-    'tem horario para',
-    'tem vaga para',
+    'tem horario',
+    'tem horarios',
+    'quais horarios',
+    'qual horario',
+    'horarios disponiv',
+    'horario disponiv',
+    'horarios disponv',
+    'horario disponv',
+    'horarios livres',
+    'horario livre',
+    'horarios vagos',
+    'horario vago',
+    'tem vaga',
+    'tem vagas',
+    'algum horario',
+    'ver horarios',
   ];
 
   const hasBookingKeyword = bookingKeywords.some((kw) => clean.includes(kw));
 
+  // Qualquer consulta sobre horário ou vaga combinada com data ("amanhã", "hoje", etc.) ou intenção ("tem", "quais", "para")
+  const hasTimeOrDateQuery =
+    (clean.includes('horario') || clean.includes('horarios') || clean.includes('vaga') || clean.includes('vagas')) &&
+    (clean.includes('amanha') || clean.includes('hoje') || clean.includes('dispon') || clean.includes('tem') || clean.includes('para') || clean.includes('quais'));
+
   return (
     hasBookingKeyword ||
+    hasTimeOrDateQuery ||
     (hasServiceKeywords && (clean.includes('tem') || clean.includes('quero') || clean.includes('horario') || clean.includes('hoje') || clean.includes('amanha'))) ||
     (hasProfKeywords && hasServiceKeywords)
   );
@@ -472,14 +493,15 @@ async function trySmartNaturalLanguageBooking(params: {
   // Se o cliente tem intenção de agendar, mas não citou o serviço:
   // NÃO assume services[0]! Pergunta com clareza ao cliente qual serviço deseja!
   if (!matchedSvc) {
-    let msg = `Fala, ${customerFirstName}! 💈 Qual serviço você gostaria de agendar${matchedProf ? ` com o *${matchedProf.name}*` : ''}?\n\n`;
+    const parsedDate = parseRelativeDate(text, tenant.timezone);
+    const parsedTime = parseTime(text);
+    const dateLabel = parsedDate ? ` para *${parsedDate.label}*` : '';
+
+    let msg = `Fala, ${customerFirstName}! 💈 Para verificar os horários${dateLabel}, qual serviço você gostaria de agendar${matchedProf ? ` com o *${matchedProf.name}*` : ''}?\n\n`;
     services.forEach((s, idx) => {
       msg += `*${idx + 1}* - ${s.name} (${s.durationMinutes} min) - ${formatCurrency(s.priceCents)}\n`;
     });
     msg += `\n_Digite o número do serviço ou *menu* para voltar:_`;
-
-    const parsedDate = parseRelativeDate(text, tenant.timezone);
-    const parsedTime = parseTime(text);
 
     await updateConversation(tenantId, senderJid, 'SELECT_SERVICE', {
       professionalId: matchedProf ? matchedProf.id : null,
@@ -701,6 +723,10 @@ export async function handleIncomingMessage(params: {
   }
 
   const finalCustomerName = resolvedName;
+  const customerFirstName =
+    finalCustomerName && finalCustomerName !== 'Cliente' && !/^\d+$/.test(finalCustomerName)
+      ? finalCustomerName.split(' ')[0]
+      : 'Cliente';
 
   // Carrega ou inicializa a conversa
   let conversation = await prisma.whatsAppConversation.findUnique({
@@ -804,6 +830,14 @@ export async function handleIncomingMessage(params: {
   const ONE_HOUR_MS = 60 * 60 * 1000;
   let state = conversation.state;
   let context = (conversation.context as BotContext) || {};
+
+  // Se a conversa havia sido encerrada automaticamente por inatividade (1h sem resposta):
+  if (context.inactivityClosed) {
+    logger.info({ tenantId, senderJid }, 'Cliente enviou mensagem após encerramento por inatividade. Reiniciando atendimento.');
+    await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+    state = 'MENU';
+    context = {};
+  }
 
   // Verifica se está em pesquisa de satisfação e se o tempo limite de 1 hora expirou
   if (state.startsWith('SURVEY_')) {
@@ -1042,6 +1076,46 @@ export async function handleIncomingMessage(params: {
         return;
       }
 
+      // Se a data já foi capturada na mensagem anterior (ex: "quais horarios vc tem disponvel para amanhã?")
+      const chosenProfId = context.professionalId || (candidates.length === 1 ? candidates[0].id : null);
+      const chosenProfName = context.professionalName || (candidates.length === 1 ? candidates[0].name : 'Qualquer profissional disponível');
+
+      if (context.date && (chosenProfId !== null || candidates.length === 1)) {
+        const { slots } = await getAvailability({
+          tenantId,
+          serviceId: service.id,
+          date: context.date,
+          professionalId: chosenProfId,
+        });
+
+        const dt = DateTime.fromISO(context.date, { zone: tenant.timezone });
+        const now = DateTime.now().setZone(tenant.timezone);
+        const dateLabel = dt.hasSame(now, 'day') ? 'Hoje' : dt.hasSame(now.plus({ days: 1 }), 'day') ? 'Amanhã' : dt.toFormat('dd/LL/yyyy');
+
+        if (slots.length > 0) {
+          const availableSlots: BotContext['availableSlots'] = [];
+          let msg = `Fala, ${customerFirstName}! 💈 Encontrei estes horários livres para *${service.name}* em *${dateLabel}*:\n\n`;
+          slots.slice(0, 10).forEach((s, idx) => {
+            availableSlots.push({ time: s.time, startAt: s.startAt });
+            msg += `*${idx + 1}* - ${s.time}\n`;
+          });
+          msg += `\n_Digite o número do horário desejado ou *menu* para voltar:_`;
+
+          await updateConversation(tenantId, senderJid, 'SELECT_TIME', {
+            ...context,
+            serviceId: service.id,
+            serviceName: service.name,
+            servicePriceCents: service.priceCents,
+            serviceDuration: service.durationMinutes,
+            professionalId: chosenProfId,
+            professionalName: chosenProfName,
+            availableSlots,
+          });
+          await reply(msg);
+          break;
+        }
+      }
+
       let msg = `💈 *Com qual profissional você prefere fazer o(a) ${service.name}?*\n\n`;
       msg += `*0* - Qualquer profissional disponível\n`;
       candidates.forEach((p, idx) => {
@@ -1050,6 +1124,7 @@ export async function handleIncomingMessage(params: {
       msg += `\n_Digite o número da opção desejada:_`;
 
       await updateConversation(tenantId, senderJid, 'SELECT_PROFESSIONAL', {
+        ...context,
         serviceId: service.id,
         serviceName: service.name,
         servicePriceCents: service.priceCents,
@@ -1085,6 +1160,39 @@ export async function handleIncomingMessage(params: {
         }
         selectedProfessionalId = candidate.id;
         selectedProfessionalName = candidate.name;
+      }
+
+      // Se a data já havia sido indicada pelo cliente (ex: "quais horarios para amanha"):
+      if (context.date && context.serviceId) {
+        const { slots } = await getAvailability({
+          tenantId,
+          serviceId: context.serviceId,
+          date: context.date,
+          professionalId: selectedProfessionalId,
+        });
+
+        const dt = DateTime.fromISO(context.date, { zone: tenant.timezone });
+        const now = DateTime.now().setZone(tenant.timezone);
+        const dateLabel = dt.hasSame(now, 'day') ? 'Hoje' : dt.hasSame(now.plus({ days: 1 }), 'day') ? 'Amanhã' : dt.toFormat('dd/LL/yyyy');
+
+        if (slots.length > 0) {
+          const availableSlots: BotContext['availableSlots'] = [];
+          let msg = `Fala, ${customerFirstName}! 💈 Encontrei estes horários livres para *${context.serviceName}* com *${selectedProfessionalName}* em *${dateLabel}*:\n\n`;
+          slots.slice(0, 10).forEach((s, idx) => {
+            availableSlots.push({ time: s.time, startAt: s.startAt });
+            msg += `*${idx + 1}* - ${s.time}\n`;
+          });
+          msg += `\n_Digite o número do horário desejado ou *menu* para voltar:_`;
+
+          await updateConversation(tenantId, senderJid, 'SELECT_TIME', {
+            ...context,
+            professionalId: selectedProfessionalId,
+            professionalName: selectedProfessionalName,
+            availableSlots,
+          });
+          await reply(msg);
+          break;
+        }
       }
 
       // Buscar próximas datas disponíveis
@@ -1519,6 +1627,8 @@ async function sendMenu(
     !waConfig.welcomeMessage ||
     waConfig.welcomeMessage.trim() === 'Olá! Bem-vindo.' ||
     waConfig.welcomeMessage.trim() === 'Olá! Bem-vindo(a).' ||
+    waConfig.welcomeMessage.includes('assistente virtual') ||
+    !waConfig.welcomeMessage.includes('IA') ||
     waConfig.welcomeMessage.trim().length < 25;
 
   const rawWelcome = isDefaultOrEmpty

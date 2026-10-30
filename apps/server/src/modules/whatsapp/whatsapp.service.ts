@@ -47,7 +47,23 @@ class WhatsAppService {
       logger.error({ err }, 'Erro ao restaurar sessões do WhatsApp');
     });
 
-    // Iniciar checagem periódica de lembretes automáticos e expiração de pesquisas a cada 60 segundos
+    // Atualiza mensagens de boas-vindas legadas no banco para o novo padrão com IA
+    prisma.whatsAppConfig.updateMany({
+      where: {
+        OR: [
+          { welcomeMessage: { contains: 'assistente virtual' } },
+          { welcomeMessage: 'Olá! Bem-vindo.' },
+          { welcomeMessage: 'Olá! Bem-vindo(a).' },
+        ],
+      },
+      data: {
+        welcomeMessage: DEFAULT_WHATSAPP_MESSAGES.welcomeMessage,
+      },
+    }).catch((err) => {
+      logger.warn({ err }, 'Aviso ao atualizar mensagens de boas-vindas legadas');
+    });
+
+    // Iniciar checagem periódica de lembretes automáticos, expiração de pesquisas e fechamento de conversas inativas a cada 60 segundos
     if (!this.reminderInterval) {
       this.reminderInterval = setInterval(() => {
         this.checkAndSendReminders().catch((err) => {
@@ -55,6 +71,9 @@ class WhatsAppService {
         });
         cleanExpiredSurveys().catch((err) => {
           logger.error({ err }, 'Erro ao limpar pesquisas expiradas do WhatsApp');
+        });
+        this.checkAndCloseInactiveConversations().catch((err) => {
+          logger.error({ err }, 'Erro ao fechar conversas inativas do WhatsApp');
         });
       }, 60 * 1000);
     }
@@ -477,6 +496,114 @@ class WhatsAppService {
           logger.error({ err, tenantId: cfg.tenantId, appointmentId: app.id }, 'Falha ao enviar lembrete');
         }
       }
+    }
+  }
+
+  /**
+   * Encerra conversas inativas há mais de 1 hora sem resposta do cliente,
+   * enviando a mensagem amigável de encerramento e liberando a conversa para um novo contato.
+   */
+  async checkAndCloseInactiveConversations(): Promise<number> {
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const oneHourAgo = new Date(now - ONE_HOUR_MS);
+    const twentyFourHoursAgo = new Date(now - TWENTY_FOUR_HOURS_MS);
+
+    try {
+      const candidates = await prisma.whatsAppConversation.findMany({
+        where: {
+          lastMessageAt: {
+            gte: twentyFourHoursAgo,
+            lte: oneHourAgo,
+          },
+        },
+        include: {
+          tenant: { select: { id: true, name: true } },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      let closedCount = 0;
+
+      for (const conv of candidates) {
+        const ctx = (conv.context as Record<string, any>) || {};
+        if (ctx.inactivityClosed) continue;
+        if (conv.state.startsWith('SURVEY_')) continue;
+
+        const lastMsg = conv.messages[0];
+        // Encerra apenas se a última mensagem enviada foi nossa (fromMe = true)
+        // ou seja: o bot ou atendente enviou mensagem e o cliente não respondeu mais após 1 hora
+        if (lastMsg && lastMsg.fromMe) {
+          const rawTemplate = DEFAULT_WHATSAPP_MESSAGES.inactivityMessage;
+          const text = renderTemplate(rawTemplate, {
+            salao: conv.tenant.name,
+          });
+
+          const sent = await this.sendMessage(conv.tenantId, conv.contactJid, text).catch((err) => {
+            logger.warn({ err, tenantId: conv.tenantId, contactJid: conv.contactJid }, 'Erro ao enviar mensagem de inatividade');
+            return false;
+          });
+
+          if (sent) {
+            await prisma.whatsAppMessage.create({
+              data: {
+                tenantId: conv.tenantId,
+                conversationId: conv.id,
+                contactJid: conv.contactJid,
+                fromMe: true,
+                senderType: 'BOT',
+                senderName: conv.tenant.name,
+                body: text,
+                status: 'SENT',
+              },
+            });
+
+            if (conv.isAttendant) {
+              await prisma.whatsAppMessage.create({
+                data: {
+                  tenantId: conv.tenantId,
+                  conversationId: conv.id,
+                  contactJid: conv.contactJid,
+                  fromMe: true,
+                  senderType: 'SYSTEM',
+                  body: `🔔 Atendimento encerrado automaticamente por inatividade (1 hora sem resposta do cliente).`,
+                  status: 'SENT',
+                },
+              });
+            }
+
+            await prisma.whatsAppConversation.update({
+              where: { id: conv.id },
+              data: {
+                state: 'MENU',
+                isAttendant: false,
+                lastMessage: text,
+                lastMessageAt: new Date(),
+                context: {
+                  ...ctx,
+                  inactivityClosed: true,
+                  closedAt: now,
+                },
+              },
+            });
+
+            closedCount++;
+          }
+        }
+      }
+
+      if (closedCount > 0) {
+        logger.info({ closedCount }, 'Conversas encerradas por inatividade (1 hora sem resposta)');
+      }
+
+      return closedCount;
+    } catch (err) {
+      logger.error({ err }, 'Erro ao processar encerramento de conversas inativas');
+      return 0;
     }
   }
 }
