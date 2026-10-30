@@ -189,6 +189,93 @@ function matchProfessional(
   return null;
 }
 
+function isAskingForServices(clean: string): boolean {
+  return (
+    clean.includes('quais os servicos') ||
+    clean.includes('quais servicos') ||
+    clean.includes('servicos disponiveis') ||
+    clean.includes('servico disponivel') ||
+    clean.includes('verificar os servicos') ||
+    clean.includes('verificar servicos') ||
+    clean.includes('quais cortes') ||
+    clean.includes('quais os cortes') ||
+    clean.includes('ver servicos') ||
+    clean.includes('lista de servicos') ||
+    clean.includes('tabela de precos') ||
+    clean.includes('tabela de preco') ||
+    clean.includes('tabela de valor') ||
+    clean.includes('tabela de valores') ||
+    clean.includes('valores dos servicos') ||
+    clean.includes('valor dos servicos') ||
+    clean.includes('precos dos servicos') ||
+    clean.includes('preco dos servicos') ||
+    clean.includes('quanto custa') ||
+    clean.includes('qual o valor') ||
+    clean.includes('qual o preco') ||
+    clean.includes('quais os precos') ||
+    clean.includes('quais os valores') ||
+    clean.includes('o que voces fazem') ||
+    clean.includes('tipos de corte') ||
+    clean.includes('catalogo') ||
+    clean.includes('cardapio') ||
+    clean.includes('opcoes de servico') ||
+    clean.includes('opcoes de servicos') ||
+    (clean.includes('servicos') && (clean.includes('quais') || clean.includes('tem') || clean.includes('saber') || clean.includes('ver')))
+  );
+}
+
+function isAskingForBusinessHoursOrLocation(clean: string): boolean {
+  return (
+    clean.includes('horario de funcionamento') ||
+    clean.includes('horarios de funcionamento') ||
+    clean.includes('horario de atendimento') ||
+    clean.includes('horarios de atendimento') ||
+    clean.includes('horarios disponiveis') ||
+    clean.includes('horario disponivel') ||
+    clean.includes('que horas abre') ||
+    clean.includes('que horas fecha') ||
+    clean.includes('que horas voces abrem') ||
+    clean.includes('que horas voces fecham') ||
+    clean.includes('onde fica') ||
+    clean.includes('qual o endereco') ||
+    clean.includes('onde voces ficam') ||
+    clean.includes('localizacao') ||
+    clean.includes('onde e o salao') ||
+    clean.includes('onde e a barbearia') ||
+    clean.includes('como chegar') ||
+    (clean.includes('endereco') && !clean.includes('email'))
+  );
+}
+
+function isAskingForMyAppointments(clean: string): boolean {
+  return (
+    clean.includes('meus agendamentos') ||
+    clean.includes('meu agendamento') ||
+    clean.includes('ver meu agendamento') ||
+    clean.includes('consultar agendamento') ||
+    clean.includes('meus horarios') ||
+    clean.includes('meu horario') ||
+    clean.includes('que horas e meu agendamento') ||
+    clean.includes('que horas e meu corte') ||
+    clean.includes('tenho agendamento')
+  );
+}
+
+function isAskingToCancel(clean: string): boolean {
+  return (
+    clean.includes('cancelar agendamento') ||
+    clean.includes('desmarcar agendamento') ||
+    clean.includes('cancelar horario') ||
+    clean.includes('desmarcar horario') ||
+    clean.includes('cancelar meu corte') ||
+    clean.includes('desmarcar meu corte') ||
+    clean.includes('cancelar o corte') ||
+    clean.includes('desmarcar o corte') ||
+    clean.includes('nao vou poder ir') ||
+    clean.includes('nao poderei ir')
+  );
+}
+
 function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolean, hasProfKeywords: boolean): boolean {
   const clean = text
     .toLowerCase()
@@ -204,25 +291,27 @@ function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolea
     'agendamento',
     'marcar',
     'reservar',
-    'horario',
     'vaga',
-    'corte',
     'cortar',
     'barba',
     'cabelo',
-    'gostaria',
-    'queria',
-    'quero',
-    'consegue',
-    'tem horario',
-    'tem vaga',
-    'disponivel',
-    'disponibilidade',
+    'gostaria de agendar',
+    'gostaria de marcar',
+    'queria agendar',
+    'queria marcar',
+    'quero agendar',
+    'quero marcar',
+    'tem horario para',
+    'tem vaga para',
   ];
 
   const hasBookingKeyword = bookingKeywords.some((kw) => clean.includes(kw));
 
-  return hasBookingKeyword || hasServiceKeywords || hasProfKeywords;
+  return (
+    hasBookingKeyword ||
+    (hasServiceKeywords && (clean.includes('tem') || clean.includes('quero') || clean.includes('horario') || clean.includes('hoje') || clean.includes('amanha'))) ||
+    (hasProfKeywords && hasServiceKeywords)
+  );
 }
 
 async function trySmartNaturalLanguageBooking(params: {
@@ -230,12 +319,130 @@ async function trySmartNaturalLanguageBooking(params: {
   senderJid: string;
   text: string;
   finalCustomerName: string;
-  tenant: { id: string; name: string; timezone: string };
+  tenant: { id: string; name: string; timezone: string; address?: string | null; businessHours?: any[] };
   waConfig: { confirmationMessage: string; reminderHoursBefore?: number };
+  customer?: { id: string; name?: string } | null;
   reply: (text: string) => Promise<void>;
 }): Promise<boolean> {
-  const { tenantId, senderJid, text, finalCustomerName, tenant, reply } = params;
+  const { tenantId, senderJid, text, finalCustomerName, tenant, customer, reply } = params;
+  const clean = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
+  // 1. O cliente está perguntando quais serviços tem / tabela de preços / catálogo?
+  if (isAskingForServices(clean)) {
+    const services = await prisma.service.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+
+    if (services.length === 0) {
+      await reply(`Desculpe, a *${tenant.name}* ainda não possui serviços disponíveis para agendamento online.`);
+      return true;
+    }
+
+    let msg = `✂️ *Serviços Disponíveis na ${tenant.name}:*\n\n`;
+    services.forEach((s, idx) => {
+      msg += `*${idx + 1}* - ${s.name} (${s.durationMinutes} min) - ${formatCurrency(s.priceCents)}\n`;
+    });
+    msg += `\n_Para agendar, digite o número do serviço ou escreva diretamente como preferir (ex: "Gostaria de agendar o ${services[0]?.name || 'Corte'} hoje às 16h30")!_`;
+
+    await updateConversation(tenantId, senderJid, 'SELECT_SERVICE', {});
+    await reply(msg);
+    return true;
+  }
+
+  // 2. O cliente está perguntando horários de funcionamento ou localização/endereço?
+  if (isAskingForBusinessHoursOrLocation(clean)) {
+    let msg = `💈 *${tenant.name}*\n\n`;
+    if (tenant.address) {
+      msg += `📍 *Endereço:* ${tenant.address}\n\n`;
+    }
+    msg += `⏰ *Horário de Funcionamento:*\n`;
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const businessHours = tenant.businessHours || [];
+    for (const bh of businessHours) {
+      if (bh.isOpen) {
+        msg += `• *${days[bh.weekday]}:* ${bh.openTime} às ${bh.closeTime}`;
+        if (bh.breakStart && bh.breakEnd) {
+          msg += ` (Almoço: ${bh.breakStart}-${bh.breakEnd})`;
+        }
+        msg += `\n`;
+      } else {
+        msg += `• *${days[bh.weekday]}:* Fechado\n`;
+      }
+    }
+    msg += `\n_Digite *1* para agendar um horário ou *menu* para outras opções._`;
+    await reply(msg);
+    return true;
+  }
+
+  // 3. O cliente quer ver os agendamentos dele?
+  if (isAskingForMyAppointments(clean)) {
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        tenantId,
+        customerId: customer?.id,
+        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        startAt: { gte: new Date() },
+      },
+      include: {
+        service: { select: { name: true } },
+        professional: { select: { name: true } },
+      },
+      orderBy: { startAt: 'asc' },
+    });
+
+    if (appointments.length === 0) {
+      await reply(`Você não possui agendamentos futuros na *${tenant.name}*.\n\nEnvie *1* para fazer um novo agendamento!`);
+    } else {
+      let msg = `📅 *Seus Próximos Agendamentos:*\n\n`;
+      appointments.forEach((a, idx) => {
+        const dt = DateTime.fromJSDate(a.startAt).setZone(tenant.timezone);
+        msg += `*${idx + 1}.* ${a.service.name} com ${a.professional.name}\n` +
+               `🗓️ ${dt.toFormat('dd/LL/yyyy')} às ${dt.toFormat('HH:mm')}\n\n`;
+      });
+      msg += `_Para cancelar algum horário, digite *3* ou envie *menu*._`;
+      await reply(msg);
+    }
+    return true;
+  }
+
+  // 4. O cliente quer cancelar agendamento?
+  if (isAskingToCancel(clean)) {
+    const appointments = await prisma.appointment.findMany({
+      where: {
+        tenantId,
+        customerId: customer?.id,
+        status: { in: ['SCHEDULED', 'CONFIRMED'] },
+        startAt: { gte: new Date() },
+      },
+      include: {
+        service: { select: { name: true } },
+        professional: { select: { name: true } },
+      },
+      orderBy: { startAt: 'asc' },
+    });
+
+    if (appointments.length === 0) {
+      await reply(`Você não possui nenhum agendamento pendente para cancelar.\n\nDigite *menu* para voltar.`);
+      return true;
+    }
+
+    let msg = `❌ *Qual agendamento você deseja cancelar?*\n\n`;
+    const cancelableList: BotContext['cancelableAppointments'] = [];
+    appointments.forEach((a, idx) => {
+      const dt = DateTime.fromJSDate(a.startAt).setZone(tenant.timezone);
+      const summary = `${a.service.name} em ${dt.toFormat('dd/LL')} às ${dt.toFormat('HH:mm')}`;
+      cancelableList.push({ id: a.id, summary });
+      msg += `*${idx + 1}* - ${summary}\n`;
+    });
+    msg += `\n_Digite o número do agendamento ou *0* para desistir._`;
+
+    await updateConversation(tenantId, senderJid, 'CANCEL_SELECT', { cancelableAppointments: cancelableList });
+    await reply(msg);
+    return true;
+  }
+
+  // 5. Agendamento inteligente (Fast Track NLP)
   const [services, professionals] = await Promise.all([
     prisma.service.findMany({
       where: { tenantId, isActive: true },
@@ -262,7 +469,29 @@ async function trySmartNaturalLanguageBooking(params: {
       ? finalCustomerName.split(' ')[0]
       : 'Cliente';
 
-  const selectedService = matchedSvc || services[0];
+  // Se o cliente tem intenção de agendar, mas não citou o serviço:
+  // NÃO assume services[0]! Pergunta com clareza ao cliente qual serviço deseja!
+  if (!matchedSvc) {
+    let msg = `Fala, ${customerFirstName}! 💈 Qual serviço você gostaria de agendar${matchedProf ? ` com o *${matchedProf.name}*` : ''}?\n\n`;
+    services.forEach((s, idx) => {
+      msg += `*${idx + 1}* - ${s.name} (${s.durationMinutes} min) - ${formatCurrency(s.priceCents)}\n`;
+    });
+    msg += `\n_Digite o número do serviço ou *menu* para voltar:_`;
+
+    const parsedDate = parseRelativeDate(text, tenant.timezone);
+    const parsedTime = parseTime(text);
+
+    await updateConversation(tenantId, senderJid, 'SELECT_SERVICE', {
+      professionalId: matchedProf ? matchedProf.id : null,
+      professionalName: matchedProf ? matchedProf.name : undefined,
+      date: parsedDate ? parsedDate.dateStr : undefined,
+      time: parsedTime || undefined,
+    });
+    await reply(msg);
+    return true;
+  }
+
+  const selectedService = matchedSvc;
   const candidates = await professionalsForService(tenantId, selectedService.id);
   const matchedCandidate = matchedProf && candidates.some((c) => c.id === matchedProf.id)
     ? matchedProf
@@ -609,9 +838,16 @@ export async function handleIncomingMessage(params: {
     !state.startsWith('SURVEY_') &&
     (cleanText === 'atendente' ||
       cleanText === 'falar com atendente' ||
+      cleanText === 'falar com a atendente' ||
       cleanText === 'falar com o atendente' ||
       cleanText === 'falar com um atendente' ||
+      cleanText === 'falar com uma atendente' ||
       cleanText === 'falar com atendente humano' ||
+      cleanText.includes('falar com atendente') ||
+      cleanText.includes('falar com a atendente') ||
+      cleanText.includes('falar com o atendente') ||
+      cleanText.includes('falar com um atendente') ||
+      cleanText.includes('falar com uma atendente') ||
       cleanText === 'humano' ||
       cleanText === 'suporte');
 
@@ -649,6 +885,7 @@ export async function handleIncomingMessage(params: {
         finalCustomerName,
         tenant,
         waConfig,
+        customer,
         reply,
       });
 
@@ -784,6 +1021,7 @@ export async function handleIncomingMessage(params: {
           finalCustomerName,
           tenant,
           waConfig,
+          customer,
           reply,
         });
         if (handledSmart) break;
@@ -1277,21 +1515,38 @@ async function sendMenu(
   waConfig: { welcomeMessage: string },
   customerName: string,
 ) {
-  const greeting = renderTemplate(waConfig.welcomeMessage, {
+  const isDefaultOrEmpty =
+    !waConfig.welcomeMessage ||
+    waConfig.welcomeMessage.trim() === 'Olá! Bem-vindo.' ||
+    waConfig.welcomeMessage.trim() === 'Olá! Bem-vindo(a).' ||
+    waConfig.welcomeMessage.trim().length < 25;
+
+  const rawWelcome = isDefaultOrEmpty
+    ? DEFAULT_WHATSAPP_MESSAGES.welcomeMessage
+    : waConfig.welcomeMessage;
+
+  const resolvedCustomerName =
+    customerName && customerName !== 'Cliente' && !/^\d+$/.test(customerName.trim())
+      ? customerName.trim()
+      : '';
+
+  const greeting = renderTemplate(rawWelcome, {
     salao: tenant.name,
-    nome: customerName,
-    nome_saudacao: customerName ? `, ${customerName}` : '',
+    nome: resolvedCustomerName || 'Cliente',
+    nome_saudacao: resolvedCustomerName ? `, ${resolvedCustomerName}` : '',
   });
 
-  const menuText =
-    `${greeting}\n\n` +
-    `Como posso ajudar você hoje?\n\n` +
+  const menuOptions =
     `*1* - ✂️ Agendar um horário\n` +
     `*2* - 📅 Meus agendamentos\n` +
     `*3* - ❌ Cancelar agendamento\n` +
     `*4* - 💈 Horários e Localização\n` +
     `*5* - 👤 Falar com um atendente\n\n` +
     `_Responda com o número da opção desejada._`;
+
+  const menuText = greeting.includes('1 -') || greeting.includes('*1*')
+    ? greeting
+    : `${greeting}\n\n${menuOptions}`;
 
   await reply(menuText);
 }

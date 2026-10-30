@@ -12,7 +12,7 @@ export const DEFAULT_BUSINESS_HOURS = [
 
 export const DEFAULT_WHATSAPP_MESSAGES = {
   welcomeMessage:
-    'Olá{nome_saudacao}! 👋 Bem-vindo(a) à *{salao}*.\nSou o assistente virtual e posso te ajudar a agendar seu horário em poucos segundos.',
+    'Olá{nome_saudacao}! 👋 Bem-vindo(a) à *{salao}*.\nSou o bot inteligente da *{salao}* com IA para agendamentos. Escolha uma opção do menu ou experimente me enviar:\n_"Boa tarde! Gostaria de agendar um Corte Degradê com o barbeiro Lucas para hoje por volta das 16h30."_',
   confirmationMessage:
     '✅ *Agendamento confirmado!*\n\n✂️ {servico}\n💈 {profissional}\n📅 {data} às {hora}\n💰 {valor}\n\nTe esperamos na *{salao}*! Para cancelar, envie *menu* e escolha a opção 3.',
   reminderMessage:

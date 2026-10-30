@@ -14,6 +14,7 @@ import { usePostgresAuthState } from './baileys-session.js';
 import { handleIncomingMessage } from './whatsapp-bot.js';
 
 import { cleanExpiredSurveys } from './whatsapp-surveys.js';
+import { DEFAULT_WHATSAPP_MESSAGES } from '../../lib/defaults.js';
 
 interface TenantConnection {
   socket: WASocket | null;
@@ -118,10 +119,10 @@ class WhatsAppService {
       create: {
         tenantId,
         status: 'CONNECTING',
-        welcomeMessage: 'Olá! Bem-vindo.',
-        confirmationMessage: 'Agendamento confirmado.',
-        reminderMessage: 'Lembrete de agendamento.',
-        cancellationMessage: 'Agendamento cancelado.',
+        welcomeMessage: DEFAULT_WHATSAPP_MESSAGES.welcomeMessage,
+        confirmationMessage: DEFAULT_WHATSAPP_MESSAGES.confirmationMessage,
+        reminderMessage: DEFAULT_WHATSAPP_MESSAGES.reminderMessage,
+        cancellationMessage: DEFAULT_WHATSAPP_MESSAGES.cancellationMessage,
       },
     });
 

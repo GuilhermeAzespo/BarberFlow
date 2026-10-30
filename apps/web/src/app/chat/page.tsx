@@ -138,6 +138,16 @@ function ChatPageContent() {
   const [filterMode, setFilterMode] = useState<'ALL' | 'ATTENDANT' | 'BOT' | 'UNREAD'>('ALL');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isUserNearBottomRef = useRef(true);
+  const prevMessagesCountRef = useRef(0);
+
+  const handleChatScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    // Considera que o usuário está no rodapé se a distância for menor que 120px
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    isUserNearBottomRef.current = isNearBottom;
+  };
 
   // Redireciona se não tiver permissão
   useEffect(() => {
@@ -162,6 +172,10 @@ function ChatPageContent() {
   // Carrega mensagens da conversa selecionada (priorizando a data atual)
   const loadMessages = async (convId: string, silent = false, loadAll = false) => {
     if (!silent) setLoadingMessages(true);
+    const container = chatContainerRef.current;
+    const prevScrollHeight = container ? container.scrollHeight : 0;
+    const prevScrollTop = container ? container.scrollTop : 0;
+
     try {
       const queryParam = loadAll ? '?all=true' : '';
       const res = await api.get<{
@@ -172,11 +186,38 @@ function ChatPageContent() {
         todayMessagesCount?: number;
       }>(`/api/whatsapp/conversations/${convId}/messages${queryParam}`);
 
-      setMessages(res.messages || []);
+      const newMessages = res.messages || [];
+      setMessages(newMessages);
       setHasOlderMessages(Boolean(res.hasOlderMessages));
       setTotalMessagesCount(res.totalMessagesCount || 0);
       setTodayMessagesCount(res.todayMessagesCount || 0);
-      if (loadAll) setShowingAllHistory(true);
+
+      if (loadAll) {
+        setShowingAllHistory(true);
+        // Preserva a posição exata de leitura ao carregar mensagens anteriores
+        isUserNearBottomRef.current = false;
+        requestAnimationFrame(() => {
+          if (container) {
+            const addedHeight = container.scrollHeight - prevScrollHeight;
+            container.scrollTop = prevScrollTop + addedHeight;
+          }
+        });
+      } else if (!silent) {
+        // Ao clicar numa conversa ou mudar de cliente, rola para a última mensagem
+        isUserNearBottomRef.current = true;
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        }, 60);
+      } else {
+        // Polling silencioso a cada 4s: só scrolla se o usuário já estiver no final
+        if (isUserNearBottomRef.current && newMessages.length > prevMessagesCountRef.current) {
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 60);
+        }
+      }
+
+      prevMessagesCountRef.current = newMessages.length;
 
       // Atualiza a conversa na lista local para refletir unreadCount = 0
       setConversations((prev) =>
@@ -209,6 +250,8 @@ function ChatPageContent() {
   // Ao selecionar uma conversa
   useEffect(() => {
     setShowingAllHistory(false);
+    isUserNearBottomRef.current = true;
+    prevMessagesCountRef.current = 0;
     if (selectedId) {
       loadMessages(selectedId);
     } else {
@@ -216,13 +259,6 @@ function ChatPageContent() {
       setHasOlderMessages(false);
     }
   }, [selectedId]);
-
-  // Auto-scroll para a última mensagem
-  useEffect(() => {
-    if (messages.length > 0) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
 
   const selectedConv = useMemo(
     () => conversations.find((c) => c.id === selectedId),
@@ -244,6 +280,11 @@ function ChatPageContent() {
         { text }
       );
       setMessages((prev) => [...prev, res.message]);
+      isUserNearBottomRef.current = true;
+      prevMessagesCountRef.current += 1;
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
       setConversations((prev) =>
         prev.map((c) =>
           c.id === selectedId
@@ -913,6 +954,8 @@ function ChatPageContent() {
 
                 {/* Área de Histórico de Mensagens */}
                 <div
+                  ref={chatContainerRef}
+                  onScroll={handleChatScroll}
                   style={{
                     flex: 1,
                     overflowY: 'auto',
