@@ -116,7 +116,7 @@ export function DatePicker({
     const spaceAbove = rect.top - MENU_GAP - 12;
     const openUp = spaceBelow < MENU_HEIGHT && spaceAbove > spaceBelow;
 
-    const width = Math.max(rect.width, DROPDOWN_WIDTH);
+    const width = Math.min(Math.max(rect.width, DROPDOWN_WIDTH), 330);
     let left = rect.left;
     if (left + width > window.innerWidth - 12) {
       left = Math.max(12, window.innerWidth - width - 12);
@@ -197,9 +197,11 @@ export function DatePicker({
 
   const handleSelectToday = () => {
     const today = new Date();
+    const todayYMD = formatYMD(today);
+    if (minDate && todayYMD < minDate) return;
     setViewYear(today.getFullYear());
     setViewMonth(today.getMonth());
-    onChange(formatYMD(today));
+    onChange(todayYMD);
     closePicker();
   };
 
@@ -340,6 +342,7 @@ export function DatePicker({
         createPortal(
           <div
             ref={menuRef}
+            onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
               left: position.left,
@@ -491,12 +494,17 @@ export function DatePicker({
               {calendarGrid.map((item, idx) => {
                 const isSelected = item.ymd === value;
                 const isToday = item.ymd === todayStr;
+                const isBeforeMin = minDate ? item.ymd < minDate : false;
+                const isAfterMax = maxDate ? item.ymd > maxDate : false;
+                const isDisabledDay = isBeforeMin || isAfterMax;
 
                 return (
                   <button
                     key={idx}
                     type="button"
+                    disabled={isDisabledDay}
                     onClick={() => {
+                      if (isDisabledDay) return;
                       onChange(item.ymd);
                       if (!item.isCurrentMonth) {
                         const parsed = parseYMD(item.ymd);
@@ -521,7 +529,8 @@ export function DatePicker({
                         ? '1px solid rgba(229, 179, 56, 0.5)'
                         : 'none',
                       borderRadius: '7px',
-                      cursor: 'pointer',
+                      cursor: isDisabledDay ? 'not-allowed' : 'pointer',
+                      opacity: isDisabledDay ? 0.25 : 1,
                       background: isSelected
                         ? 'var(--primary)'
                         : isToday
@@ -536,13 +545,13 @@ export function DatePicker({
                       transition: 'all 0.1s ease',
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSelected) {
+                      if (!isSelected && !isDisabledDay) {
                         e.currentTarget.style.background = 'rgba(229, 179, 56, 0.15)';
                         e.currentTarget.style.color = 'var(--primary)';
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected) {
+                      if (!isSelected && !isDisabledDay) {
                         e.currentTarget.style.background = isToday
                           ? 'rgba(229, 179, 56, 0.12)'
                           : 'transparent';
@@ -572,14 +581,16 @@ export function DatePicker({
               <button
                 type="button"
                 onClick={handleSelectToday}
+                disabled={Boolean(minDate && todayStr < minDate)}
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: 'var(--primary)',
+                  color: minDate && todayStr < minDate ? 'var(--text-dim)' : 'var(--primary)',
                   fontSize: '0.78rem',
                   fontWeight: 600,
-                  cursor: 'pointer',
+                  cursor: minDate && todayStr < minDate ? 'not-allowed' : 'pointer',
                   padding: '4px 6px',
+                  opacity: minDate && todayStr < minDate ? 0.4 : 1,
                 }}
               >
                 Hoje

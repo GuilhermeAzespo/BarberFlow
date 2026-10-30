@@ -31,6 +31,7 @@ import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { TimePicker } from '../../components/TimePicker';
+import { DatePicker } from '../../components/DatePicker';
 import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
 
@@ -1903,17 +1904,19 @@ export default function CalendarPage() {
 
         <form onSubmit={handleCreateAppointment} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+            <label
+              htmlFor="new-app-date"
+              style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '6px', cursor: 'pointer' }}
+            >
               Data do Agendamento *
             </label>
-            <input
-              type="date"
-              required
-              min={DateTime.now().setZone(timezone).toISODate() ?? undefined}
+            <DatePicker
+              id="new-app-date"
               value={selectedDate.toISODate() ?? ''}
-              onChange={(e) => {
-                if (e.target.value) {
-                  const newDt = DateTime.fromISO(e.target.value, { zone: timezone });
+              minDate={DateTime.now().setZone(timezone).toISODate() ?? undefined}
+              onChange={(val) => {
+                if (val) {
+                  const newDt = DateTime.fromISO(val, { zone: timezone });
                   const today = DateTime.now().setZone(timezone).startOf('day');
                   if (newDt.startOf('day') < today) {
                     toast.error('Não é permitido agendar em datas anteriores a hoje.');
@@ -1922,18 +1925,9 @@ export default function CalendarPage() {
                   setSelectedDate(newDt);
                 }
               }}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: '8px',
-                background: 'rgba(0, 0, 0, 0.35)',
-                border: '1px solid var(--border-color)',
-                fontSize: '0.9rem',
-                color: '#F3F4F6',
-                fontWeight: 600,
-              }}
+              placeholder="DD/MM/AAAA"
             />
-            <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--primary)', marginTop: '4px', textTransform: 'capitalize' }}>
+            <span style={{ display: 'block', fontSize: '0.76rem', color: 'var(--primary)', marginTop: '6px', textTransform: 'capitalize' }}>
               {selectedDate.toFormat("cccc, dd 'de' MMMM 'de' yyyy", { locale: 'pt-BR' })}
             </span>
           </div>
@@ -2238,9 +2232,21 @@ export default function CalendarPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
               {selectedApp.status !== 'COMPLETED' && selectedApp.status !== 'CANCELED' && (
                 <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsStatusModalOpen(false);
+                      handleStartReschedule(selectedApp);
+                    }}
+                    className="glass-card"
+                    style={{ padding: '12px 16px', color: '#38BDF8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <CalendarSync size={16} />
+                    <span>Reagendar</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleCancelAppointment}
@@ -2254,7 +2260,7 @@ export default function CalendarPage() {
                     type="button"
                     onClick={handleCompleteAppointment}
                     className="gold-gradient-primary gold-glow"
-                    style={{ flex: 1, padding: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                    style={{ flex: 1, minWidth: '180px', padding: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                   >
                     <CheckCircle size={16} />
                     <span>Concluir & Lançar Receita</span>
@@ -2466,25 +2472,18 @@ export default function CalendarPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px' }}>
+              <label
+                htmlFor="reschedule-date"
+                style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#E2E8F0', marginBottom: '6px', cursor: 'pointer' }}
+              >
                 Nova Data:
               </label>
-              <input
-                type="date"
-                required
+              <DatePicker
+                id="reschedule-date"
                 value={rescheduleDate}
-                min={DateTime.now().setZone(timezone).toFormat('yyyy-MM-dd')}
-                onChange={(e) => setRescheduleDate(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  color: '#F8FAFC',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                }}
+                minDate={DateTime.now().setZone(timezone).toISODate() ?? undefined}
+                onChange={(val) => setRescheduleDate(val)}
+                placeholder="DD/MM/AAAA"
               />
             </div>
 
