@@ -53,7 +53,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
-  const { tenant, canAccessMenu, loading: authLoading } = useAuth();
+  const { tenant, canAccessMenu, hasPlanFeature, loading: authLoading } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,14 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const publicBookingUrl = tenant?.slug && origin ? `${origin}/${tenant.slug}` : (tenant?.slug ? `/${tenant.slug}` : '');
+  const activeCustomDomain = hasPlanFeature('customDomain') && tenant?.customDomain ? tenant.customDomain.trim() : null;
+  const publicBookingUrl = activeCustomDomain
+    ? `https://${activeCustomDomain}`
+    : tenant?.slug && origin
+    ? `${origin}/${tenant.slug}`
+    : tenant?.slug
+    ? `/${tenant.slug}`
+    : '';
 
   const handleCopyLink = () => {
     if (!publicBookingUrl) return;

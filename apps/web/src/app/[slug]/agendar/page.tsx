@@ -123,6 +123,13 @@ function PublicBookingContent() {
 
   const [tenant, setTenant] = useState<TenantPublic | null>(null);
   const slug = paramSlug || tenant?.slug || '';
+  const isCustomDomainHost =
+    typeof window !== 'undefined' &&
+    !['barberflow.azespo.com.br', 'azespo.com.br', 'www.azespo.com.br', 'localhost', '127.0.0.1'].includes(
+      window.location.hostname.trim().toLowerCase()
+    ) &&
+    !window.location.hostname.startsWith('192.168.');
+  const homeHref = isCustomDomainHost || !paramSlug ? '/' : `/${slug}`;
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -402,7 +409,7 @@ function PublicBookingContent() {
         {/* Atalho para Voltar à Home */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '-8px' }}>
           <Link
-            href={`/${slug}`}
+            href={homeHref}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

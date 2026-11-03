@@ -121,6 +121,14 @@ export default function TenantHomePage() {
   const paramSlug = (params?.slug as string) || '';
   const [tenant, setTenant] = useState<TenantPublic | null>(null);
   const slug = paramSlug || tenant?.slug || '';
+  const isCustomDomainHost =
+    typeof window !== 'undefined' &&
+    !['barberflow.azespo.com.br', 'azespo.com.br', 'www.azespo.com.br', 'localhost', '127.0.0.1'].includes(
+      window.location.hostname.trim().toLowerCase()
+    ) &&
+    !window.location.hostname.startsWith('192.168.');
+  const homeHref = isCustomDomainHost || !paramSlug ? '/' : `/${slug}`;
+  const bookingBaseHref = isCustomDomainHost || !paramSlug ? '/agendar' : `/${slug}/agendar`;
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -312,7 +320,7 @@ export default function TenantHomePage() {
         >
           {/* Logo & Name */}
           <Link
-            href={`/${slug}`}
+            href={homeHref}
             style={{ display: 'flex', alignItems: 'center', gap: '14px', textDecoration: 'none', color: 'inherit' }}
           >
             {tenant.logoUrl ? (
@@ -413,7 +421,7 @@ export default function TenantHomePage() {
             </nav>
 
             <Link
-              href={`/${slug}/agendar`}
+              href={bookingBaseHref}
               className="gold-gradient-primary gold-glow"
               style={{
                 display: 'inline-flex',
@@ -487,7 +495,7 @@ export default function TenantHomePage() {
             }}
           >
             <Link
-              href={`/${slug}/agendar`}
+              href={bookingBaseHref}
               className="gold-gradient-primary gold-glow"
               style={{
                 display: 'inline-flex',
@@ -901,7 +909,7 @@ export default function TenantHomePage() {
                 </div>
 
                 <Link
-                  href={`/${slug}/agendar?serviceId=${service.id}`}
+                  href={`${bookingBaseHref}?serviceId=${service.id}`}
                   className="gold-gradient-primary"
                   style={{
                     display: 'flex',
@@ -1020,7 +1028,7 @@ export default function TenantHomePage() {
                   </span>
 
                   <Link
-                    href={`/${slug}/agendar?professionalId=${prof.id}`}
+                    href={`${bookingBaseHref}?professionalId=${prof.id}`}
                     className="glass-card"
                     style={{
                       width: '100%',
@@ -1271,7 +1279,7 @@ export default function TenantHomePage() {
 
               <div style={{ marginTop: '24px' }}>
                 <Link
-                  href={`/${slug}/agendar`}
+                  href={bookingBaseHref}
                   className="gold-gradient-primary gold-glow"
                   style={{
                     display: 'flex',
@@ -1312,7 +1320,7 @@ export default function TenantHomePage() {
           </div>
 
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Link href={`/${slug}/agendar`} style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
+            <Link href={bookingBaseHref} style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
               Agendamento Online
             </Link>
             {whatsappUrl && (
@@ -1348,7 +1356,7 @@ export default function TenantHomePage() {
         }}
       >
         <Link
-          href={`/${slug}/agendar`}
+          href={bookingBaseHref}
           className="gold-gradient-primary gold-glow"
           style={{
             display: 'flex',

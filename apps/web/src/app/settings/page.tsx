@@ -314,8 +314,9 @@ export default function SettingsPage() {
   }, []);
 
   const tenantSlug = slug || tenant?.slug || '';
-  const publicHomeUrl = tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : '');
-  const publicBookingUrl = tenantSlug && origin ? `${origin}/${tenantSlug}/agendar` : (tenantSlug ? `/${tenantSlug}/agendar` : '');
+  const activeCustomDomain = isPremium && currentCustomDomain && (dnsStatus ? dnsStatus.verified : true) ? currentCustomDomain.trim() : null;
+  const publicHomeUrl = activeCustomDomain ? `https://${activeCustomDomain}` : (tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : ''));
+  const publicBookingUrl = activeCustomDomain ? `https://${activeCustomDomain}/agendar` : (tenantSlug && origin ? `${origin}/${tenantSlug}/agendar` : (tenantSlug ? `/${tenantSlug}/agendar` : ''));
 
   const copyToClipboard = (text: string, type: 'home' | 'booking') => {
     if (!text) return;
@@ -690,7 +691,7 @@ export default function SettingsPage() {
                     fontWeight: 700,
                   }}
                 >
-                  DISPONÍVEL
+                  {activeCustomDomain ? 'DOMÍNIO PRÓPRIO ATIVO' : 'DISPONÍVEL'}
                 </span>
               </div>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
