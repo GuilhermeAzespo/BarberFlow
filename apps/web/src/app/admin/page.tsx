@@ -276,13 +276,23 @@ interface MercadoPagoConfigData {
   webhookUrl: string;
 }
 
+interface CloudflareConfigData {
+  cfZoneId: string;
+  cfFallbackOrigin: string;
+  cfApiTokenMasked: string;
+  hasApiToken: boolean;
+  cfEnabled: boolean;
+  isConfigured: boolean;
+  customDomainsCount: number;
+}
+
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
   const { toast, confirm } = useToast();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
-  const [activeIntegrationTab, setActiveIntegrationTab] = useState<'mercadopago' | 'whatsapp' | 'others'>('mercadopago');
+  const [activeIntegrationTab, setActiveIntegrationTab] = useState<'mercadopago' | 'cloudflare' | 'whatsapp' | 'others'>('mercadopago');
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [plans, setPlans] = useState<PlanItem[]>([]);
@@ -290,6 +300,7 @@ export default function SuperAdminPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [smtpConfig, setSmtpConfig] = useState<SmtpConfigData | null>(null);
   const [mpConfig, setMpConfig] = useState<MercadoPagoConfigData | null>(null);
+  const [cfConfig, setCfConfig] = useState<CloudflareConfigData | null>(null);
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -362,6 +373,18 @@ export default function SuperAdminPage() {
   const [savingMp, setSavingMp] = useState(false);
   const [testingMp, setTestingMp] = useState(false);
   const [showMpToken, setShowMpToken] = useState(false);
+
+  // Formulário Cloudflare for SaaS (SSL / Custom Domains)
+  const [cfForm, setCfForm] = useState({
+    cfApiToken: '',
+    cfZoneId: '',
+    cfFallbackOrigin: 'barberflow.azespo.com.br',
+    cfEnabled: true,
+  });
+  const [savingCf, setSavingCf] = useState(false);
+  const [testingCf, setTestingCf] = useState(false);
+  const [syncingCf, setSyncingCf] = useState(false);
+  const [showCfToken, setShowCfToken] = useState(false);
 
   const loadOverview = async () => {
     try {
@@ -440,6 +463,21 @@ export default function SuperAdminPage() {
     }
   };
 
+  const loadCfConfig = async () => {
+    try {
+      const res = await api.get<{ config: CloudflareConfigData }>('/api/superadmin/integrations/cloudflare');
+      setCfConfig(res.config);
+      setCfForm({
+        cfApiToken: '',
+        cfZoneId: res.config.cfZoneId || '',
+        cfFallbackOrigin: res.config.cfFallbackOrigin || 'barberflow.azespo.com.br',
+        cfEnabled: res.config.cfEnabled,
+      });
+    } catch {
+      // Ignora erro
+    }
+  };
+
   const loadLogs = async () => {
     try {
       const res = await api.get<{ logs: SystemLogItem[] }>('/api/superadmin/logs?pageSize=50');
@@ -450,7 +488,7 @@ export default function SuperAdminPage() {
   };
 
   useEffect(() => {
-    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadLogs()]).finally(() =>
+    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
       setLoading(false),
     );
   }, []);
@@ -827,6 +865,58 @@ export default function SuperAdminPage() {
   const handleCopyWebhook = () => {
     navigator.clipboard.writeText(publicWebhookUrl);
     toast.success('URL pública do Webhook copiada com sucesso!');
+  };
+
+  // Salvar Configurações Cloudflare for SaaS
+  const handleSaveCf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingCf(true);
+    try {
+      await api.put('/api/superadmin/integrations/cloudflare', cfForm);
+      await loadCfConfig();
+      toast.success('Configurações da Cloudflare salvas com sucesso!');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar configurações da Cloudflare.');
+    } finally {
+      setSavingCf(false);
+    }
+  };
+
+  // Testar Conexão Cloudflare
+  const handleTestCf = async () => {
+    setTestingCf(true);
+    try {
+      const res = await api.post<{ success: boolean; message: string }>(
+        '/api/superadmin/integrations/cloudflare/test',
+        {
+          cfApiToken: cfForm.cfApiToken || undefined,
+          cfZoneId: cfForm.cfZoneId || undefined,
+          cfFallbackOrigin: cfForm.cfFallbackOrigin || undefined,
+        },
+      );
+      toast.success(res.message || 'Conexão com a API da Cloudflare validada!');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao testar conexão com a Cloudflare.');
+    } finally {
+      setTestingCf(false);
+    }
+  };
+
+  // Sincronizar todos os domínios próprios no Cloudflare for SaaS (gerar SSL)
+  const handleSyncCf = async () => {
+    setSyncingCf(true);
+    try {
+      const res = await api.post<{ success: boolean; message: string; results?: any[] }>(
+        '/api/superadmin/integrations/cloudflare/sync',
+        {},
+      );
+      toast.success(res.message || 'Domínios sincronizados com a Cloudflare!');
+      await loadCfConfig();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao sincronizar domínios na Cloudflare.');
+    } finally {
+      setSyncingCf(false);
+    }
   };
 
   const formatBRL = (cents: number) => {
@@ -1914,6 +2004,41 @@ export default function SuperAdminPage() {
 
                 <button
                   type="button"
+                  onClick={() => setActiveIntegrationTab('cloudflare')}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    border: activeIntegrationTab === 'cloudflare' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+                    background: activeIntegrationTab === 'cloudflare' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+                    color: activeIntegrationTab === 'cloudflare' ? 'var(--primary)' : 'var(--text-muted)',
+                    fontWeight: activeIntegrationTab === 'cloudflare' ? 700 : 500,
+                    fontSize: '0.84rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Globe size={15} color={activeIntegrationTab === 'cloudflare' ? 'var(--primary)' : 'currentColor'} />
+                  <span>Cloudflare SSL & DNS</span>
+                  <span
+                    style={{
+                      fontSize: '0.62rem',
+                      background: cfConfig?.isConfigured ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.15)',
+                      color: cfConfig?.isConfigured ? '#10B981' : '#FBBF24',
+                      border: `1px solid ${cfConfig?.isConfigured ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.35)'}`,
+                      padding: '2px 6px',
+                      borderRadius: '5px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {cfConfig?.isConfigured ? 'SSL AUTOMÁTICO' : 'CONFIGURAR'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveIntegrationTab('whatsapp')}
                   style={{
                     padding: '8px 14px',
@@ -2450,6 +2575,335 @@ export default function SuperAdminPage() {
             </div>
           </div>
         )}
+
+            {/* Conteúdo Cloudflare SSL & DNS (Cloudflare for SaaS / Custom Hostnames) */}
+            {activeIntegrationTab === 'cloudflare' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '16px',
+                    borderLeft: `4px solid ${cfConfig?.isConfigured ? '#10B981' : '#F59E0B'}`,
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                      <div
+                        style={{
+                          width: '38px',
+                          height: '38px',
+                          borderRadius: '10px',
+                          background: 'rgba(246, 130, 31, 0.15)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#F6821F',
+                        }}
+                      >
+                        <Globe size={20} />
+                      </div>
+                      <h2 style={{ fontSize: '1.35rem', fontWeight: 700 }}>
+                        Cloudflare for SaaS — SSL Automático para Domínios Próprios
+                      </h2>
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          background: cfConfig?.isConfigured ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                          color: cfConfig?.isConfigured ? '#10B981' : '#FBBF24',
+                          border: `1px solid ${cfConfig?.isConfigured ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
+                        }}
+                      >
+                        {cfConfig?.isConfigured ? 'PROVISIONAMENTO SSL ATIVO' : 'AGUARDANDO CREDENCIAIS'}
+                      </span>
+                    </div>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+                      Gera automaticamente certificados <strong>SSL/TLS (HTTPS)</strong> gratuitos na borda da Cloudflare sempre que um salão do <strong>Plano Premium</strong> cadastrar um domínio próprio (evitando o erro <code>ERR_SSL_VERSION_OR_CIPHER_MISMATCH</code>).
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={handleTestCf}
+                      disabled={testingCf}
+                      className="glass-card"
+                      style={{
+                        padding: '10px 16px',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        color: '#F6821F',
+                        borderColor: 'rgba(246, 130, 31, 0.35)',
+                      }}
+                    >
+                      <Key size={15} />
+                      <span>{testingCf ? 'Testando...' : 'Testar Conexão Cloudflare'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSyncCf}
+                      disabled={syncingCf}
+                      className="gold-gradient-primary gold-glow"
+                      style={{
+                        padding: '10px 18px',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <ShieldCheck size={16} />
+                      <span>
+                        {syncingCf
+                          ? 'Provisionando SSL...'
+                          : `Sincronizar SSL dos Domínios (${cfConfig?.customDomainsCount || 0})`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+                    gap: '24px',
+                  }}
+                >
+                  {/* Coluna 1: Formulário Cloudflare */}
+                  <div className="glass-panel" style={{ padding: '28px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                      <Key size={18} color="var(--primary)" />
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>Credenciais da Zona Cloudflare</h3>
+                    </div>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginBottom: '20px' }}>
+                      Informe o <strong>Zone ID</strong> do seu domínio principal (<code>azespo.com.br</code>) e um <strong>API Token</strong> com permissão de edição em <em>SSL e Certificados</em>.
+                    </p>
+
+                    <form onSubmit={handleSaveCf} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          Zone ID da Cloudflare (Zona <code>azespo.com.br</code>) *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+                          value={cfForm.cfZoneId}
+                          onChange={(e) => setCfForm({ ...cfForm, cfZoneId: e.target.value })}
+                          style={{ fontFamily: 'monospace' }}
+                          required
+                        />
+                        <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '4px', display: 'block' }}>
+                          Encontrado na aba Visão Geral (Overview) do domínio <code>azespo.com.br</code> no painel da Cloudflare (canto inferior direito).
+                        </span>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          API Token da Cloudflare (Permissão: SSL and Certificates → Edit) *
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            type={showCfToken ? 'text' : 'password'}
+                            placeholder={
+                              cfConfig?.hasApiToken
+                                ? `Token salvo (${cfConfig.cfApiTokenMasked}) - digite para alterar`
+                                : 'Cole aqui o seu API Token da Cloudflare'
+                            }
+                            value={cfForm.cfApiToken}
+                            onChange={(e) => setCfForm({ ...cfForm, cfApiToken: e.target.value })}
+                            style={{ paddingRight: '42px', fontFamily: 'monospace' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCfToken(!showCfToken)}
+                            style={{
+                              position: 'absolute',
+                              right: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {showCfToken ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          Fallback Origin (Destino CNAME Oficial do SaaS) *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="barberflow.azespo.com.br"
+                          value={cfForm.cfFallbackOrigin}
+                          onChange={(e) => setCfForm({ ...cfForm, cfFallbackOrigin: e.target.value })}
+                          style={{ fontFamily: 'monospace' }}
+                          required
+                        />
+                      </div>
+
+                      <div style={{ paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={cfForm.cfEnabled}
+                            onChange={(e) => setCfForm({ ...cfForm, cfEnabled: e.target.checked })}
+                          />
+                          <span>
+                            <strong>Ativar Provisionamento Automático de SSL (Custom Hostnames)</strong> ao cadastrar domínios Premium
+                          </span>
+                        </label>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingCf}
+                        className="gold-gradient-primary gold-glow"
+                        style={{ padding: '12px', fontWeight: 700, marginTop: '8px' }}
+                      >
+                        {savingCf ? 'Salvando...' : 'Salvar Configurações da Cloudflare'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Coluna 2: Guia rápido de como funciona o SSL para clientes Premium */}
+                  <div className="glass-panel" style={{ padding: '28px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                      <Sparkles size={18} color="var(--primary)" />
+                      <h3 style={{ fontSize: '1.15rem', fontWeight: 600 }}>
+                        Como eliminar o erro ERR_SSL_VERSION_OR_CIPHER_MISMATCH
+                      </h3>
+                    </div>
+
+                    <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: '16px' }}>
+                      Como o <code>barberflow.azespo.com.br</code> está protegido pela Cloudflare, quando um cliente Premium aponta um CNAME externo (ex: <code>barba.lgtelecom.com.br</code> → <code>barberflow.azespo.com.br</code>), a Cloudflare exige que esse subdomínio esteja registrado em <strong>SSL/TLS → Nomes de Host Personalizados (Custom Hostnames)</strong> para emitir o certificado HTTPS gratuito.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.84rem' }}>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <span
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: 'rgba(229, 179, 56, 0.2)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                            fontSize: '0.78rem',
+                          }}
+                        >
+                          1
+                        </span>
+                        <div>
+                          <strong>Habilite o Cloudflare for SaaS (Gratuito até 100 domínios):</strong>
+                          <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                            No painel da Cloudflare do domínio <code>azespo.com.br</code>, acesse <strong>SSL/TLS → Nomes de Host Personalizados (Custom Hostnames)</strong>, ative o recurso gratuito e defina o <strong>Fallback Origin</strong> como <code>barberflow.azespo.com.br</code>.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <span
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: 'rgba(229, 179, 56, 0.2)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                            fontSize: '0.78rem',
+                          }}
+                        >
+                          2
+                        </span>
+                        <div>
+                          <strong>Gere o API Token na Cloudflare:</strong>
+                          <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                            Em <strong>Meu Perfil → Tokens de API → Criar Token → Token Personalizado</strong>, adicione a permissão <strong>Zona → SSL e Certificados → Editar</strong> e <strong>Zona → Zona → Ler</strong>. Cole o Token e o Zone ID ao lado.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <span
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: 'rgba(229, 179, 56, 0.2)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                            fontSize: '0.78rem',
+                          }}
+                        >
+                          3
+                        </span>
+                        <div>
+                          <strong>Se o domínio do cliente também estiver na Cloudflare:</strong>
+                          <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                            No DNS do cliente (ex: <code>lgtelecom.com.br</code>), o registro CNAME <code>barba</code> apontando para <code>barberflow.azespo.com.br</code> deve ficar no modo <strong>Somente DNS (Nuvem Cinza)</strong> para validar o certificado rapidamente sem conflito de proxy duplo.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <span
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#10B981',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                            fontSize: '0.78rem',
+                          }}
+                        >
+                          ✓
+                        </span>
+                        <div>
+                          <strong>100% Automático a partir daí:</strong>
+                          <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
+                            Assim que qualquer salão Premium salvar o domínio em <code>/settings</code> (ou quando você clicar em <strong>Sincronizar SSL dos Domínios</strong> acima), o BarberFlow registra o Custom Hostname via API na Cloudflare, emite o SSL e exibe automaticamente a vitrine da barbearia naquele domínio!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Conteúdo WhatsApp API (Roadmap) */}
             {activeIntegrationTab === 'whatsapp' && (

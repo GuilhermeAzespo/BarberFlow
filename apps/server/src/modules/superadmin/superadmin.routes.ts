@@ -19,6 +19,11 @@ import {
   testMercadoPagoConnection,
   getMercadoPagoWebhookUrl,
 } from '../../lib/mercadopago.js';
+import {
+  getActiveCloudflareConfig,
+  testCloudflareConnection,
+  provisionCustomHostname,
+} from '../../lib/cloudflare.js';
 
 export const superAdminRouter = Router();
 
@@ -852,4 +857,143 @@ superAdminRouter.post('/integrations/mercadopago/test', async (req, res) => {
 
   res.json(result);
 });
+
+// ─────────────────────── Integração Cloudflare for SaaS (SSL / Custom Domains) ───────────────────────
+
+const cfConfigSchema = z.object({
+  cfApiToken: z.string().trim().optional(),
+  cfZoneId: z.string().trim().optional(),
+  cfFallbackOrigin: z.string().trim().optional(),
+  cfEnabled: z.boolean().default(true),
+});
+
+superAdminRouter.get('/integrations/cloudflare', async (_req, res) => {
+  const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+  const config = await getActiveCloudflareConfig();
+
+  const token = setting?.cfApiToken || process.env.CLOUDFLARE_API_TOKEN || '';
+  const maskedToken = token ? `${token.slice(0, 8)}****************${token.slice(-4)}` : '';
+
+  const customDomainsCount = await prisma.tenant.count({
+    where: { customDomain: { not: null } },
+  });
+
+  res.json({
+    config: {
+      cfZoneId: setting?.cfZoneId || process.env.CLOUDFLARE_ZONE_ID || '',
+      cfFallbackOrigin: config.fallbackOrigin,
+      cfApiTokenMasked: maskedToken,
+      hasApiToken: Boolean(token),
+      cfEnabled: config.enabled,
+      isConfigured: config.isConfigured,
+      customDomainsCount,
+    },
+  });
+});
+
+superAdminRouter.put('/integrations/cloudflare', async (req, res) => {
+  const data = cfConfigSchema.parse(req.body);
+  const existing = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+
+  const finalToken =
+    data.cfApiToken && data.cfApiToken.trim() !== ''
+      ? data.cfApiToken.trim()
+      : existing?.cfApiToken;
+
+  const finalZoneId =
+    data.cfZoneId !== undefined
+      ? data.cfZoneId.trim() || null
+      : existing?.cfZoneId;
+
+  const finalFallbackOrigin =
+    data.cfFallbackOrigin && data.cfFallbackOrigin.trim() !== ''
+      ? data.cfFallbackOrigin.trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
+      : existing?.cfFallbackOrigin || 'barberflow.azespo.com.br';
+
+  await prisma.systemSetting.upsert({
+    where: { id: 'global' },
+    create: {
+      id: 'global',
+      cfApiToken: finalToken || null,
+      cfZoneId: finalZoneId,
+      cfFallbackOrigin: finalFallbackOrigin,
+      cfEnabled: data.cfEnabled,
+    },
+    update: {
+      cfApiToken: finalToken || null,
+      cfZoneId: finalZoneId,
+      cfFallbackOrigin: finalFallbackOrigin,
+      cfEnabled: data.cfEnabled,
+    },
+  });
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Configurações do Cloudflare for SaaS atualizadas (Zone: ${finalZoneId || 'N/A'}, Fallback: ${finalFallbackOrigin})`,
+  });
+
+  res.json({
+    success: true,
+    message: 'Configurações da Cloudflare salvas com sucesso!',
+  });
+});
+
+superAdminRouter.post('/integrations/cloudflare/test', async (req, res) => {
+  const { cfApiToken, cfZoneId, cfFallbackOrigin } = cfConfigSchema.partial().parse(req.body || {});
+  const result = await testCloudflareConnection({
+    apiToken: cfApiToken,
+    zoneId: cfZoneId,
+    fallbackOrigin: cfFallbackOrigin,
+  });
+
+  if (!result.success) {
+    throw HttpError.badRequest(result.message);
+  }
+
+  res.json(result);
+});
+
+superAdminRouter.post('/integrations/cloudflare/sync', async (_req, res) => {
+  const tenants = await prisma.tenant.findMany({
+    where: { customDomain: { not: null } },
+    select: { id: true, name: true, customDomain: true },
+  });
+
+  if (tenants.length === 0) {
+    return res.json({
+      success: true,
+      synced: 0,
+      results: [],
+      message: 'Nenhum salão possui domínio próprio cadastrado no momento.',
+    });
+  }
+
+  const results = [];
+  let syncedCount = 0;
+
+  for (const t of tenants) {
+    if (!t.customDomain) continue;
+    const resProvision = await provisionCustomHostname(t.customDomain);
+    if (resProvision.success) syncedCount++;
+    results.push({
+      tenantName: t.name,
+      domain: t.customDomain,
+      ...resProvision,
+    });
+  }
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Sincronização de SSL Cloudflare executada para ${syncedCount}/${tenants.length} domínios próprios`,
+  });
+
+  res.json({
+    success: true,
+    synced: syncedCount,
+    total: tenants.length,
+    results,
+    message: `Sincronização concluída: ${syncedCount} de ${tenants.length} domínio(s) registrado(s) para emissão de SSL na Cloudflare!`,
+  });
+});
+
 

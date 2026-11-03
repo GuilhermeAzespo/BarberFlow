@@ -544,6 +544,12 @@ model SystemSetting {
   mpSandbox                 Boolean  @default(false)
   mpEnabled                 Boolean  @default(false)
 
+  // Integração Cloudflare for SaaS (Provisionamento automático de SSL para Domínios Próprios)
+  cfApiToken                String?
+  cfZoneId                  String?
+  cfFallbackOrigin          String?  @default("barberflow.azespo.com.br")
+  cfEnabled                 Boolean  @default(false)
+
   updatedAt                 DateTime @updatedAt
 }
 

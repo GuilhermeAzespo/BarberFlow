@@ -7,6 +7,12 @@ import { prisma } from '../../lib/prisma.js';
 import { systemLog } from '../../lib/system-log.js';
 import { TIME_REGEX, normalizePhone, timeToMinutes } from '../../lib/utils.js';
 import { requireRole } from '../../middlewares/auth.js';
+import {
+  provisionCustomHostname,
+  deleteCustomHostname,
+  verifyTlsHandshake,
+  getActiveCloudflareConfig,
+} from '../../lib/cloudflare.js';
 
 export const tenantRouter = Router();
 
@@ -259,23 +265,76 @@ tenantRouter.post('/onboarding/complete', requireRole('OWNER'), async (req, res)
   res.json({ tenant: serializeTenant(tenant) });
 });
 
-/** Helper para testar propagação DNS */
+/** Helper para testar propagação DNS + Certificado SSL (Cloudflare for SaaS / TLS 443) */
 async function checkDnsPropagation(domain: string, targetCname: string) {
+  let dnsVerified = false;
+  let dnsDetail = '';
+
   try {
     const cnames = await dns.resolveCname(domain);
     const matches = cnames.some((c) => c.toLowerCase().includes(targetCname.toLowerCase()));
-    if (matches) return { verified: true, message: 'Apontamento CNAME validado com sucesso! Domínio ativo.' };
+    if (matches) {
+      dnsVerified = true;
+      dnsDetail = `Apontamento CNAME (${targetCname}) detectado.`;
+    }
   } catch {
     try {
       const addresses = await dns.lookup(domain);
       if (addresses?.address) {
-        return { verified: true, message: `Domínio resolvendo no servidor (IP: ${addresses.address}).` };
+        dnsVerified = true;
+        dnsDetail = `Domínio resolvendo no servidor (IP: ${addresses.address}).`;
       }
     } catch {
       // Ignora erro de lookup
     }
   }
-  return { verified: false, message: 'Aguardando propagação DNS ou apontamento CNAME ainda não detectado.' };
+
+  // Provisiona ou sincroniza automaticamente o Custom Hostname na Cloudflare (se configurado)
+  const cfProvision = await provisionCustomHostname(domain);
+
+  if (!dnsVerified) {
+    return {
+      verified: false,
+      dnsVerified: false,
+      sslVerified: false,
+      sslStatus: cfProvision.sslStatus || 'pending_dns',
+      message: 'Aguardando propagação DNS: crie o apontamento CNAME no seu provedor conforme a tabela abaixo.',
+    };
+  }
+
+  // Testa se o handshake SSL/TLS na porta 443 já está ativo e respondendo sem ERR_SSL_VERSION_OR_CIPHER_MISMATCH
+  const tlsCheck = await verifyTlsHandshake(domain);
+  const sslVerified = tlsCheck.sslVerified || cfProvision.sslStatus === 'active';
+
+  if (sslVerified) {
+    return {
+      verified: true,
+      dnsVerified: true,
+      sslVerified: true,
+      sslStatus: 'active',
+      message: 'Apontamento CNAME e Certificado SSL (HTTPS) validados com sucesso! Domínio 100% ativo.',
+    };
+  }
+
+  if (cfProvision.configured) {
+    return {
+      verified: false,
+      dnsVerified: true,
+      sslVerified: false,
+      sslStatus: cfProvision.sslStatus || 'pending_issuance',
+      message:
+        cfProvision.message ||
+        `${dnsDetail} Emitindo Certificado SSL gratuito na Cloudflare (leva de 1 a 3 minutos; clique em "Verificar DNS" em instantes).`,
+    };
+  }
+
+  return {
+    verified: false,
+    dnsVerified: true,
+    sslVerified: false,
+    sslStatus: 'requires_cloudflare_saas',
+    message: `${dnsDetail} Aguardando liberação do Certificado SSL (Custom Hostname) na Cloudflare para acesso HTTPS seguro.`,
+  };
 }
 
 /** Garante que o salão tenha plano Premium */
@@ -304,9 +363,16 @@ tenantRouter.get('/custom-domain', async (req, res) => {
 
   const slug = tenant.subscription?.plan?.slug?.toLowerCase();
   const isPremium = slug === 'premium' || slug === 'master' || req.auth?.role === 'SUPER_ADMIN';
-  const targetHost = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const cfConfig = await getActiveCloudflareConfig();
+  const targetHost = cfConfig.fallbackOrigin || process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
 
-  let dnsStatus = { verified: false, message: 'Nenhum domínio próprio configurado.' };
+  let dnsStatus = {
+    verified: false,
+    dnsVerified: false,
+    sslVerified: false,
+    sslStatus: 'none',
+    message: 'Nenhum domínio próprio configurado.',
+  };
   if (tenant.customDomain) {
     dnsStatus = await checkDnsPropagation(tenant.customDomain, targetHost);
   }
@@ -356,12 +422,18 @@ tenantRouter.patch('/custom-domain', requireRole('OWNER', 'MANAGER'), async (req
     throw HttpError.conflict('Este domínio já está em uso por outro salão.');
   }
 
+  const currentTenant = await prisma.tenant.findUniqueOrThrow({ where: { id: req.tenantId! } });
+  if (currentTenant.customDomain && currentTenant.customDomain !== cleanDomain) {
+    await deleteCustomHostname(currentTenant.customDomain).catch(() => {});
+  }
+
   const updated = await prisma.tenant.update({
     where: { id: req.tenantId! },
     data: { customDomain: cleanDomain },
   });
 
-  const targetHost = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const cfConfig = await getActiveCloudflareConfig();
+  const targetHost = cfConfig.fallbackOrigin || process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
   const dnsStatus = await checkDnsPropagation(cleanDomain, targetHost);
 
   await systemLog({
@@ -388,6 +460,8 @@ tenantRouter.delete('/custom-domain', requireRole('OWNER', 'MANAGER'), async (re
     where: { id: req.tenantId! },
     data: { customDomain: null },
   });
+
+  await deleteCustomHostname(removedDomain).catch(() => {});
 
   await systemLog({
     tenantId: req.tenantId!,

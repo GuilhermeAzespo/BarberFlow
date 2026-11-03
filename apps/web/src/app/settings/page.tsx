@@ -89,7 +89,7 @@ export default function SettingsPage() {
   // Domínio Próprio & DNS Personalizado
   const [customDomainInput, setCustomDomainInput] = useState('');
   const [currentCustomDomain, setCurrentCustomDomain] = useState<string | null>(null);
-  const [dnsStatus, setDnsStatus] = useState<{ verified: boolean; message: string } | null>(null);
+  const [dnsStatus, setDnsStatus] = useState<{ verified: boolean; dnsVerified?: boolean; sslVerified?: boolean; sslStatus?: string; message: string } | null>(null);
   const [dnsInstructions, setDnsInstructions] = useState<{ type: string; name: string; target: string }>({
     type: 'CNAME',
     name: 'agendar',
@@ -1033,7 +1033,7 @@ export default function SettingsPage() {
                           <Clock size={18} color="#F59E0B" />
                         )}
                         <strong style={{ fontSize: '0.98rem', color: dnsStatus?.verified ? '#34D399' : '#FBBF24' }}>
-                          {dnsStatus?.verified ? 'Domínio Ativo e Validado' : 'Aguardando Propagação DNS'}
+                          {dnsStatus?.verified ? 'Domínio Ativo & Certificado SSL Validado' : dnsStatus?.dnsVerified ? 'DNS Detectado • Provisionando Certificado SSL (HTTPS)' : 'Aguardando Propagação DNS'}
                         </strong>
                       </div>
                       <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
