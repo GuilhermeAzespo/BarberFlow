@@ -115,13 +115,14 @@ function formatBRL(cents: number): string {
 
 function PublicBookingContent() {
   const params = useParams();
-  const slug = (params?.slug as string) || '';
+  const paramSlug = (params?.slug as string) || '';
   const router = useRouter();
   const searchParams = useSearchParams();
   const preSelectedServiceId = searchParams.get('serviceId');
   const preSelectedProfessionalId = searchParams.get('professionalId');
 
   const [tenant, setTenant] = useState<TenantPublic | null>(null);
+  const slug = paramSlug || tenant?.slug || '';
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -150,17 +151,29 @@ function PublicBookingContent() {
 
   // 1. Fetch Tenant Public Data
   useEffect(() => {
-    if (!slug || RESERVED_SLUGS.includes(slug.toLowerCase())) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-
     const fetchTenant = async () => {
       try {
         setLoading(true);
-        const res = await api.get<{ tenant: TenantPublic }>(`/api/public/tenants/by-slug/${slug}`);
+        let res: { tenant: TenantPublic };
+        if (paramSlug) {
+          if (RESERVED_SLUGS.includes(paramSlug.toLowerCase())) {
+            setNotFound(true);
+            return;
+          }
+          res = await api.get<{ tenant: TenantPublic }>(`/api/public/tenants/by-slug/${paramSlug}`);
+        } else if (typeof window !== 'undefined') {
+          const host = window.location.hostname.trim().toLowerCase();
+          res = await api.get<{ tenant: TenantPublic }>(
+            `/api/public/tenants/by-domain/${encodeURIComponent(host)}`
+          );
+        } else {
+          setNotFound(true);
+          return;
+        }
         setTenant(res.tenant);
+        if (res.tenant?.name && typeof document !== 'undefined') {
+          document.title = `Agendar — ${res.tenant.name}`;
+        }
         if (preSelectedServiceId) {
           const s = res.tenant.services.find((item) => item.id === preSelectedServiceId);
           if (s) {
@@ -182,7 +195,7 @@ function PublicBookingContent() {
     };
 
     fetchTenant();
-  }, [slug]);
+  }, [paramSlug]);
 
   // Filter professionals that perform the selected service
   const eligibleProfessionals = useMemo(() => {

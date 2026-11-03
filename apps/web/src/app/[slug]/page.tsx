@@ -118,28 +118,40 @@ function formatBRL(cents: number): string {
 
 export default function TenantHomePage() {
   const params = useParams();
-  const slug = (params?.slug as string) || '';
-  const router = useRouter();
-
+  const paramSlug = (params?.slug as string) || '';
   const [tenant, setTenant] = useState<TenantPublic | null>(null);
+  const slug = paramSlug || tenant?.slug || '';
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-
-  // Lightbox for gallery
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!slug || RESERVED_SLUGS.includes(slug.toLowerCase())) {
-      setNotFound(true);
-      setLoading(false);
-      return;
-    }
-
     const fetchTenant = async () => {
       try {
         setLoading(true);
-        const res = await api.get<{ tenant: TenantPublic }>(`/api/public/tenants/by-slug/${slug}`);
-        setTenant(res.tenant);
+        if (paramSlug) {
+          if (RESERVED_SLUGS.includes(paramSlug.toLowerCase())) {
+            setNotFound(true);
+            return;
+          }
+          const res = await api.get<{ tenant: TenantPublic }>(`/api/public/tenants/by-slug/${paramSlug}`);
+          setTenant(res.tenant);
+          if (res.tenant?.name && typeof document !== 'undefined') {
+            document.title = `${res.tenant.name} — Agendamento Online`;
+          }
+        } else if (typeof window !== 'undefined') {
+          const host = window.location.hostname.trim().toLowerCase();
+          const res = await api.get<{ tenant: TenantPublic }>(
+            `/api/public/tenants/by-domain/${encodeURIComponent(host)}`
+          );
+          setTenant(res.tenant);
+          if (res.tenant?.name && typeof document !== 'undefined') {
+            document.title = `${res.tenant.name} — Agendamento Online`;
+          }
+        } else {
+          setNotFound(true);
+        }
       } catch (err) {
         setNotFound(true);
       } finally {
@@ -148,7 +160,7 @@ export default function TenantHomePage() {
     };
 
     fetchTenant();
-  }, [slug]);
+  }, [paramSlug]);
 
   // Today's business hours
   const todaySchedule = useMemo(() => {

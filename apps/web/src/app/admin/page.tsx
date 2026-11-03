@@ -2711,7 +2711,7 @@ export default function SuperAdminPage() {
 
                       <div>
                         <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                          API Token da Cloudflare (Permissão: SSL and Certificates → Edit) *
+                          API Token da Cloudflare (Permissões: SSL and Certificates → Edit + Cloudflare Tunnel → Edit) *
                         </label>
                         <div style={{ position: 'relative' }}>
                           <input
@@ -2843,7 +2843,7 @@ export default function SuperAdminPage() {
                         <div>
                           <strong>Gere o API Token na Cloudflare:</strong>
                           <p style={{ color: 'var(--text-muted)', margin: '2px 0 0 0' }}>
-                            Em <strong>Meu Perfil → Tokens de API → Criar Token → Token Personalizado</strong>, adicione a permissão <strong>Zona → SSL e Certificados → Editar</strong> e <strong>Zona → Zona → Ler</strong>. Cole o Token e o Zone ID ao lado.
+                            Em <strong>Meu Perfil → Tokens de API → Criar Token → Token Personalizado</strong>, adicione as permissões: <strong>Zona → SSL e Certificados → Editar</strong>, <strong>Zona → Zona → Ler</strong> e <strong>Conta → Cloudflare Tunnel → Editar</strong> (para rotear os domínios automaticamente no túnel sem erro 404).
                           </p>
                         </div>
                       </div>

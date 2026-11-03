@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '../lib/api';
+import TenantHomePage from './[slug]/page';
 import {
   Sparkles,
   MessageSquare,
@@ -117,11 +118,35 @@ const sortPlansFixed = <T extends { slug?: string; sortOrder?: number; priceCent
   });
 };
 
+function isCustomTenantHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  if (!h) return false;
+  if (
+    h === 'barberflow.azespo.com.br' ||
+    h === 'azespo.com.br' ||
+    h === 'www.azespo.com.br' ||
+    h === 'localhost' ||
+    h === '127.0.0.1' ||
+    h.startsWith('192.168.') ||
+    h.startsWith('10.') ||
+    h.endsWith('.local')
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export default function LandingPage() {
   const [plans, setPlans] = useState<PublicPlan[]>(() => sortPlansFixed(DEFAULT_HOME_PLANS));
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [domainMode, setDomainMode] = useState<'checking' | 'saas' | 'custom'>('checking');
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && isCustomTenantHostname(window.location.hostname)) {
+      setDomainMode('custom');
+      return;
+    }
+    setDomainMode('saas');
     api
       .get<{ plans: PublicPlan[] }>('/api/public/plans')
       .then((res) => {
@@ -164,6 +189,24 @@ export default function LandingPage() {
       a: 'Sim, 100%! Seguimos rigorosamente a Lei Geral de Proteção de Dados (Lei 13.709/2018). As informações dos seus clientes são criptografadas, protegidas por isolamento lógico multi-tenant e nunca compartilhadas com terceiros.',
     },
   ];
+
+  if (domainMode === 'checking') {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: '#0B0F17',
+        }}
+      />
+    );
+  }
+
+  if (domainMode === 'custom') {
+    return <TenantHomePage />;
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-main)', color: 'var(--text-main)' }}>

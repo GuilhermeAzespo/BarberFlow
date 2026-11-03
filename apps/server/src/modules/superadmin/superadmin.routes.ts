@@ -992,7 +992,9 @@ superAdminRouter.post('/integrations/cloudflare/sync', async (_req, res) => {
     synced: syncedCount,
     total: tenants.length,
     results,
-    message: `Sincronização concluída: ${syncedCount} de ${tenants.length} domínio(s) registrado(s) para emissão de SSL na Cloudflare!`,
+    message: results.find((r) => r.tunnelWarning)?.tunnelWarning
+      ? `SSL sincronizado (${syncedCount}/${tenants.length}), mas atenção ao Túnel: ${results.find((r) => r.tunnelWarning)?.tunnelWarning}`
+      : `Sincronização concluída: ${syncedCount} de ${tenants.length} domínio(s) com SSL e Túnel sincronizados na Cloudflare!`,
   });
 });
 
