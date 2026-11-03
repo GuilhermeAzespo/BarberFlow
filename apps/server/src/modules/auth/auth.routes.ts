@@ -84,7 +84,7 @@ authRouter.post('/register', authLimiter, async (req, res) => {
           },
         },
         businessHours: { createMany: { data: DEFAULT_BUSINESS_HOURS } },
-        whatsAppConfig: { create: { ...DEFAULT_WHATSAPP_MESSAGES } },
+        whatsAppConfig: { create: { welcomeMessage: DEFAULT_WHATSAPP_MESSAGES.welcomeMessage, confirmationMessage: DEFAULT_WHATSAPP_MESSAGES.confirmationMessage, reminderMessage: DEFAULT_WHATSAPP_MESSAGES.reminderMessage, cancellationMessage: DEFAULT_WHATSAPP_MESSAGES.cancellationMessage, attendantSurveyMessage: DEFAULT_WHATSAPP_MESSAGES.attendantSurveyMessage, serviceSurveyMessage: DEFAULT_WHATSAPP_MESSAGES.serviceSurveyMessage } },
       },
     });
     const user = await tx.user.create({
