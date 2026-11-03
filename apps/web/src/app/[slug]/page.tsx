@@ -133,6 +133,52 @@ export default function TenantHomePage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<string>('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sectionIds = ['servicos', 'equipe', 'galeria', 'sobre'];
+
+    const handleScroll = () => {
+      if (window.scrollY < 220) {
+        setActiveSection('');
+        return;
+      }
+      let current = '';
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= 160) {
+            current = id;
+          }
+        }
+      }
+      // Se chegou ao fim da página, destaca a última seção visível
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 60) {
+        for (let i = sectionIds.length - 1; i >= 0; i--) {
+          if (document.getElementById(sectionIds[i])) {
+            current = sectionIds[i];
+            break;
+          }
+        }
+      }
+      if (current) setActiveSection(current);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [tenant]);
+
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, sectionId: string) => {
+    e.preventDefault();
+    setActiveSection(sectionId);
+    const el = document.getElementById(sectionId);
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 82;
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     const fetchTenant = async () => {
@@ -401,23 +447,36 @@ export default function TenantHomePage() {
 
           {/* Nav links & CTA */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <nav style={{ display: 'flex', alignItems: 'center', gap: '18px' }} className="hide-on-mobile">
-              <a href="#servicos" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>
-                Serviços
-              </a>
-              {tenant.professionals.length > 0 && (
-                <a href="#equipe" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Barbeiros
-                </a>
-              )}
-              {tenant.gallery && tenant.gallery.length > 0 && (
-                <a href="#galeria" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Galeria
-                </a>
-              )}
-              <a href="#sobre" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>
-                Horários & Local
-              </a>
+            <nav style={{ display: 'flex', alignItems: 'center', gap: '22px' }} className="hide-on-mobile">
+              {[
+                { id: 'servicos', label: 'Serviços', show: true },
+                { id: 'equipe', label: 'Barbeiros', show: tenant.professionals.length > 0 },
+                { id: 'galeria', label: 'Galeria', show: Boolean(tenant.gallery && tenant.gallery.length > 0) },
+                { id: 'sobre', label: 'Horários & Local', show: true },
+              ]
+                .filter((item) => item.show)
+                .map((item) => {
+                  const isActive = activeSection === item.id;
+                  return (
+                    <a
+                      key={item.id}
+                      href={`#${item.id}`}
+                      onClick={(e) => handleNavClick(e, item.id)}
+                      style={{
+                        position: 'relative',
+                        color: isActive ? 'var(--primary)' : 'var(--text-muted)',
+                        textDecoration: 'none',
+                        fontSize: '0.92rem',
+                        fontWeight: isActive ? 700 : 500,
+                        padding: '6px 2px',
+                        borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
+                        transition: 'color 0.2s ease, border-color 0.2s ease',
+                      }}
+                    >
+                      {item.label}
+                    </a>
+                  );
+                })}
             </nav>
 
             <Link
