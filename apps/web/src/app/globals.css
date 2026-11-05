@@ -100,7 +100,7 @@ button:disabled {
 }
 
 .gold-gradient-primary, .btn-primary {
-  background: linear-gradient(135deg, #E5B338 0%, #C99520 100%);
+  background: linear-gradient(135deg, #E5B338 0%, #C99520 100%) !important;
   color: #0B0F17 !important;
   font-weight: 600;
   border: none;
@@ -110,7 +110,7 @@ button:disabled {
 }
 
 .gold-gradient-primary:hover, .btn-primary:hover {
-  background: linear-gradient(135deg, #F0C450 0%, #D8A229 100%);
+  background: linear-gradient(135deg, #F0C450 0%, #D8A229 100%) !important;
   box-shadow: 0 4px 20px var(--primary-glow);
   transform: translateY(-1px);
 }

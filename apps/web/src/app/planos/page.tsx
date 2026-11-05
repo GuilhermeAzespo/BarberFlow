@@ -28,6 +28,7 @@ import {
   Clock,
   Lock,
   RefreshCw,
+  Tag,
 } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
@@ -396,6 +397,18 @@ export default function PlanosPage() {
   const [processingCard, setProcessingCard] = useState(false);
   const [cardPaidSuccess, setCardPaidSuccess] = useState(false);
 
+  // Cupom de Desconto State
+  const [couponInput, setCouponInput] = useState('');
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    description: string;
+    discountType: 'PERCENTAGE' | 'FIXED_CENTS';
+    discountValue: number;
+    discountCents: number;
+    finalAmountCents: number;
+  } | null>(null);
+
   const loadBilling = async () => {
     try {
       const res = await api.get<BillingStatusResponse>('/api/billing/status');
@@ -493,6 +506,8 @@ export default function PlanosPage() {
     setPixPaidSuccess(false);
     setCardPaidSuccess(false);
     setPaymentMethod('PIX');
+    setCouponInput('');
+    setAppliedCoupon(null);
   };
 
   const handleCloseCheckout = () => {
@@ -500,6 +515,53 @@ export default function PlanosPage() {
     setPixResult(null);
     setPixPaidSuccess(false);
     setCardPaidSuccess(false);
+    setCouponInput('');
+    setAppliedCoupon(null);
+  };
+
+  // Validar Cupom de Desconto
+  const handleValidateCoupon = async () => {
+    if (!couponInput.trim() || !selectedPlanForCheckout) return;
+    setValidatingCoupon(true);
+    try {
+      const res = await api.post<{
+        valid: boolean;
+        code: string;
+        description: string;
+        discountType: 'PERCENTAGE' | 'FIXED_CENTS';
+        discountValue: number;
+        discountCents: number;
+        finalAmountCents: number;
+        message: string;
+      }>('/api/billing/coupons/validate', {
+        code: couponInput.trim(),
+        targetType: 'PLAN',
+        planId: selectedPlanForCheckout.id,
+      });
+
+      if (res.valid) {
+        setAppliedCoupon({
+          code: res.code,
+          description: res.description,
+          discountType: res.discountType,
+          discountValue: res.discountValue,
+          discountCents: res.discountCents,
+          finalAmountCents: res.finalAmountCents,
+        });
+        toast.success(res.message);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Cupom inválido ou expirado.');
+      setAppliedCoupon(null);
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    toast.info('Cupom de desconto removido.');
   };
 
   // Gerar PIX via Mercado Pago
@@ -521,6 +583,7 @@ export default function PlanosPage() {
       }>('/api/billing/checkout/pix', {
         planId: selectedPlanForCheckout.id,
         payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
+        couponCode: appliedCoupon?.code,
       });
 
       setPixResult(res);
@@ -577,6 +640,7 @@ export default function PlanosPage() {
           expYear: cardForm.expYear,
           cvv: cardForm.cvv,
           installments: 1,
+          couponCode: appliedCoupon?.code,
         },
       );
 
@@ -1452,11 +1516,116 @@ export default function PlanosPage() {
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
-                  {formatBRL(selectedPlanForCheckout.priceCents)}
-                </span>
+                {appliedCoupon ? (
+                  <>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
+                      {formatBRL(selectedPlanForCheckout.priceCents)}
+                    </span>
+                    <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34D399' }}>
+                      {formatBRL(appliedCoupon.finalAmountCents)}
+                    </span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
+                    {formatBRL(selectedPlanForCheckout.priceCents)}
+                  </span>
+                )}
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'block' }}>/ mês</span>
               </div>
+            </div>
+
+            {/* Bloco de Cupom de Desconto */}
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '10px',
+                background: appliedCoupon ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: appliedCoupon
+                  ? '1px solid rgba(16, 185, 129, 0.3)'
+                  : '1px solid var(--border-color)',
+              }}
+            >
+              {appliedCoupon ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Tag size={16} color="#34D399" />
+                    <div>
+                      <strong style={{ fontSize: '0.88rem', color: '#34D399', letterSpacing: '0.04em' }}>
+                        {appliedCoupon.code}
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                        (-{formatBRL(appliedCoupon.discountCents)} de economia)
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#EF4444',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Remover Cupom
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Tag
+                      size={15}
+                      color="var(--text-dim)"
+                      style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Possui cupom de desconto?"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleValidateCoupon();
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px 8px 32px',
+                        borderRadius: '6px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.82rem',
+                        fontFamily: 'monospace',
+                        textTransform: 'uppercase',
+                        fontWeight: 600,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleValidateCoupon}
+                    disabled={validatingCoupon || !couponInput.trim()}
+                    className="glass-card"
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      color: 'var(--primary)',
+                      borderColor: 'rgba(229, 179, 56, 0.35)',
+                      cursor: validatingCoupon || !couponInput.trim() ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {validatingCoupon ? 'Validando...' : 'Aplicar'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Abas de Método de Pagamento */}
@@ -1748,7 +1917,13 @@ export default function PlanosPage() {
                       ) : (
                         <>
                           <QrCode size={18} />
-                          <span>Gerar QR Code Pix ({formatBRL(selectedPlanForCheckout.priceCents)})</span>
+                          <span>
+                            Gerar QR Code Pix (
+                            {formatBRL(
+                              appliedCoupon ? appliedCoupon.finalAmountCents : selectedPlanForCheckout.priceCents,
+                            )}
+                            )
+                          </span>
                         </>
                       )}
                     </button>
@@ -1960,7 +2135,13 @@ export default function PlanosPage() {
                       ) : (
                         <>
                           <CreditCard size={18} />
-                          <span>Pagar {formatBRL(selectedPlanForCheckout.priceCents)} com Cartão</span>
+                          <span>
+                            Pagar{' '}
+                            {formatBRL(
+                              appliedCoupon ? appliedCoupon.finalAmountCents : selectedPlanForCheckout.priceCents,
+                            )}{' '}
+                            com Cartão
+                          </span>
                         </>
                       )}
                     </button>

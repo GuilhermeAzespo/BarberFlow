@@ -15,6 +15,8 @@ import {
 } from '../../lib/email.js';
 import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
+import { getCouponsCatalog, saveCouponsCatalog, type SaasCoupon } from '../../lib/coupons.js';
+import crypto from 'node:crypto';
 import {
   getActiveMercadoPagoConfig,
   testMercadoPagoConnection,
@@ -1111,6 +1113,153 @@ superAdminRouter.put('/addons', async (req, res) => {
     success: true,
     message: 'Configurações de Add-ons e valores salvos com sucesso!',
     addons: enrichedAddons,
+  });
+});
+
+// ─────────────────────── Gestão de Cupons de Desconto SaaS ───────────────────────
+
+const couponSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .min(2, 'O código do cupom deve ter pelo menos 2 caracteres')
+    .max(30, 'O código do cupom deve ter no máximo 30 caracteres')
+    .transform((v) => v.toUpperCase().replace(/[^A-Z0-9_-]/g, '')),
+  description: z.string().trim().max(150).optional().default(''),
+  discountType: z.enum(['PERCENTAGE', 'FIXED_CENTS']),
+  discountValue: z.number().int().min(1, 'O valor do desconto deve ser maior que zero'),
+  appliesTo: z.enum(['ALL', 'PLANS_ONLY', 'ADDONS_ONLY']).default('ALL'),
+  maxUses: z.number().int().min(1).nullable().optional(),
+  expiresAt: z.string().nullable().optional(),
+  isActive: z.boolean().default(true),
+});
+
+superAdminRouter.get('/coupons', async (_req, res) => {
+  const coupons = await getCouponsCatalog();
+  res.json({
+    coupons,
+    stats: {
+      total: coupons.length,
+      activeCount: coupons.filter((c) => c.isActive).length,
+      totalUses: coupons.reduce((acc, c) => acc + (c.usedCount || 0), 0),
+    },
+  });
+});
+
+superAdminRouter.post('/coupons', async (req, res) => {
+  const data = couponSchema.parse(req.body);
+  if (!data.code) {
+    throw HttpError.badRequest('Informe um código alfanumérico válido para o cupom.');
+  }
+  if (data.discountType === 'PERCENTAGE' && (data.discountValue < 1 || data.discountValue > 99)) {
+    throw HttpError.badRequest('O desconto percentual deve estar entre 1% e 99%.');
+  }
+
+  const current = await getCouponsCatalog();
+  if (current.some((c) => c.code === data.code)) {
+    throw HttpError.conflict(`Já existe um cupom cadastrado com o código "${data.code}".`);
+  }
+
+  const newCoupon: SaasCoupon = {
+    id: crypto.randomUUID(),
+    code: data.code,
+    description: data.description || '',
+    discountType: data.discountType,
+    discountValue: data.discountValue,
+    appliesTo: data.appliesTo,
+    maxUses: data.maxUses ?? null,
+    usedCount: 0,
+    expiresAt: data.expiresAt || null,
+    isActive: data.isActive,
+    createdAt: new Date().toISOString(),
+  };
+
+  const nextList = [newCoupon, ...current];
+  await saveCouponsCatalog(nextList);
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Cupom de desconto criado: ${newCoupon.code} (${
+      newCoupon.discountType === 'PERCENTAGE'
+        ? `${newCoupon.discountValue}%`
+        : `R$ ${(newCoupon.discountValue / 100).toFixed(2)}`
+    })`,
+  });
+
+  res.status(201).json({
+    success: true,
+    coupon: newCoupon,
+    coupons: nextList,
+    message: `Cupom ${newCoupon.code} criado com sucesso!`,
+  });
+});
+
+superAdminRouter.patch('/coupons/:id', async (req, res) => {
+  const { id } = req.params;
+  const data = couponSchema.partial().parse(req.body);
+
+  const current = await getCouponsCatalog();
+  const idx = current.findIndex((c) => c.id === id);
+  if (idx === -1) {
+    throw HttpError.notFound('Cupom não encontrado.');
+  }
+
+  const target = current[idx];
+  const nextCode = data.code ? data.code.toUpperCase() : target.code;
+
+  if (nextCode !== target.code && current.some((c) => c.code === nextCode && c.id !== id)) {
+    throw HttpError.conflict(`Já existe outro cupom com o código "${nextCode}".`);
+  }
+
+  const updatedCoupon: SaasCoupon = {
+    ...target,
+    code: nextCode,
+    description: data.description !== undefined ? data.description : target.description,
+    discountType: data.discountType ?? target.discountType,
+    discountValue: data.discountValue !== undefined ? data.discountValue : target.discountValue,
+    appliesTo: data.appliesTo ?? target.appliesTo,
+    maxUses: data.maxUses !== undefined ? data.maxUses : target.maxUses,
+    expiresAt: data.expiresAt !== undefined ? data.expiresAt : target.expiresAt,
+    isActive: data.isActive !== undefined ? data.isActive : target.isActive,
+  };
+
+  const nextList = [...current];
+  nextList[idx] = updatedCoupon;
+  await saveCouponsCatalog(nextList);
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Cupom ${updatedCoupon.code} atualizado (Ativo: ${updatedCoupon.isActive})`,
+  });
+
+  res.json({
+    success: true,
+    coupon: updatedCoupon,
+    coupons: nextList,
+    message: `Cupom ${updatedCoupon.code} atualizado com sucesso!`,
+  });
+});
+
+superAdminRouter.delete('/coupons/:id', async (req, res) => {
+  const { id } = req.params;
+  const current = await getCouponsCatalog();
+  const target = current.find((c) => c.id === id);
+  if (!target) {
+    throw HttpError.notFound('Cupom não encontrado.');
+  }
+
+  const nextList = current.filter((c) => c.id !== id);
+  await saveCouponsCatalog(nextList);
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Cupom de desconto excluído: ${target.code}`,
+  });
+
+  res.json({
+    success: true,
+    coupons: nextList,
+    message: `Cupom ${target.code} removido com sucesso!`,
   });
 });
 

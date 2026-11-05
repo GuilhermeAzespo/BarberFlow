@@ -24,6 +24,7 @@ import {
   Scissors,
   Printer,
   Trash2,
+  Tag,
 } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
@@ -209,6 +210,65 @@ export default function NfsePage() {
     expYear: '',
     cvv: '',
   });
+
+  // Cupom de Desconto State
+  const [couponInput, setCouponInput] = useState('');
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    description: string;
+    discountType: 'PERCENTAGE' | 'FIXED_CENTS';
+    discountValue: number;
+    originalAmountCents: number;
+    discountCents: number;
+    finalAmountCents: number;
+  } | null>(null);
+
+  const handleValidateCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setValidatingCoupon(true);
+    try {
+      const res = await api.post<{
+        valid: boolean;
+        code: string;
+        description: string;
+        discountType: 'PERCENTAGE' | 'FIXED_CENTS';
+        discountValue: number;
+        originalAmountCents: number;
+        discountCents: number;
+        finalAmountCents: number;
+        message: string;
+      }>('/api/billing/coupons/validate', {
+        code: couponInput.trim(),
+        targetType: 'ADDON',
+        addonKey: 'nfse',
+      });
+
+      if (res.valid) {
+        setAppliedCoupon({
+          code: res.code,
+          description: res.description,
+          discountType: res.discountType,
+          discountValue: res.discountValue,
+          originalAmountCents: res.originalAmountCents,
+          discountCents: res.discountCents,
+          finalAmountCents: res.finalAmountCents,
+        });
+        showToast('success', res.message || `Cupom ${res.code} aplicado com sucesso!`);
+      }
+    } catch (err: unknown) {
+      showToast('error', err instanceof Error ? err.message : 'Cupom inválido ou expirado.');
+      setAppliedCoupon(null);
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    showToast('success', 'Cupom de desconto removido.');
+  };
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -490,6 +550,7 @@ export default function NfsePage() {
     try {
       const res = await api.post<PixCheckoutResponse>('/api/billing/addon/nfse/pix', {
         payerCpf: payerCpf || undefined,
+        couponCode: appliedCoupon?.code,
       });
       setPixData(res);
     } catch (err) {
@@ -506,9 +567,12 @@ export default function NfsePage() {
       const res = await api.post<{ success: boolean; message: string }>('/api/billing/addon/nfse/card', {
         ...cardForm,
         installments: 1,
+        couponCode: appliedCoupon?.code,
       });
       if (res.success) {
         setAddonCheckoutOpen(false);
+        setCouponInput('');
+        setAppliedCoupon(null);
         await refreshAuth();
         showToast('success', res.message);
       } else {
@@ -702,6 +766,8 @@ export default function NfsePage() {
                       <button
                         onClick={() => {
                           setPixData(null);
+                          setCouponInput('');
+                          setAppliedCoupon(null);
                           setAddonCheckoutOpen(true);
                         }}
                         className="gold-gradient-primary gold-glow btn-primary"
@@ -1811,8 +1877,12 @@ export default function NfsePage() {
 
       <Modal
         isOpen={addonCheckoutOpen}
-        onClose={() => setAddonCheckoutOpen(false)}
-        title={`Ativar Módulo Emissor NFS-e (${formatBRL(addonPriceCents)}/mês)`}
+        onClose={() => {
+          setAddonCheckoutOpen(false);
+          setCouponInput('');
+          setAppliedCoupon(null);
+        }}
+        title={`Ativar Módulo Emissor NFS-e (${formatBRL(appliedCoupon ? appliedCoupon.finalAmountCents : addonPriceCents)}/mês)`}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
@@ -1858,6 +1928,125 @@ export default function NfsePage() {
             </button>
           </div>
 
+          {/* Bloco de Cupom de Desconto no Add-on */}
+          {!pixData && (
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: appliedCoupon ? 'rgba(52, 211, 153, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: appliedCoupon ? '1px solid rgba(52, 211, 153, 0.35)' : '1px solid var(--border-color)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {appliedCoupon ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Tag size={16} color="#34D399" />
+                    <div>
+                      <strong style={{ fontSize: '0.88rem', color: '#34D399', letterSpacing: '0.04em' }}>
+                        {appliedCoupon.code}
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                        (-{formatBRL(appliedCoupon.discountCents)} de desconto)
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-dim)',
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Tag
+                      size={15}
+                      style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: 'var(--text-dim)',
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Possui cupom de desconto?"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleValidateCoupon();
+                        }
+                      }}
+                      style={{
+                        paddingLeft: '34px',
+                        fontSize: '0.84rem',
+                        height: '38px',
+                        borderRadius: '8px',
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleValidateCoupon}
+                    disabled={validatingCoupon || !couponInput.trim()}
+                    className="glass-card"
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      color: 'var(--primary)',
+                      borderColor: 'rgba(229, 179, 56, 0.35)',
+                      cursor: validatingCoupon || !couponInput.trim() ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {validatingCoupon ? 'Validando...' : 'Aplicar'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {appliedCoupon && !pixData && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: '10px',
+                background: 'rgba(229, 179, 56, 0.08)',
+                border: '1px solid rgba(229, 179, 56, 0.2)',
+                fontSize: '0.83rem',
+              }}
+            >
+              <span style={{ color: 'var(--text-muted)' }}>Valor com Desconto:</span>
+              <div>
+                <span style={{ textDecoration: 'line-through', color: 'var(--text-dim)', marginRight: '8px' }}>
+                  {formatBRL(addonPriceCents)}
+                </span>
+                <span style={{ color: '#34D399', fontWeight: 700 }}>
+                  {formatBRL(appliedCoupon.finalAmountCents)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {checkoutMethod === 'PIX' ? (
             !pixData ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1886,7 +2075,9 @@ export default function NfsePage() {
                     fontWeight: 700,
                   }}
                 >
-                  {addonLoading ? 'Gerando QR Code PIX...' : `Gerar QR Code PIX (${formatBRL(addonPriceCents)})`}
+                  {addonLoading
+                    ? 'Gerando QR Code PIX...'
+                    : `Gerar QR Code PIX (${formatBRL(appliedCoupon ? appliedCoupon.finalAmountCents : addonPriceCents)})`}
                 </button>
               </div>
             ) : (
@@ -2003,7 +2194,9 @@ export default function NfsePage() {
                   marginTop: '6px',
                 }}
               >
-                {addonLoading ? 'Processando...' : `Pagar e Ativar por ${formatBRL(addonPriceCents)}`}
+                {addonLoading
+                  ? 'Processando...'
+                  : `Pagar e Ativar por ${formatBRL(appliedCoupon ? appliedCoupon.finalAmountCents : addonPriceCents)}`}
               </button>
             </form>
           )}

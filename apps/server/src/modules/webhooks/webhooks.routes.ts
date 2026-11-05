@@ -4,6 +4,7 @@ import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { systemLog } from '../../lib/system-log.js';
 import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mercadopago.js';
+import { incrementCouponUsage } from '../../lib/coupons.js';
 
 export const webhooksRouter = Router();
 
@@ -126,6 +127,14 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
         if (lockUpdate.count === 0) {
           // Já foi aprovado anteriormente pelo polling ou por outra notificação de webhook
           return res.status(200).json({ received: true, already_processed: true });
+        }
+
+        const paymentMeta = (saasPayment.metadata as Record<string, any> | null) || {};
+        const usedCouponCode =
+          (metadata.coupon_code as string | undefined) ||
+          (paymentMeta.couponCode as string | undefined);
+        if (usedCouponCode) {
+          await incrementCouponUsage(usedCouponCode);
         }
 
         const existingSub = saasPayment.tenant?.subscription;

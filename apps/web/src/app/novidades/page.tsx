@@ -46,6 +46,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-1',
+    version: 'v3.1',
+    date: '05 de Novembro de 2026',
+    title: 'Sistema de Cupons de Desconto, Gestão de Add-ons no Super Admin e Blindagem Mercado Pago',
+    category: 'NEW',
+    categoryLabel: 'Fase 1 RoadMap',
+    badgeColor: '#10B981',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    summary:
+      'Lançamento da Fase 1 do RoadMap Estratégico com motor completo de Cupons Promocionais no Super Admin (/admin), gestão dinâmica de módulos Add-on e precificação, aplicação de cupons com desconto instantâneo no checkout de Planos (/planos) e Módulo Fiscal NFS-e (/nfse), e blindagem de segurança para produção com Mercado Pago.',
+    highlights: [
+      'Gestão de Cupons no Super Admin: Crie cupons promocionais em porcentagem (%) ou valor fixo (R$), defina limite de usos, data de validade, aplicação (Todos, Planos ou Add-ons) e pause/ative a qualquer momento.',
+      'Checkout com Desconto em Tempo Real: Campo dedicado no checkout de Planos e no Módulo Fiscal NFS-e com validação instantânea, valor original riscado e economia destacada.',
+      'Gestão de Add-ons pelo Super Admin: Aba exclusiva para gerenciar quais módulos são vendidos separadamente, seus preços mensais e ativação automática por plano.',
+      'Blindagem Mercado Pago em Produção: Sanitização e validação de CPF/CNPJ, anti-fraude aprimorado, webhook com idempotência e suporte a cartão de crédito/PIX.',
+      'Controle de Uso Automático: Incremento atômico de uso do cupom assim que o pagamento é aprovado via webhook ou polling.',
+    ],
+    impact: 'Novas ferramentas de crescimento comercial e conversão de salões parceiros com segurança máxima nas transações.',
+  },
+  {
     id: 'v3-0',
     version: 'v3.0',
     date: '05 de Novembro de 2026',

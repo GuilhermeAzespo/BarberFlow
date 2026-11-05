@@ -16,6 +16,7 @@ import {
 } from '../../lib/mercadopago.js';
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
+import { validateAndCalculateCoupon, incrementCouponUsage } from '../../lib/coupons.js';
 
 export const billingRouter = Router();
 
@@ -24,6 +25,7 @@ const pixCheckoutSchema = z.object({
   payerCpf: z.string().trim().optional(),
   payerName: z.string().trim().optional(),
   payerEmail: z.string().email('E-mail do pagador inválido').optional(),
+  couponCode: z.string().trim().optional(),
 });
 
 const cardCheckoutSchema = z.object({
@@ -37,6 +39,57 @@ const cardCheckoutSchema = z.object({
   cvv: z.string().optional(),
   installments: z.coerce.number().int().min(1).max(12).default(1),
   paymentMethodId: z.string().optional(),
+  couponCode: z.string().trim().optional(),
+});
+
+// Validação de Cupom de Desconto no Checkout (Planos ou Add-ons)
+billingRouter.post('/coupons/validate', async (req, res) => {
+  const body = z
+    .object({
+      code: z.string().trim().min(1, 'Informe o código do cupom'),
+      targetType: z.enum(['PLAN', 'ADDON']).default('PLAN'),
+      planId: z.string().optional(),
+      addonKey: z.string().optional(),
+    })
+    .parse(req.body || {});
+
+  let originalAmountCents = 0;
+
+  if (body.targetType === 'PLAN') {
+    if (!body.planId) {
+      throw HttpError.badRequest('Selecione um plano para validar o cupom.');
+    }
+    const plan = await prisma.plan.findUnique({ where: { id: body.planId } });
+    if (!plan || !plan.isActive) {
+      throw HttpError.badRequest('Plano selecionado inválido.');
+    }
+    originalAmountCents = plan.priceCents;
+  } else {
+    const addonCfg = await getAddonByKey((body.addonKey as any) || 'nfse');
+    originalAmountCents = addonCfg.priceCents;
+  }
+
+  const result = await validateAndCalculateCoupon({
+    code: body.code,
+    targetType: body.targetType,
+    originalAmountCents,
+  });
+
+  if (!result.valid || !result.coupon) {
+    throw HttpError.badRequest(result.message);
+  }
+
+  res.json({
+    valid: true,
+    code: result.coupon.code,
+    description: result.coupon.description,
+    discountType: result.coupon.discountType,
+    discountValue: result.coupon.discountValue,
+    originalAmountCents: result.originalAmountCents,
+    discountCents: result.discountCents,
+    finalAmountCents: result.finalAmountCents,
+    message: result.message,
+  });
 });
 
 // Informações gerais de faturamento do salão
@@ -134,6 +187,24 @@ billingRouter.post('/checkout/pix', async (req, res) => {
     throw HttpError.badRequest('Plano selecionado inválido ou indisponível.');
   }
 
+  let finalAmountCents = plan.priceCents;
+  let appliedCouponCode: string | null = null;
+  let discountCents = 0;
+
+  if (data.couponCode) {
+    const couponCheck = await validateAndCalculateCoupon({
+      code: data.couponCode,
+      targetType: 'PLAN',
+      originalAmountCents: plan.priceCents,
+    });
+    if (!couponCheck.valid || !couponCheck.coupon) {
+      throw HttpError.badRequest(couponCheck.message);
+    }
+    finalAmountCents = couponCheck.finalAmountCents;
+    discountCents = couponCheck.discountCents;
+    appliedCouponCode = couponCheck.coupon.code;
+  }
+
   const owner = tenant.users[0];
   const payerEmail = data.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = data.payerName || owner?.name || tenant.name;
@@ -145,19 +216,28 @@ billingRouter.post('/checkout/pix', async (req, res) => {
     data: {
       tenantId,
       planId: plan.id,
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
       method: 'PIX',
       status: 'PENDING',
       payerEmail,
       payerName,
       payerDoc: data.payerCpf ? data.payerCpf.replace(/\D/g, '') : null,
+      metadata: appliedCouponCode
+        ? {
+            couponCode: appliedCouponCode,
+            discountCents,
+            originalAmountCents: plan.priceCents,
+          }
+        : undefined,
     },
   });
 
   try {
     const pixResult = await createMercadoPagoPix({
-      amountCents: plan.priceCents,
-      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})`,
+      amountCents: finalAmountCents,
+      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})${
+        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
+      }`,
       payerEmail,
       payerName,
       payerCpf: data.payerCpf,
@@ -166,6 +246,7 @@ billingRouter.post('/checkout/pix', async (req, res) => {
         tenant_id: tenantId,
         plan_id: plan.id,
         saas_payment_id: saasPayment.id,
+        ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
 
@@ -187,7 +268,10 @@ billingRouter.post('/checkout/pix', async (req, res) => {
       mpPaymentId: pixResult.paymentId,
       status: pixResult.status,
       planName: plan.name,
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
+      originalAmountCents: plan.priceCents,
+      discountCents,
+      couponCode: appliedCouponCode,
       qrCode: pixResult.qrCode,
       qrCodeBase64: pixResult.qrCodeBase64,
       ticketUrl: pixResult.ticketUrl,
@@ -221,6 +305,24 @@ billingRouter.post('/checkout/card', async (req, res) => {
     throw HttpError.badRequest('Plano selecionado inválido ou indisponível.');
   }
 
+  let finalAmountCents = plan.priceCents;
+  let appliedCouponCode: string | null = null;
+  let discountCents = 0;
+
+  if (data.couponCode) {
+    const couponCheck = await validateAndCalculateCoupon({
+      code: data.couponCode,
+      targetType: 'PLAN',
+      originalAmountCents: plan.priceCents,
+    });
+    if (!couponCheck.valid || !couponCheck.coupon) {
+      throw HttpError.badRequest(couponCheck.message);
+    }
+    finalAmountCents = couponCheck.finalAmountCents;
+    discountCents = couponCheck.discountCents;
+    appliedCouponCode = couponCheck.coupon.code;
+  }
+
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = data.cardholderName || owner?.name || tenant.name;
@@ -247,21 +349,30 @@ billingRouter.post('/checkout/card', async (req, res) => {
     data: {
       tenantId,
       planId: plan.id,
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
       method: 'CREDIT_CARD',
       status: 'PENDING',
       payerEmail,
       payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
+      metadata: appliedCouponCode
+        ? {
+            couponCode: appliedCouponCode,
+            discountCents,
+            originalAmountCents: plan.priceCents,
+          }
+        : undefined,
     },
   });
 
   try {
     const cardResult = await createMercadoPagoCardPayment({
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
       token: cardToken,
-      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})`,
+      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})${
+        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
+      }`,
       installments: data.installments,
       paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
@@ -272,6 +383,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
         tenant_id: tenantId,
         plan_id: plan.id,
         saas_payment_id: saasPayment.id,
+        ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
 
@@ -292,6 +404,10 @@ billingRouter.post('/checkout/card', async (req, res) => {
     });
 
     if (isApproved) {
+      if (appliedCouponCode) {
+        await incrementCouponUsage(appliedCouponCode);
+      }
+
       const now = new Date();
       const existingSub = tenant.subscription;
       const isSamePlanRenewal =
@@ -334,7 +450,9 @@ billingRouter.post('/checkout/card', async (req, res) => {
       await systemLog({
         tenantId,
         source: 'billing',
-        message: `Assinatura Plano ${plan.name} ativada via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})`,
+        message: `Assinatura Plano ${plan.name} ativada via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})${
+          appliedCouponCode ? ` [Cupom: ${appliedCouponCode}]` : ''
+        }`,
       });
 
       return res.json({
@@ -404,6 +522,14 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
         });
 
         if (lockUpdate.count > 0) {
+          const paymentMeta = (payment.metadata as Record<string, any> | null) || {};
+          const usedCouponCode =
+            (mpStatus.metadata?.coupon_code as string | undefined) ||
+            (paymentMeta.couponCode as string | undefined);
+          if (usedCouponCode) {
+            await incrementCouponUsage(usedCouponCode);
+          }
+
           const existingSub = payment.tenant?.subscription;
 
           if (isNfseAddon) {
@@ -427,7 +553,9 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
             await systemLog({
               tenantId,
               source: 'billing',
-              message: `Módulo Add-on NFS-e ativado via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})`,
+              message: `Módulo Add-on NFS-e ativado via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})${
+                usedCouponCode ? ` [Cupom: ${usedCouponCode}]` : ''
+              }`,
             });
           } else {
             const isSamePlanRenewal =
@@ -468,7 +596,9 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
             await systemLog({
               tenantId,
               source: 'billing',
-              message: `Assinatura Plano ${payment.plan.name} ativada via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})`,
+              message: `Assinatura Plano ${payment.plan.name} ativada via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})${
+                usedCouponCode ? ` [Cupom: ${usedCouponCode}]` : ''
+              }`,
             });
           }
         }
@@ -534,6 +664,7 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
       payerCpf: z.string().trim().optional(),
       payerName: z.string().trim().optional(),
       payerEmail: z.string().email('E-mail do pagador inválido').optional(),
+      couponCode: z.string().trim().optional(),
     })
     .parse(req.body || {});
 
@@ -556,6 +687,24 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
   }
   const addonPriceCents = nfseAddonCfg.priceCents;
 
+  let finalAmountCents = addonPriceCents;
+  let appliedCouponCode: string | null = null;
+  let discountCents = 0;
+
+  if (body.couponCode) {
+    const couponCheck = await validateAndCalculateCoupon({
+      code: body.couponCode,
+      targetType: 'ADDON',
+      originalAmountCents: addonPriceCents,
+    });
+    if (!couponCheck.valid || !couponCheck.coupon) {
+      throw HttpError.badRequest(couponCheck.message);
+    }
+    finalAmountCents = couponCheck.finalAmountCents;
+    discountCents = couponCheck.discountCents;
+    appliedCouponCode = couponCheck.coupon.code;
+  }
+
   const owner = tenant.users[0];
   const payerEmail = body.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = body.payerName || owner?.name || tenant.name;
@@ -565,20 +714,29 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
     data: {
       tenantId,
       planId: tenant.subscription.planId,
-      amountCents: addonPriceCents,
+      amountCents: finalAmountCents,
       method: 'PIX',
       status: 'PENDING',
       mpStatusDetail: 'ADDON_NFSE:pending',
       payerEmail,
       payerName,
       payerDoc: body.payerCpf ? body.payerCpf.replace(/\D/g, '') : null,
+      metadata: appliedCouponCode
+        ? {
+            couponCode: appliedCouponCode,
+            discountCents,
+            originalAmountCents: addonPriceCents,
+          }
+        : undefined,
     },
   });
 
   try {
     const pixResult = await createMercadoPagoPix({
-      amountCents: addonPriceCents,
-      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})`,
+      amountCents: finalAmountCents,
+      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})${
+        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
+      }`,
       payerEmail,
       payerName,
       payerCpf: body.payerCpf,
@@ -588,6 +746,7 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
         plan_id: tenant.subscription.planId,
         saas_payment_id: saasPayment.id,
         addon_type: 'NFSE',
+        ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
 
@@ -609,7 +768,10 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
       mpPaymentId: pixResult.paymentId,
       status: pixResult.status,
       planName: 'Módulo Emissor NFS-e (Add-on)',
-      amountCents: addonPriceCents,
+      amountCents: finalAmountCents,
+      originalAmountCents: addonPriceCents,
+      discountCents,
+      couponCode: appliedCouponCode,
       qrCode: pixResult.qrCode,
       qrCodeBase64: pixResult.qrCodeBase64,
       ticketUrl: pixResult.ticketUrl,
@@ -638,6 +800,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       cvv: z.string().optional(),
       installments: z.coerce.number().int().min(1).max(12).default(1),
       paymentMethodId: z.string().optional(),
+      couponCode: z.string().trim().optional(),
     })
     .parse(req.body || {});
 
@@ -659,6 +822,25 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     );
   }
   const addonPriceCents = nfseAddonCfg.priceCents;
+
+  let finalAmountCents = addonPriceCents;
+  let appliedCouponCode: string | null = null;
+  let discountCents = 0;
+
+  if (data.couponCode) {
+    const couponCheck = await validateAndCalculateCoupon({
+      code: data.couponCode,
+      targetType: 'ADDON',
+      originalAmountCents: addonPriceCents,
+    });
+    if (!couponCheck.valid || !couponCheck.coupon) {
+      throw HttpError.badRequest(couponCheck.message);
+    }
+    finalAmountCents = couponCheck.finalAmountCents;
+    discountCents = couponCheck.discountCents;
+    appliedCouponCode = couponCheck.coupon.code;
+  }
+
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = data.cardholderName || owner?.name || tenant.name;
@@ -684,7 +866,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     data: {
       tenantId,
       planId: tenant.subscription.planId,
-      amountCents: addonPriceCents,
+      amountCents: finalAmountCents,
       method: 'CREDIT_CARD',
       status: 'PENDING',
       mpStatusDetail: 'ADDON_NFSE:pending',
@@ -692,14 +874,23 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
+      metadata: appliedCouponCode
+        ? {
+            couponCode: appliedCouponCode,
+            discountCents,
+            originalAmountCents: addonPriceCents,
+          }
+        : undefined,
     },
   });
 
   try {
     const cardResult = await createMercadoPagoCardPayment({
-      amountCents: addonPriceCents,
+      amountCents: finalAmountCents,
       token: cardToken,
-      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})`,
+      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})${
+        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
+      }`,
       installments: data.installments,
       paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
@@ -711,6 +902,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
         plan_id: tenant.subscription.planId,
         saas_payment_id: saasPayment.id,
         addon_type: 'NFSE',
+        ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
 
@@ -731,6 +923,10 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     });
 
     if (isApproved) {
+      if (appliedCouponCode) {
+        await incrementCouponUsage(appliedCouponCode);
+      }
+
       const now = new Date();
       const existingSub = tenant.subscription;
       const baseDate =
@@ -753,7 +949,9 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       await systemLog({
         tenantId,
         source: 'billing',
-        message: `Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})`,
+        message: `Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})${
+          appliedCouponCode ? ` [Cupom: ${appliedCouponCode}]` : ''
+        }`,
       });
 
       return res.json({

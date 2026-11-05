@@ -42,6 +42,7 @@ import {
   Crown,
   ShieldCheck,
   Trash2,
+  Tag,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth, PlanPermissions } from '../../lib/auth-context';
@@ -310,12 +311,26 @@ interface AdminAddonItem {
   includedInPlans: Record<string, boolean>;
 }
 
+interface AdminCouponItem {
+  id: string;
+  code: string;
+  description: string;
+  discountType: 'PERCENTAGE' | 'FIXED_CENTS';
+  discountValue: number;
+  appliesTo: 'ALL' | 'PLANS_ONLY' | 'ADDONS_ONLY';
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
   const { toast, confirm } = useToast();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'addons' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'addons' | 'coupons' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
   const [activeIntegrationTab, setActiveIntegrationTab] = useState<'mercadopago' | 'cloudflare' | 'whatsapp' | 'others'>('mercadopago');
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
@@ -323,6 +338,18 @@ export default function SuperAdminPage() {
   const [addonsList, setAddonsList] = useState<AdminAddonItem[]>([]);
   const [savingAddons, setSavingAddons] = useState(false);
   const [togglingAddonTenantId, setTogglingAddonTenantId] = useState<string | null>(null);
+  const [couponsList, setCouponsList] = useState<AdminCouponItem[]>([]);
+  const [savingCoupon, setSavingCoupon] = useState(false);
+  const [showCouponForm, setShowCouponForm] = useState(false);
+  const [couponForm, setCouponForm] = useState({
+    code: '',
+    description: '',
+    discountType: 'PERCENTAGE' as 'PERCENTAGE' | 'FIXED_CENTS',
+    discountInput: '20',
+    appliesTo: 'ALL' as 'ALL' | 'PLANS_ONLY' | 'ADDONS_ONLY',
+    maxUses: '',
+    expiresAt: '',
+  });
   const [logs, setLogs] = useState<SystemLogItem[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [smtpConfig, setSmtpConfig] = useState<SmtpConfigData | null>(null);
@@ -605,8 +632,120 @@ export default function SuperAdminPage() {
     }
   };
 
+  const loadCoupons = async () => {
+    try {
+      const res = await api.get<{ coupons: AdminCouponItem[] }>('/api/superadmin/coupons');
+      if (Array.isArray(res.coupons)) {
+        setCouponsList(res.coupons);
+      }
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanCode = couponForm.code.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+    if (!cleanCode || cleanCode.length < 2) {
+      return toast.warning('Informe um código de cupom válido (ex: BEMVINDO20).');
+    }
+
+    const rawVal = parseFloat(String(couponForm.discountInput || '0').replace(',', '.'));
+    if (!Number.isFinite(rawVal) || rawVal <= 0) {
+      return toast.warning('Informe um valor de desconto válido.');
+    }
+
+    const discountValue =
+      couponForm.discountType === 'PERCENTAGE'
+        ? Math.min(99, Math.max(1, Math.round(rawVal)))
+        : Math.round(rawVal * 100);
+
+    setSavingCoupon(true);
+    try {
+      const res = await api.post<{ coupons: AdminCouponItem[]; message: string }>('/api/superadmin/coupons', {
+        code: cleanCode,
+        description: couponForm.description.trim(),
+        discountType: couponForm.discountType,
+        discountValue,
+        appliesTo: couponForm.appliesTo,
+        maxUses: couponForm.maxUses ? Math.max(1, parseInt(couponForm.maxUses, 10)) : null,
+        expiresAt: couponForm.expiresAt ? new Date(`${couponForm.expiresAt}T23:59:59`).toISOString() : null,
+        isActive: true,
+      });
+
+      if (Array.isArray(res.coupons)) {
+        setCouponsList(res.coupons);
+      } else {
+        await loadCoupons();
+      }
+
+      setCouponForm({
+        code: '',
+        description: '',
+        discountType: 'PERCENTAGE',
+        discountInput: '20',
+        appliesTo: 'ALL',
+        maxUses: '',
+        expiresAt: '',
+      });
+      setShowCouponForm(false);
+      toast.success(res.message || `Cupom ${cleanCode} criado com sucesso!`);
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao criar cupom de desconto.');
+    } finally {
+      setSavingCoupon(false);
+    }
+  };
+
+  const handleToggleCouponActive = async (coupon: AdminCouponItem) => {
+    try {
+      const res = await api.patch<{ coupons: AdminCouponItem[]; message: string }>(
+        `/api/superadmin/coupons/${coupon.id}`,
+        { isActive: !coupon.isActive },
+      );
+      if (Array.isArray(res.coupons)) {
+        setCouponsList(res.coupons);
+      } else {
+        await loadCoupons();
+      }
+      toast.success(
+        !coupon.isActive
+          ? `Cupom ${coupon.code} ativado!`
+          : `Cupom ${coupon.code} pausado temporariamente.`,
+      );
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao atualizar cupom.');
+    }
+  };
+
+  const handleDeleteCoupon = async (coupon: AdminCouponItem) => {
+    const ok = await confirm({
+      title: `Excluir Cupom "${coupon.code}"?`,
+      message: `Deseja excluir permanentemente o cupom promocional "${coupon.code}"?`,
+      confirmText: 'Excluir Cupom',
+      cancelText: 'Cancelar',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
+
+    try {
+      const res = await api.delete<{ coupons: AdminCouponItem[]; message: string }>(
+        `/api/superadmin/coupons/${coupon.id}`,
+      );
+      if (Array.isArray(res.coupons)) {
+        setCouponsList(res.coupons);
+      } else {
+        await loadCoupons();
+      }
+      toast.success(res.message || `Cupom ${coupon.code} excluído!`);
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao excluir cupom.');
+    }
+  };
+
   useEffect(() => {
-    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAddons(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
+    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAddons(), loadCoupons(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
       setLoading(false),
     );
   }, []);
@@ -1250,6 +1389,33 @@ export default function SuperAdminPage() {
           >
             <Sparkles size={15} color={activeTab === 'addons' ? 'var(--primary)' : 'currentColor'} />
             <span>Add-ons ({addonsList.filter((a) => a.isAddon).length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('coupons')}
+            style={{
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
+              borderRadius: '10px',
+              border: activeTab === 'coupons' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'coupons' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+              color: activeTab === 'coupons' ? 'var(--primary)' : 'var(--text-muted)',
+              boxShadow: activeTab === 'coupons' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'coupons' ? 700 : 600,
+              fontSize: '0.84rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '7px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Tag size={15} color={activeTab === 'coupons' ? 'var(--primary)' : 'currentColor'} />
+            <span>Cupons ({couponsList.filter((c) => c.isActive).length})</span>
           </button>
 
           <button
@@ -2189,6 +2355,377 @@ export default function SuperAdminPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ───────────────── ABA 2.8: Cupons de Desconto ───────────────── */}
+        {activeTab === 'coupons' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Cabeçalho do Bloco Cupons */}
+            <div
+              className="glass-panel"
+              style={{
+                padding: '24px 28px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                border: '1px solid rgba(229, 179, 56, 0.28)',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                  <Tag size={20} color="var(--primary)" />
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                    Gestão de Cupons de Desconto
+                  </h3>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+                  Crie cupons promocionais para conversão de novos salões, parcerias com influenciadores ou campanhas especiais.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCouponForm(!showCouponForm)}
+                className="gold-gradient-primary gold-glow btn-primary"
+                style={{
+                  padding: '11px 22px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                  color: '#0B0F17',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  fontSize: '0.88rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Tag size={16} />
+                <span>{showCouponForm ? 'Fechar Formulário' : '+ Criar Novo Cupom'}</span>
+              </button>
+            </div>
+
+            {/* KPIs Rápidos de Cupons */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Cupons Ativos
+                </span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#34D399' }}>
+                  {couponsList.filter((c) => c.isActive).length}{' '}
+                  <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-dim)' }}>
+                    de {couponsList.length} cadastrados
+                  </span>
+                </span>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Total de Utilizações
+                </span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--primary)' }}>
+                  {couponsList.reduce((acc, c) => acc + (c.usedCount || 0), 0)}{' '}
+                  <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-dim)' }}>vezes aplicados</span>
+                </span>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Status da Validação
+                </span>
+                <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F9FAFB', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={18} color="#10B981" /> Ativo no Checkout
+                </span>
+              </div>
+            </div>
+
+            {/* Formulário de Criação de Cupom */}
+            {showCouponForm && (
+              <form onSubmit={handleCreateCoupon} className="glass-panel" style={{ padding: '24px 28px' }}>
+                <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--primary)' }}>
+                  Cadastrar Novo Cupom de Desconto
+                </h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Código do Cupom *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="EX: BEMVINDO30"
+                      value={couponForm.code}
+                      onChange={(e) => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') })}
+                      style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Tipo de Desconto *
+                    </label>
+                    <Select
+                      value={couponForm.discountType}
+                      onChange={(e) => setCouponForm({ ...couponForm, discountType: e.target.value as any })}
+                    >
+                      <option value="PERCENTAGE">Porcentagem (% OFF)</option>
+                      <option value="FIXED_CENTS">Valor Fixo em Reais (R$ OFF)</option>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Valor do Desconto ({couponForm.discountType === 'PERCENTAGE' ? '%' : 'R$'}) *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={couponForm.discountType === 'PERCENTAGE' ? 'Ex: 20' : 'Ex: 15,00'}
+                      value={couponForm.discountInput}
+                      onChange={(e) => setCouponForm({ ...couponForm, discountInput: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Aplica-se a:
+                    </label>
+                    <Select
+                      value={couponForm.appliesTo}
+                      onChange={(e) => setCouponForm({ ...couponForm, appliesTo: e.target.value as any })}
+                    >
+                      <option value="ALL">Planos e Add-ons (Todos)</option>
+                      <option value="PLANS_ONLY">Apenas Assinatura de Planos</option>
+                      <option value="ADDONS_ONLY">Apenas Módulos Add-on</option>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Limite Máximo de Utilizações (Opcional)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="Deixe em branco para ilimitado"
+                      value={couponForm.maxUses}
+                      onChange={(e) => setCouponForm({ ...couponForm, maxUses: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Data de Expiração (Opcional)
+                    </label>
+                    <input
+                      type="date"
+                      value={couponForm.expiresAt}
+                      onChange={(e) => setCouponForm({ ...couponForm, expiresAt: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Descrição Interna / Motivo da Campanha
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Parceria com barbeiro influencer ou campanha de Black Friday"
+                    value={couponForm.description}
+                    onChange={(e) => setCouponForm({ ...couponForm, description: e.target.value })}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCouponForm(false)}
+                    className="glass-card"
+                    style={{ padding: '10px 18px', fontSize: '0.85rem' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingCoupon}
+                    className="gold-gradient-primary gold-glow btn-primary"
+                    style={{
+                      padding: '10px 24px',
+                      borderRadius: '8px',
+                      color: '#0B0F17',
+                      fontWeight: 800,
+                      border: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {savingCoupon ? 'Salvando...' : 'Salvar e Ativar Cupom'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Listagem de Cupons Cadastrados */}
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
+                  Cupons Configurados ({couponsList.length})
+                </h4>
+                <button
+                  type="button"
+                  onClick={loadCoupons}
+                  className="glass-card"
+                  style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Clock size={13} />
+                  <span>Atualizar</span>
+                </button>
+              </div>
+
+              {couponsList.length === 0 ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <Tag size={36} color="var(--text-dim)" style={{ marginBottom: '12px' }} />
+                  <p style={{ margin: '0 0 8px 0', fontWeight: 600, fontSize: '0.95rem' }}>
+                    Nenhum cupom de desconto cadastrado ainda.
+                  </p>
+                  <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>
+                    Clique no botão acima para criar seu primeiro cupom (ex: BEMVINDO20) e disponibilizar descontos no checkout!
+                  </span>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.78rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>
+                        <th style={{ padding: '12px' }}>Código</th>
+                        <th style={{ padding: '12px' }}>Desconto</th>
+                        <th style={{ padding: '12px' }}>Aplica-se a</th>
+                        <th style={{ padding: '12px' }}>Utilizações</th>
+                        <th style={{ padding: '12px' }}>Validade</th>
+                        <th style={{ padding: '12px' }}>Status</th>
+                        <th style={{ padding: '12px', textAlign: 'right' }}>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {couponsList.map((c) => {
+                        const isExpired = c.expiresAt && new Date(c.expiresAt).getTime() < Date.now();
+                        const isMaxReached = c.maxUses !== null && c.usedCount >= c.maxUses;
+
+                        return (
+                          <tr key={c.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)', fontSize: '0.86rem' }}>
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    fontFamily: 'monospace',
+                                    fontWeight: 800,
+                                    fontSize: '0.88rem',
+                                    background: 'rgba(229, 179, 56, 0.14)',
+                                    color: 'var(--primary)',
+                                    padding: '3px 10px',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(229, 179, 56, 0.35)',
+                                    letterSpacing: '0.04em',
+                                  }}
+                                >
+                                  {c.code}
+                                </span>
+                              </div>
+                              {c.description && (
+                                <span style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                  {c.description}
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px', fontWeight: 700, color: '#34D399' }}>
+                              {c.discountType === 'PERCENTAGE'
+                                ? `${c.discountValue}% OFF`
+                                : `R$ ${(c.discountValue / 100).toFixed(2).replace('.', ',')} OFF`}
+                            </td>
+                            <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                              {c.appliesTo === 'ALL'
+                                ? 'Planos & Add-ons'
+                                : c.appliesTo === 'PLANS_ONLY'
+                                ? 'Apenas Planos'
+                                : 'Apenas Add-ons'}
+                            </td>
+                            <td style={{ padding: '12px', color: 'var(--text-main)', fontWeight: 600 }}>
+                              {c.usedCount} / {c.maxUses !== null ? c.maxUses : '∞'}
+                              {isMaxReached && (
+                                <span style={{ fontSize: '0.7rem', color: '#EF4444', display: 'block' }}>
+                                  Esgotado
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                              {c.expiresAt
+                                ? DateTime.fromISO(c.expiresAt).toFormat('dd/MM/yyyy')
+                                : 'Sem expiração'}
+                              {isExpired && (
+                                <span style={{ fontSize: '0.7rem', color: '#EF4444', display: 'block' }}>
+                                  Expirado
+                                </span>
+                              )}
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <span
+                                className={`badge ${
+                                  !c.isActive || isExpired || isMaxReached
+                                    ? 'badge-neutral'
+                                    : 'badge-success'
+                                }`}
+                              >
+                                {!c.isActive
+                                  ? 'Pausado'
+                                  : isExpired
+                                  ? 'Expirado'
+                                  : isMaxReached
+                                  ? 'Esgotado'
+                                  : 'Ativo'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: '8px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCouponActive(c)}
+                                  className="glass-card"
+                                  style={{ padding: '5px 10px', fontSize: '0.76rem', fontWeight: 600 }}
+                                >
+                                  {c.isActive ? 'Pausar' : 'Ativar'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCoupon(c)}
+                                  style={{
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    color: '#EF4444',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                  }}
+                                  title="Excluir cupom"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
