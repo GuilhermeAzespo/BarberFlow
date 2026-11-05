@@ -695,11 +695,15 @@ export default function NfsePage() {
                       setPixData(null);
                       setAddonCheckoutOpen(true);
                     }}
-                    className="btn-primary"
+                    className="gold-gradient-primary gold-glow btn-primary"
                     style={{
                       width: '100%',
                       padding: '13px 18px',
                       borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                      color: '#0B0F17',
+                      border: 'none',
+                      cursor: 'pointer',
                       fontWeight: 800,
                       fontSize: '0.92rem',
                       display: 'flex',
@@ -806,10 +810,14 @@ export default function NfsePage() {
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button
                     onClick={handleOpenManualEmit}
-                    className="btn-primary"
+                    className="gold-gradient-primary gold-glow btn-primary"
                     style={{
                       padding: '9px 16px',
                       borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                      color: '#0B0F17',
+                      border: 'none',
+                      cursor: 'pointer',
                       fontWeight: 700,
                       fontSize: '0.84rem',
                       display: 'flex',
@@ -1243,10 +1251,14 @@ export default function NfsePage() {
                                 <td style={{ padding: '12px 10px', textAlign: 'right' }}>
                                   <button
                                     onClick={() => handleOpenEmitFromAppointment(appt)}
-                                    className="btn-primary"
+                                    className="gold-gradient-primary btn-primary"
                                     style={{
                                       padding: '7px 14px',
                                       borderRadius: '8px',
+                                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                                      color: '#0B0F17',
+                                      border: 'none',
+                                      cursor: 'pointer',
                                       fontSize: '0.78rem',
                                       fontWeight: 700,
                                       display: 'inline-flex',
@@ -1362,10 +1374,14 @@ export default function NfsePage() {
                       <button
                         type="submit"
                         disabled={uploadingCert}
-                        className="btn-primary"
+                        className="gold-gradient-primary gold-glow btn-primary"
                         style={{
                           padding: '11px 16px',
                           borderRadius: '10px',
+                          background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                          color: '#0B0F17',
+                          border: 'none',
+                          cursor: 'pointer',
                           fontWeight: 700,
                           display: 'flex',
                           alignItems: 'center',
@@ -1575,10 +1591,14 @@ export default function NfsePage() {
                     <button
                       type="submit"
                       disabled={savingConfig}
-                      className="btn-primary"
+                      className="gold-gradient-primary gold-glow btn-primary"
                       style={{
                         padding: '12px 18px',
                         borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                        color: '#0B0F17',
+                        border: 'none',
+                        cursor: 'pointer',
                         fontWeight: 700,
                         marginTop: '4px',
                       }}
@@ -1726,8 +1746,16 @@ export default function NfsePage() {
             <button
               type="submit"
               disabled={emitting}
-              className="btn-primary"
-              style={{ padding: '10px 20px', borderRadius: '10px', fontWeight: 700 }}
+              className="gold-gradient-primary gold-glow btn-primary"
+              style={{
+                padding: '10px 20px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                color: '#0B0F17',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
             >
               {emitting ? 'Transmitindo DPS / NFS-e...' : 'Transmitir e Emitir NFS-e'}
             </button>
@@ -1801,8 +1829,16 @@ export default function NfsePage() {
                   type="button"
                   onClick={handleGenerateAddonPix}
                   disabled={addonLoading}
-                  className="btn-primary"
-                  style={{ padding: '12px', borderRadius: '10px', fontWeight: 700 }}
+                  className="gold-gradient-primary gold-glow btn-primary"
+                  style={{
+                    padding: '12px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                    color: '#0B0F17',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                  }}
                 >
                   {addonLoading ? 'Gerando QR Code PIX...' : `Gerar QR Code PIX (${formatBRL(addonPriceCents)})`}
                 </button>
@@ -1834,8 +1870,19 @@ export default function NfsePage() {
                       setCopiedPix(true);
                       setTimeout(() => setCopiedPix(false), 2500);
                     }}
-                    className="btn-primary"
-                    style={{ padding: '0 14px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    className="gold-gradient-primary btn-primary"
+                    style={{
+                      padding: '0 14px',
+                      borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                      color: '#0B0F17',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
                   >
                     {copiedPix ? <Check size={15} /> : <Copy size={15} />}
                     {copiedPix ? 'Copiado' : 'Copiar'}
@@ -1898,8 +1945,17 @@ export default function NfsePage() {
               <button
                 type="submit"
                 disabled={addonLoading}
-                className="btn-primary"
-                style={{ padding: '12px', borderRadius: '10px', fontWeight: 700, marginTop: '6px' }}
+                className="gold-gradient-primary gold-glow btn-primary"
+                style={{
+                  padding: '12px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                  color: '#0B0F17',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  marginTop: '6px',
+                }}
               >
                 {addonLoading ? 'Processando...' : `Pagar e Ativar por ${formatBRL(addonPriceCents)}`}
               </button>
