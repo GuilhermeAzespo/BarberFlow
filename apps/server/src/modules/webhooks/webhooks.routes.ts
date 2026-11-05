@@ -7,6 +7,15 @@ import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mer
 
 export const webhooksRouter = Router();
 
+// Endpoint GET para validação rápida de disponibilidade do Webhook no navegador / monitoramento
+webhooksRouter.get('/mercadopago', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'BarberFlow Mercado Pago Webhook',
+    ready: true,
+  });
+});
+
 // Webhook oficial do Mercado Pago para confirmação de pagamentos (PIX / Cartão)
 webhooksRouter.post('/mercadopago', async (req, res) => {
   try {
@@ -33,7 +42,7 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
       try {
         const config = await getActiveMercadoPagoConfig();
         if (config.accessToken) {
-          const orderRes = await fetch(`https://api.mercadopago.com/merchant_orders/${entityId}`, {
+          const orderRes = await fetch(`https://api.mercadopago.com/merchant_orders/${encodeURIComponent(String(entityId))}`, {
             headers: { Authorization: `Bearer ${config.accessToken}` },
           });
           if (orderRes.ok) {
@@ -58,36 +67,53 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
       return res.status(200).json({ received: true, no_payment_found: true });
     }
 
-    const mpPayment = await getMercadoPagoPayment(paymentId);
+    let mpPayment;
+    try {
+      mpPayment = await getMercadoPagoPayment(paymentId);
+    } catch (err) {
+      // Quando o painel do Mercado Pago envia uma simulação de teste com ID fictício (ex: 123456),
+      // respondemos 200 OK para que o teste de conectividade do painel seja aprovado.
+      logger.warn({ paymentId, err }, 'Pagamento do webhook não localizado na API do Mercado Pago (possível teste de simulação)');
+      return res.status(200).json({ received: true, simulated_or_not_found: true });
+    }
+
     if (!mpPayment) {
       return res.status(200).json({ received: true, not_found: true });
     }
 
-    if (mpPayment.status === 'approved') {
-      const metadata = mpPayment.metadata || {};
-      const saasPaymentId = metadata.saas_payment_id as string | undefined;
-      const tenantId = metadata.tenant_id as string | undefined;
+    const metadata = mpPayment.metadata || {};
+    const saasPaymentId = (metadata.saas_payment_id || metadata.saasPaymentId) as string | undefined;
+    const tenantId = (metadata.tenant_id || metadata.tenantId) as string | undefined;
 
-      // Localiza o registro de pagamento pelo ID do MP ou pelo ID interno
-      const saasPayment = await prisma.saaSPayment.findFirst({
-        where: {
-          OR: [
-            { mpPaymentId: String(paymentId) },
-            ...(saasPaymentId ? [{ id: saasPaymentId }] : []),
-          ],
+    // Localiza o registro de pagamento pelo ID do MP ou pelo ID interno
+    const saasPayment = await prisma.saaSPayment.findFirst({
+      where: {
+        OR: [
+          { mpPaymentId: String(paymentId) },
+          ...(saasPaymentId ? [{ id: saasPaymentId }] : []),
+        ],
+      },
+      include: {
+        plan: true,
+        tenant: {
+          include: { subscription: true },
         },
-        include: { plan: true, tenant: true },
-      });
+      },
+    });
 
+    if (mpPayment.status === 'approved') {
       if (saasPayment) {
-        const now = new Date();
-        const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
         const isNfseAddon =
           metadata.addon_type === 'NFSE' ||
           saasPayment.mpStatusDetail?.startsWith('ADDON_NFSE');
+        const now = new Date();
 
-        await prisma.saaSPayment.update({
-          where: { id: saasPayment.id },
+        // Atualização atômica para evitar ativação ou logs duplicados entre Polling e Webhook
+        const lockUpdate = await prisma.saaSPayment.updateMany({
+          where: {
+            id: saasPayment.id,
+            status: { not: 'APPROVED' },
+          },
           data: {
             status: 'APPROVED',
             mpPaymentId: String(paymentId),
@@ -97,12 +123,27 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
           },
         });
 
+        if (lockUpdate.count === 0) {
+          // Já foi aprovado anteriormente pelo polling ou por outra notificação de webhook
+          return res.status(200).json({ received: true, already_processed: true });
+        }
+
+        const existingSub = saasPayment.tenant?.subscription;
+
         if (isNfseAddon) {
-          await prisma.subscription.update({
+          const baseDate =
+            existingSub?.nfseAddonActive &&
+            existingSub?.nfseAddonExpiresAt &&
+            existingSub.nfseAddonExpiresAt > now
+              ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
+              : DateTime.fromJSDate(now);
+          const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
+
+          await prisma.subscription.updateMany({
             where: { tenantId: saasPayment.tenantId },
             data: {
               nfseAddonActive: true,
-              nfseAddonExpiresAt: currentPeriodEnd,
+              nfseAddonExpiresAt,
               lastPaymentAt: now,
             },
           });
@@ -113,6 +154,17 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
             message: `Módulo Add-on NFS-e ativado via Webhook Mercado Pago (MP ID: ${paymentId})`,
           });
         } else {
+          const isSamePlanRenewal =
+            existingSub?.status === 'ACTIVE' &&
+            existingSub?.planId === saasPayment.planId &&
+            existingSub?.currentPeriodEnd &&
+            existingSub.currentPeriodEnd > now;
+
+          const baseDate = isSamePlanRenewal
+            ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
+            : DateTime.fromJSDate(now);
+          const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
+
           await prisma.subscription.upsert({
             where: { tenantId: saasPayment.tenantId },
             create: {
@@ -180,6 +232,19 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
           });
         }
       }
+    } else if (
+      saasPayment &&
+      saasPayment.status === 'PENDING' &&
+      (mpPayment.status === 'rejected' || mpPayment.status === 'cancelled')
+    ) {
+      await prisma.saaSPayment.update({
+        where: { id: saasPayment.id },
+        data: {
+          status: mpPayment.status === 'cancelled' ? 'CANCELED' : 'REJECTED',
+          mpStatus: mpPayment.status,
+          mpStatusDetail: mpPayment.statusDetail || saasPayment.mpStatusDetail,
+        },
+      });
     }
 
     return res.status(200).json({ received: true });

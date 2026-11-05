@@ -22,15 +22,18 @@ export function getMercadoPagoWebhookUrl(req?: any): string {
     return sanitizeNotificationUrl(`${process.env.PUBLIC_URL.replace(/\/$/, '')}/api/webhooks/mercadopago`);
   }
 
-  // 2. Se a requisição contiver um host público válido (não localhost e não IP local)
-  const rawHost = req?.get ? req.get('host') : null;
+  // 2. Se a requisição contiver um host público válido (não localhost, 0.0.0.0 ou IP local)
+  const rawHost = req?.get ? req.get('x-forwarded-host') || req.get('host') : null;
   if (rawHost) {
-    const host = rawHost.split(':')[0].toLowerCase();
+    const host = String(rawHost).split(',')[0].trim().split(':')[0].toLowerCase();
     const isLocal =
+      !host.includes('.') ||
       host === 'localhost' ||
       host === '127.0.0.1' ||
+      host === '0.0.0.0' ||
       host.startsWith('192.168.') ||
       host.startsWith('10.') ||
+      host.startsWith('172.') ||
       host.endsWith('.local');
 
     if (!isLocal) {
@@ -48,6 +51,7 @@ export function sanitizeNotificationUrl(rawUrl?: string): string {
     !url ||
     url.includes('localhost') ||
     url.includes('127.0.0.1') ||
+    url.includes('0.0.0.0') ||
     url.startsWith('http://') ||
     !url.startsWith('https://') ||
     /:\d+/.test(url)
@@ -57,24 +61,99 @@ export function sanitizeNotificationUrl(rawUrl?: string): string {
   return url;
 }
 
+export function sanitizePayerEmail(email?: string | null): string {
+  const clean = (email || '').trim().toLowerCase();
+  if (
+    clean &&
+    /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(clean) &&
+    !clean.endsWith('.local') &&
+    !clean.endsWith('@localhost')
+  ) {
+    return clean;
+  }
+  return 'pagamentos@azespo.com.br';
+}
+
+export function buildIdentification(rawDoc?: string | null): { type: 'CPF' | 'CNPJ'; number: string } | undefined {
+  if (!rawDoc) return undefined;
+  const digits = rawDoc.replace(/\D/g, '');
+  if (digits.length === 11) {
+    return { type: 'CPF', number: digits };
+  }
+  if (digits.length === 14) {
+    return { type: 'CNPJ', number: digits };
+  }
+  return undefined;
+}
+
 export function inferPaymentMethodId(cardNumber?: string): string {
   if (!cardNumber) return 'master';
   const digits = cardNumber.replace(/\D/g, '');
+  // Hipercard & Elo (testados antes de Visa/Master pois alguns BINs começam com 4, 5 ou 6)
+  if (/^(606282|3841)/.test(digits)) return 'hipercard';
+  if (
+    /^(4011|431274|438935|451416|457393|4576|504175|506699|5067|5090|627780|636297|636368|6500|6504|6505|6507|6509|6516|6550)/.test(
+      digits,
+    )
+  ) {
+    return 'elo';
+  }
   if (digits.startsWith('4')) return 'visa';
   if (/^(5[1-5]|2[2-7])/.test(digits)) return 'master';
   if (/^(34|37)/.test(digits)) return 'amex';
-  if (/^(4011|4389|4514|4576|5041|5066|5067|5090|6277|6362|6363|650|6516|6550)/.test(digits)) return 'elo';
-  if (/^(6062|3841)/.test(digits)) return 'hipercard';
   return 'master';
+}
+
+export function translateMpStatusDetail(status: string, statusDetail?: string): string {
+  if (status === 'approved') {
+    return 'Pagamento aprovado com sucesso!';
+  }
+  if (status === 'in_process' || status === 'pending') {
+    return 'Pagamento em análise pela operadora do cartão. Assim que confirmado, sua assinatura será ativada automaticamente.';
+  }
+
+  switch (statusDetail) {
+    case 'cc_rejected_insufficient_amount':
+      return 'Cartão recusado por saldo ou limite insuficiente. Tente outro cartão ou pague via PIX.';
+    case 'cc_rejected_bad_filled_security_code':
+      return 'Código de segurança (CVV) inválido. Confira os dígitos no verso do cartão.';
+    case 'cc_rejected_bad_filled_date':
+      return 'Data de validade do cartão inválida ou vencida.';
+    case 'cc_rejected_bad_filled_card_number':
+      return 'Número do cartão inválido. Confira os 16 dígitos informados.';
+    case 'cc_rejected_bad_filled_other':
+      return 'Dados do cartão incorretos. Verifique o nome, CPF/CNPJ e validade.';
+    case 'cc_rejected_high_risk':
+      return 'Transação recusada pela prevenção antifraude do Mercado Pago. Recomendamos utilizar o pagamento via PIX para liberação imediata.';
+    case 'cc_rejected_call_for_authorize':
+      return 'O banco emissor exige autorização prévia para esta compra. Autorize no app do banco ou utilize o PIX.';
+    case 'cc_rejected_card_disabled':
+      return 'Este cartão está bloqueado ou desativado. Desbloqueie no aplicativo do seu banco.';
+    case 'cc_rejected_duplicated_payment':
+      return 'Você já realizou um pagamento recente deste mesmo valor. Aguarde alguns minutos.';
+    case 'cc_rejected_max_attempts':
+      return 'Limite de tentativas excedido para este cartão. Tente outro cartão ou pague via PIX.';
+    case 'cc_rejected_blacklist':
+    case 'cc_rejected_other_reason':
+      return 'A operadora do cartão não autorizou a cobrança. Tente outro cartão ou utilize o PIX.';
+    default:
+      return `Pagamento não autorizado pela operadora (${statusDetail || status}). Tente outro cartão ou pague via PIX.`;
+  }
 }
 
 export async function getActiveMercadoPagoConfig(): Promise<MercadoPagoConfig> {
   const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
 
-  const accessToken = setting?.mpAccessToken || process.env.MP_ACCESS_TOKEN || null;
-  const publicKey = setting?.mpPublicKey || process.env.MP_PUBLIC_KEY || null;
-  const webhookSecret = setting?.mpWebhookSecret || process.env.MP_WEBHOOK_SECRET || null;
-  const sandbox = setting?.mpSandbox ?? (process.env.MP_SANDBOX === 'true');
+  const rawAccessToken = setting?.mpAccessToken || process.env.MP_ACCESS_TOKEN || null;
+  const rawPublicKey = setting?.mpPublicKey || process.env.MP_PUBLIC_KEY || null;
+  const rawWebhookSecret = setting?.mpWebhookSecret || process.env.MP_WEBHOOK_SECRET || null;
+
+  const accessToken = rawAccessToken ? rawAccessToken.trim() : null;
+  const publicKey = rawPublicKey ? rawPublicKey.trim() : null;
+  const webhookSecret = rawWebhookSecret ? rawWebhookSecret.trim() : null;
+
+  const sandbox =
+    setting?.mpSandbox ?? (process.env.MP_SANDBOX === 'true' || Boolean(accessToken?.startsWith('TEST-')));
   const enabled = setting?.mpEnabled ?? Boolean(accessToken);
 
   return {
@@ -83,7 +162,7 @@ export async function getActiveMercadoPagoConfig(): Promise<MercadoPagoConfig> {
     webhookSecret,
     sandbox,
     enabled,
-    isConfigured: Boolean(accessToken && accessToken.trim().length > 10),
+    isConfigured: Boolean(accessToken && accessToken.length > 10),
   };
 }
 
@@ -160,10 +239,18 @@ export async function createMercadoPagoPix(params: CreatePixParams): Promise<Cre
   }
 
   const amount = Number((params.amountCents / 100).toFixed(2));
-  const nameParts = (params.payerName || 'Cliente').trim().split(/\s+/);
+  const nameParts = (params.payerName || 'Cliente BarberFlow').trim().split(/\s+/);
   const firstName = nameParts[0] || 'Cliente';
   const lastName = nameParts.slice(1).join(' ') || 'BarberFlow';
-  const cleanCpf = params.payerCpf ? params.payerCpf.replace(/\D/g, '') : undefined;
+  const identification = buildIdentification(params.payerCpf);
+  const safeEmail = sanitizePayerEmail(params.payerEmail);
+  const externalReference = String(
+    params.metadata?.saas_payment_id ||
+      params.metadata?.tenant_id ||
+      params.metadata?.tenantId ||
+      params.metadata?.plan_id ||
+      'barberflow-pix',
+  );
 
   const idempotencyKey = crypto.randomUUID();
 
@@ -171,18 +258,29 @@ export async function createMercadoPagoPix(params: CreatePixParams): Promise<Cre
     transaction_amount: amount,
     description: params.description,
     payment_method_id: 'pix',
+    statement_descriptor: 'BARBERFLOW',
+    external_reference: externalReference,
     payer: {
-      email: params.payerEmail,
+      email: safeEmail,
       first_name: firstName,
       last_name: lastName,
-      ...(cleanCpf && cleanCpf.length === 11
-        ? {
-            identification: {
-              type: 'CPF',
-              number: cleanCpf,
-            },
-          }
-        : {}),
+      ...(identification ? { identification } : {}),
+    },
+    additional_info: {
+      items: [
+        {
+          id: String(params.metadata?.plan_id || params.metadata?.planId || params.metadata?.addon_type || 'assinatura'),
+          title: params.description,
+          description: params.description,
+          category_id: 'services',
+          quantity: 1,
+          unit_price: amount,
+        },
+      ],
+      payer: {
+        first_name: firstName,
+        last_name: lastName,
+      },
     },
     metadata: params.metadata || {},
   };
@@ -240,10 +338,11 @@ export async function createMercadoPagoCardToken(params: CreateCardTokenParams):
   }
 
   // Tokenização de cartão via API Mercado Pago
-  const cleanNumber = params.cardNumber.replace(/\s+/g, '');
-  const cleanCpf = params.cardholderCpf.replace(/\D/g, '');
+  const cleanNumber = params.cardNumber.replace(/\D/g, '');
+  const cleanDoc = params.cardholderCpf.replace(/\D/g, '');
+  const docType = cleanDoc.length === 14 ? 'CNPJ' : 'CPF';
   const month = String(params.expMonth).padStart(2, '0');
-  let year = String(params.expYear);
+  let year = String(params.expYear).trim();
   if (year.length === 2) year = `20${year}`;
 
   const url = config.publicKey
@@ -262,14 +361,14 @@ export async function createMercadoPagoCardToken(params: CreateCardTokenParams):
     headers,
     body: JSON.stringify({
       card_number: cleanNumber,
-      security_code: params.cvv,
+      security_code: params.cvv.replace(/\D/g, ''),
       expiration_month: Number(month),
       expiration_year: Number(year),
       cardholder: {
         name: params.cardholderName.trim().toUpperCase(),
         identification: {
-          type: 'CPF',
-          number: cleanCpf,
+          type: docType,
+          number: cleanDoc,
         },
       },
     }),
@@ -281,10 +380,10 @@ export async function createMercadoPagoCardToken(params: CreateCardTokenParams):
     const rawMsg = data.message || data.cause?.[0]?.description || '';
     if (rawMsg.includes('Unauthorized use of live credentials') || data.cause?.[0]?.code === 7) {
       throw new Error(
-        'Você está usando uma Chave Pública de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.'
+        'Você está usando uma Chave Pública de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.',
       );
     }
-    throw new Error(rawMsg || 'Dados do cartão de crédito inválidos.');
+    throw new Error(rawMsg || 'Dados do cartão de crédito inválidos. Verifique número, validade, CVV e CPF/CNPJ.');
   }
 
   return data.id as string;
@@ -297,6 +396,7 @@ export interface CreateCardPaymentParams {
   installments?: number;
   paymentMethodId?: string;
   payerEmail: string;
+  payerName?: string;
   payerCpf?: string;
   metadata?: Record<string, unknown>;
   notificationUrl?: string;
@@ -318,55 +418,102 @@ export async function createMercadoPagoCardPayment(params: CreateCardPaymentPara
   }
 
   const amount = Number((params.amountCents / 100).toFixed(2));
-  const idempotencyKey = crypto.randomUUID();
-  const cleanCpf = params.payerCpf ? params.payerCpf.replace(/\D/g, '') : undefined;
+  const identification = buildIdentification(params.payerCpf);
+  const safeEmail = sanitizePayerEmail(params.payerEmail);
+  const nameParts = (params.payerName || 'Cliente BarberFlow').trim().split(/\s+/);
+  const firstName = nameParts[0] || 'Cliente';
+  const lastName = nameParts.slice(1).join(' ') || 'BarberFlow';
+  const externalReference = String(
+    params.metadata?.saas_payment_id ||
+      params.metadata?.tenant_id ||
+      params.metadata?.tenantId ||
+      params.metadata?.plan_id ||
+      'barberflow-card',
+  );
 
-  const body: Record<string, unknown> = {
-    transaction_amount: amount,
-    token: params.token,
-    description: params.description,
-    installments: params.installments || 1,
-    payment_method_id: params.paymentMethodId,
-    payer: {
-      email: params.payerEmail,
-      ...(cleanCpf && cleanCpf.length === 11
-        ? {
-            identification: {
-              type: 'CPF',
-              number: cleanCpf,
-            },
-          }
-        : {}),
-    },
-    metadata: params.metadata || {},
+  const buildPaymentBody = (includePaymentMethodId: boolean): Record<string, unknown> => {
+    const payload: Record<string, unknown> = {
+      transaction_amount: amount,
+      token: params.token,
+      description: params.description,
+      installments: params.installments || 1,
+      statement_descriptor: 'BARBERFLOW',
+      external_reference: externalReference,
+      payer: {
+        email: safeEmail,
+        first_name: firstName,
+        last_name: lastName,
+        ...(identification ? { identification } : {}),
+      },
+      additional_info: {
+        items: [
+          {
+            id: String(params.metadata?.plan_id || params.metadata?.planId || params.metadata?.addon_type || 'assinatura'),
+            title: params.description,
+            description: params.description,
+            category_id: 'services',
+            quantity: 1,
+            unit_price: amount,
+          },
+        ],
+        payer: {
+          first_name: firstName,
+          last_name: lastName,
+        },
+      },
+      metadata: params.metadata || {},
+    };
+
+    if (includePaymentMethodId && params.paymentMethodId) {
+      payload.payment_method_id = params.paymentMethodId;
+    }
+
+    const notificationUrl = sanitizeNotificationUrl(params.notificationUrl || getMercadoPagoWebhookUrl());
+    if (notificationUrl) {
+      payload.notification_url = notificationUrl;
+    }
+
+    return payload;
   };
 
-  const notificationUrl = sanitizeNotificationUrl(params.notificationUrl || getMercadoPagoWebhookUrl());
-  if (notificationUrl) {
-    body.notification_url = notificationUrl;
-  }
-
-  if (!body.payment_method_id) {
-    body.payment_method_id = params.paymentMethodId || 'master';
-  }
-
-  const res = await fetch('https://api.mercadopago.com/v1/payments', {
+  // Primeira tentativa com payment_method_id inferido (ou omitido se não fornecido)
+  let res = await fetch('https://api.mercadopago.com/v1/payments', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.accessToken}`,
-      'X-Idempotency-Key': idempotencyKey,
+      'X-Idempotency-Key': crypto.randomUUID(),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(buildPaymentBody(true)),
   });
 
-  const data = (await res.json()) as any;
+  let data = (await res.json()) as any;
+
+  // Fallback automático: se o Mercado Pago acusar divergência de bandeira (diff_param_bins),
+  // reenviamos sem payment_method_id para que o próprio Mercado Pago infira pelo BIN do token
+  if (!res.ok && params.paymentMethodId) {
+    const errText = JSON.stringify(data || {}).toLowerCase();
+    if (errText.includes('diff_param_bins') || errText.includes('payment_method_id')) {
+      logger.warn({ paymentMethodId: params.paymentMethodId }, 'Reenviando pagamento de cartão deixando o Mercado Pago inferir a bandeira pelo token');
+      res = await fetch('https://api.mercadopago.com/v1/payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.accessToken}`,
+          'X-Idempotency-Key': crypto.randomUUID(),
+        },
+        body: JSON.stringify(buildPaymentBody(false)),
+      });
+      data = (await res.json()) as any;
+    }
+  }
+
   if (!res.ok) {
     logger.error({ err: data }, 'Falha ao processar pagamento com cartão no Mercado Pago');
     const rawMsg = data.message || data.cause?.[0]?.description || '';
     if (rawMsg.includes('Unauthorized use of live credentials') || data.cause?.[0]?.code === 7) {
       throw new Error(
-        'Você está usando credenciais de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.'
+        'Você está usando credenciais de Produção (APP_USR-) com um cartão fictício de teste. No modo Sandbox, utilize as Credenciais de Teste (TEST-) geradas no portal do Mercado Pago.',
       );
     }
     throw new Error(rawMsg || 'Erro ao processar cartão de crédito.');
@@ -395,7 +542,7 @@ export async function getMercadoPagoPayment(paymentId: string): Promise<{
     throw new Error('Mercado Pago não está configurado.');
   }
 
-  const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+  const res = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`, {
     headers: {
       Authorization: `Bearer ${config.accessToken}`,
     },

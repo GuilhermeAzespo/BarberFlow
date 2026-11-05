@@ -14,7 +14,7 @@ import {
   buildBarberFlowEmailHtml,
 } from '../../lib/email.js';
 import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } from '../../lib/tenant-access.js';
-import { getAddonsCatalog, saveAddonsCatalog } from '../../lib/addons.js';
+import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import {
   getActiveMercadoPagoConfig,
   testMercadoPagoConnection,
@@ -135,7 +135,7 @@ superAdminRouter.get('/overview', async (_req, res) => {
   // Cálculo de MRR (apenas assinaturas ativas)
   const mrrCents = subscriptions
     .filter((s) => s.status === 'ACTIVE')
-    .reduce((sum, s) => sum + s.plan.priceCents, 0);
+    .reduce((sum, s) => sum + s.plan.priceCents + (s.nfseAddonActive ? 2990 : 0), 0);
 
   res.json({
     metrics: {

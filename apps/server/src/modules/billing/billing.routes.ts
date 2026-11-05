@@ -12,6 +12,7 @@ import {
   getMercadoPagoPayment,
   getMercadoPagoWebhookUrl,
   inferPaymentMethodId,
+  translateMpStatusDetail,
 } from '../../lib/mercadopago.js';
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
@@ -222,11 +223,12 @@ billingRouter.post('/checkout/card', async (req, res) => {
 
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
+  const payerName = data.cardholderName || owner?.name || tenant.name;
 
   let cardToken = data.token;
   if (!cardToken) {
     if (!data.cardNumber || !data.cardholderName || !data.cardholderCpf || !data.expMonth || !data.expYear || !data.cvv) {
-      throw HttpError.badRequest('Preencha todos os dados do cartão de crédito (número, titular, CPF, validade e CVV).');
+      throw HttpError.badRequest('Preencha todos os dados do cartão de crédito (número, titular, CPF/CNPJ, validade e CVV).');
     }
 
     cardToken = await createMercadoPagoCardToken({
@@ -249,7 +251,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       method: 'CREDIT_CARD',
       status: 'PENDING',
       payerEmail,
-      payerName: data.cardholderName || owner?.name,
+      payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
     },
@@ -263,6 +265,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       installments: data.installments,
       paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
+      payerName,
       payerCpf: data.cardholderCpf,
       notificationUrl,
       metadata: {
@@ -290,7 +293,17 @@ billingRouter.post('/checkout/card', async (req, res) => {
 
     if (isApproved) {
       const now = new Date();
-      const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
+      const existingSub = tenant.subscription;
+      const isSamePlanRenewal =
+        existingSub?.status === 'ACTIVE' &&
+        existingSub?.planId === plan.id &&
+        existingSub?.currentPeriodEnd &&
+        existingSub.currentPeriodEnd > now;
+
+      const baseDate = isSamePlanRenewal
+        ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
+        : DateTime.fromJSDate(now);
+      const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
 
       await prisma.subscription.upsert({
         where: { tenantId },
@@ -321,7 +334,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       await systemLog({
         tenantId,
         source: 'billing',
-        message: `Assinatura Plano ${plan.name} ativada via Cartão de Crédito no Mercado Pago`,
+        message: `Assinatura Plano ${plan.name} ativada via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})`,
       });
 
       return res.json({
@@ -336,10 +349,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       success: false,
       status: cardResult.status,
       statusDetail: cardResult.statusDetail,
-      message:
-        cardResult.status === 'in_process'
-          ? 'Pagamento em análise pelo Mercado Pago. A liberação ocorrerá em instantes.'
-          : 'Pagamento não autorizado pela operadora do cartão.',
+      message: translateMpStatusDetail(cardResult.status, cardResult.statusDetail),
       paymentId: saasPayment.id,
     });
   } catch (err: unknown) {
@@ -361,7 +371,10 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
       id: paymentId,
       tenantId,
     },
-    include: { plan: true },
+    include: {
+      plan: true,
+      tenant: { include: { subscription: true } },
+    },
   });
 
   if (!payment) throw HttpError.notFound('Cobrança não encontrada.');
@@ -372,13 +385,16 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
       const mpStatus = await getMercadoPagoPayment(payment.mpPaymentId);
       if (mpStatus.status === 'approved') {
         const now = new Date();
-        const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
         const isNfseAddon =
           mpStatus.metadata?.addon_type === 'NFSE' ||
           payment.mpStatusDetail?.startsWith('ADDON_NFSE');
 
-        await prisma.saaSPayment.update({
-          where: { id: payment.id },
+        // Atualização atômica para impedir ativação duplicada com o Webhook
+        const lockUpdate = await prisma.saaSPayment.updateMany({
+          where: {
+            id: payment.id,
+            status: { not: 'APPROVED' },
+          },
           data: {
             status: 'APPROVED',
             mpStatus: mpStatus.status,
@@ -387,45 +403,74 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
           },
         });
 
-        if (isNfseAddon) {
-          await prisma.subscription.update({
-            where: { tenantId },
-            data: {
-              nfseAddonActive: true,
-              nfseAddonExpiresAt: currentPeriodEnd,
-              lastPaymentAt: now,
-            },
-          });
+        if (lockUpdate.count > 0) {
+          const existingSub = payment.tenant?.subscription;
 
-          await systemLog({
-            tenantId,
-            source: 'billing',
-            message: 'Módulo Add-on NFS-e ativado via PIX no Mercado Pago',
-          });
-        } else {
-          await prisma.subscription.upsert({
-            where: { tenantId },
-            create: {
+          if (isNfseAddon) {
+            const baseDate =
+              existingSub?.nfseAddonActive &&
+              existingSub?.nfseAddonExpiresAt &&
+              existingSub.nfseAddonExpiresAt > now
+                ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
+                : DateTime.fromJSDate(now);
+            const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
+
+            await prisma.subscription.updateMany({
+              where: { tenantId },
+              data: {
+                nfseAddonActive: true,
+                nfseAddonExpiresAt,
+                lastPaymentAt: now,
+              },
+            });
+
+            await systemLog({
               tenantId,
-              planId: payment.planId,
-              status: 'ACTIVE',
-              currentPeriodStart: now,
-              currentPeriodEnd,
-              lastPaymentAt: now,
-            },
-            update: {
-              planId: payment.planId,
-              status: 'ACTIVE',
-              currentPeriodStart: now,
-              currentPeriodEnd,
-              lastPaymentAt: now,
-            },
-          });
+              source: 'billing',
+              message: `Módulo Add-on NFS-e ativado via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})`,
+            });
+          } else {
+            const isSamePlanRenewal =
+              existingSub?.status === 'ACTIVE' &&
+              existingSub?.planId === payment.planId &&
+              existingSub?.currentPeriodEnd &&
+              existingSub.currentPeriodEnd > now;
 
-          await prisma.tenant.update({
-            where: { id: tenantId },
-            data: { status: 'ACTIVE', statusReason: null },
-          });
+            const baseDate = isSamePlanRenewal
+              ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
+              : DateTime.fromJSDate(now);
+            const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
+
+            await prisma.subscription.upsert({
+              where: { tenantId },
+              create: {
+                tenantId,
+                planId: payment.planId,
+                status: 'ACTIVE',
+                currentPeriodStart: now,
+                currentPeriodEnd,
+                lastPaymentAt: now,
+              },
+              update: {
+                planId: payment.planId,
+                status: 'ACTIVE',
+                currentPeriodStart: now,
+                currentPeriodEnd,
+                lastPaymentAt: now,
+              },
+            });
+
+            await prisma.tenant.update({
+              where: { id: tenantId },
+              data: { status: 'ACTIVE', statusReason: null },
+            });
+
+            await systemLog({
+              tenantId,
+              source: 'billing',
+              message: `Assinatura Plano ${payment.plan.name} ativada via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})`,
+            });
+          }
         }
 
         return res.json({
@@ -443,11 +488,14 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
     }
   }
 
+  const isNfseAddon = payment.mpStatusDetail?.startsWith('ADDON_NFSE') || false;
+
   res.json({
     id: payment.id,
     status: payment.status,
     isPaid: payment.status === 'APPROVED',
-    planName: payment.plan.name,
+    isAddon: isNfseAddon,
+    planName: isNfseAddon ? 'Módulo Emissor NFS-e (Add-on)' : payment.plan.name,
     amountCents: payment.amountCents,
     paidAt: payment.paidAt,
   });
@@ -456,13 +504,23 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
 // Histórico de Faturas / Pagamentos do Salão
 billingRouter.get('/history', async (req, res) => {
   const tenantId = req.tenantId!;
-  const payments = await prisma.saaSPayment.findMany({
+  const rawPayments = await prisma.saaSPayment.findMany({
     where: { tenantId },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 25,
     include: {
       plan: { select: { id: true, name: true, slug: true } },
     },
+  });
+
+  const payments = rawPayments.map((p) => {
+    const isAddon = p.mpStatusDetail?.startsWith('ADDON_NFSE');
+    return {
+      ...p,
+      plan: isAddon
+        ? { id: p.plan.id, name: 'Add-on Emissor NFS-e', slug: 'addon-nfse' }
+        : p.plan,
+    };
   });
 
   res.json({ payments });
@@ -603,6 +661,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
   const addonPriceCents = nfseAddonCfg.priceCents;
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
+  const payerName = data.cardholderName || owner?.name || tenant.name;
 
   let cardToken = data.token;
   if (!cardToken) {
@@ -630,7 +689,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       status: 'PENDING',
       mpStatusDetail: 'ADDON_NFSE:pending',
       payerEmail,
-      payerName: data.cardholderName || owner?.name,
+      payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
     },
@@ -644,6 +703,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       installments: data.installments,
       paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
+      payerName,
       payerCpf: data.cardholderCpf,
       notificationUrl,
       metadata: {
@@ -672,7 +732,14 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
 
     if (isApproved) {
       const now = new Date();
-      const nfseAddonExpiresAt = DateTime.now().plus({ days: 30 }).toJSDate();
+      const existingSub = tenant.subscription;
+      const baseDate =
+        existingSub?.nfseAddonActive &&
+        existingSub?.nfseAddonExpiresAt &&
+        existingSub.nfseAddonExpiresAt > now
+          ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
+          : DateTime.fromJSDate(now);
+      const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
 
       await prisma.subscription.update({
         where: { tenantId },
@@ -686,7 +753,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       await systemLog({
         tenantId,
         source: 'billing',
-        message: 'Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago',
+        message: `Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})`,
       });
 
       return res.json({
@@ -701,7 +768,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       success: false,
       status: cardResult.status,
       statusDetail: cardResult.statusDetail,
-      message: 'Pagamento não autorizado pela operadora do cartão.',
+      message: translateMpStatusDetail(cardResult.status, cardResult.statusDetail),
       paymentId: saasPayment.id,
     });
   } catch (err: unknown) {

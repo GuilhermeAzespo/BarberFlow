@@ -473,7 +473,14 @@ export default function PlanosPage() {
   };
 
   const formatCpf = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 11);
+    const digits = value.replace(/\D/g, '').slice(0, 14);
+    if (digits.length > 11) {
+      return digits
+        .replace(/^(\d{2})(\d)/, '$1.$2')
+        .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+        .replace(/\.(\d{3})(\d)/, '.$1/$2')
+        .replace(/(\d{4})(\d)/, '$1-$2');
+    }
     return digits
       .replace(/(\d{3})(\d)/, '$1.$2')
       .replace(/(\d{3})(\d)/, '$1.$2')
@@ -1677,7 +1684,7 @@ export default function PlanosPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
                       <label style={{ fontSize: '0.82rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-                        CPF do Pagador (Opcional para emissão do Pix):
+                        CPF ou CNPJ do Pagador (Opcional para emissão do Pix):
                       </label>
                       <input
                         type="text"
@@ -1843,7 +1850,7 @@ export default function PlanosPage() {
 
                     <div>
                       <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                        CPF do Titular *
+                        CPF ou CNPJ do Titular *
                       </label>
                       <input
                         type="text"
