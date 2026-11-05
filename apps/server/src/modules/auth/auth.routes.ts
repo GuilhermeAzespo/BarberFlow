@@ -16,6 +16,7 @@ import {
   extractPlanFeatureList,
 } from '../../lib/tenant-access.js';
 import { slugify } from '../../lib/utils.js';
+import { getAddonsCatalog } from '../../lib/addons.js';
 import { requireAuth } from '../../middlewares/auth.js';
 
 export const authRouter = Router();
@@ -205,6 +206,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
     include: { subscription: { include: { plan: true } } },
   });
   const access = evaluateTenantAccess(tenant);
+  const addons = await getAddonsCatalog();
   const sub = tenant.subscription;
 
   res.json({
@@ -251,6 +253,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
         }
       : null,
     access,
+    addons,
     isImpersonated: Boolean(req.auth?.impersonatedBy),
     impersonatedBy: req.auth?.impersonatedBy ?? null,
   });

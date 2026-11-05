@@ -90,6 +90,16 @@ export interface AccessStatus {
   warning?: string;
 }
 
+export interface AddonCatalogItem {
+  key: keyof PlanPermissions;
+  name: string;
+  shortName: string;
+  description: string;
+  category: string;
+  isAddon: boolean;
+  priceCents: number;
+}
+
 interface AuthContextType {
   user: User | null;
   tenant: Tenant | null;
@@ -100,6 +110,9 @@ interface AuthContextType {
   canAccessMenu: (menuKey: string) => boolean;
   hasPermission: (key: keyof Omit<UserPermissions, 'allowedMenus' | 'preset' | 'roleTitle'>) => boolean;
   hasPlanFeature: (feature: keyof PlanPermissions) => boolean;
+  addons: AddonCatalogItem[];
+  isAddonFeature: (feature: keyof PlanPermissions) => boolean;
+  getAddonPriceCents: (feature: keyof PlanPermissions) => number;
   refresh: () => Promise<void>;
   logout: () => Promise<void>;
   exitImpersonation: () => Promise<void>;
@@ -115,6 +128,9 @@ const AuthContext = createContext<AuthContextType>({
   canAccessMenu: () => true,
   hasPermission: () => true,
   hasPlanFeature: () => true,
+  addons: [],
+  isAddonFeature: (f) => f === 'nfse',
+  getAddonPriceCents: () => 2990,
   refresh: async () => {},
   logout: async () => {},
   exitImpersonation: async () => {},
@@ -125,6 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [access, setAccess] = useState<AccessStatus | null>(null);
+  const [addons, setAddons] = useState<AddonCatalogItem[]>([]);
   const [isImpersonated, setIsImpersonated] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -138,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tenant: Tenant | null;
         subscription: Subscription | null;
         access: AccessStatus;
+        addons?: AddonCatalogItem[];
         isImpersonated?: boolean;
       }>('/api/auth/me');
 
@@ -145,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setTenant(res.tenant);
       setSubscription(res.subscription);
       setAccess(res.access);
+      if (Array.isArray(res.addons)) setAddons(res.addons);
       setIsImpersonated(Boolean(res.isImpersonated));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -232,6 +251,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user, subscription]
   );
 
+  const isAddonFeature = useCallback(
+    (feature: keyof PlanPermissions): boolean => {
+      const found = addons.find((a) => a.key === feature);
+      if (found) return Boolean(found.isAddon);
+      return feature === 'nfse';
+    },
+    [addons]
+  );
+
+  const getAddonPriceCents = useCallback(
+    (feature: keyof PlanPermissions): number => {
+      const found = addons.find((a) => a.key === feature);
+      return found ? found.priceCents : 2990;
+    },
+    [addons]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -244,6 +280,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canAccessMenu,
         hasPermission,
         hasPlanFeature,
+        addons,
+        isAddonFeature,
+        getAddonPriceCents,
         refresh,
         logout,
         exitImpersonation,

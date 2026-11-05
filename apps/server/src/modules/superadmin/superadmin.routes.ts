@@ -13,7 +13,8 @@ import {
   sendEmail,
   buildBarberFlowEmailHtml,
 } from '../../lib/email.js';
-import { extractPlanPermissions, extractPlanFeatureList } from '../../lib/tenant-access.js';
+import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } from '../../lib/tenant-access.js';
+import { getAddonsCatalog, saveAddonsCatalog } from '../../lib/addons.js';
 import {
   getActiveMercadoPagoConfig,
   testMercadoPagoConnection,
@@ -999,5 +1000,119 @@ superAdminRouter.post('/integrations/cloudflare/sync', async (_req, res) => {
       : `Sincronização concluída: ${syncedCount} de ${tenants.length} domínio(s) com SSL e Túnel sincronizados na Cloudflare!`,
   });
 });
+
+// ─────────────────────── Gestão de Add-ons & Módulos Avulsos ───────────────────────
+
+const updateAddonsSchema = z.object({
+  addons: z.array(
+    z.object({
+      key: z.string(),
+      isAddon: z.boolean().optional(),
+      priceCents: z.number().int().min(0).optional(),
+      name: z.string().trim().optional(),
+      description: z.string().trim().optional(),
+      includedInPlans: z.record(z.string(), z.boolean()).optional(),
+    }),
+  ),
+});
+
+superAdminRouter.get('/addons', async (_req, res) => {
+  const [catalog, plans, activeAddonSubscriptions] = await Promise.all([
+    getAddonsCatalog(),
+    prisma.plan.findMany({ orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }] }),
+    prisma.subscription.count({ where: { nfseAddonActive: true } }),
+  ]);
+
+  const enrichedAddons = catalog.map((addon) => {
+    const includedInPlans: Record<string, boolean> = {};
+    for (const p of plans) {
+      const perms = extractPlanPermissions(p);
+      includedInPlans[p.slug.toLowerCase()] = Boolean(perms[addon.key]);
+    }
+    return {
+      ...addon,
+      includedInPlans,
+    };
+  });
+
+  res.json({
+    addons: enrichedAddons,
+    stats: {
+      totalModules: enrichedAddons.length,
+      activeAddonsCount: enrichedAddons.filter((a) => a.isAddon).length,
+      activeSalonsWithAddon: activeAddonSubscriptions,
+    },
+  });
+});
+
+superAdminRouter.put('/addons', async (req, res) => {
+  const data = updateAddonsSchema.parse(req.body);
+
+  const savedCatalog = await saveAddonsCatalog(
+    data.addons.map((a) => ({
+      key: a.key as keyof PlanPermissions,
+      isAddon: a.isAddon,
+      priceCents: a.priceCents,
+      name: a.name,
+      description: a.description,
+    })),
+  );
+
+  // Sincroniza também as permissões inclusas gratuitamente nos planos (Starter, Pro, Premium)
+  const plans = await prisma.plan.findMany();
+  for (const plan of plans) {
+    const slug = plan.slug.toLowerCase();
+    const currentPerms = extractPlanPermissions(plan);
+    const currentItems = extractPlanFeatureList(plan.features);
+    let changed = false;
+
+    for (const addonUpdate of data.addons) {
+      if (addonUpdate.includedInPlans && typeof addonUpdate.includedInPlans[slug] === 'boolean') {
+        const key = addonUpdate.key as keyof PlanPermissions;
+        if (currentPerms[key] !== addonUpdate.includedInPlans[slug]) {
+          currentPerms[key] = addonUpdate.includedInPlans[slug];
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      await prisma.plan.update({
+        where: { id: plan.id },
+        data: {
+          features: {
+            items: currentItems,
+            permissions: currentPerms as unknown as Prisma.InputJsonValue,
+          },
+        },
+      });
+    }
+  }
+
+  const updatedPlans = await prisma.plan.findMany({ orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }] });
+  const enrichedAddons = savedCatalog.map((addon) => {
+    const includedInPlans: Record<string, boolean> = {};
+    for (const p of updatedPlans) {
+      const perms = extractPlanPermissions(p);
+      includedInPlans[p.slug.toLowerCase()] = Boolean(perms[addon.key]);
+    }
+    return {
+      ...addon,
+      includedInPlans,
+    };
+  });
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Configurações e preços de Add-ons atualizados (${enrichedAddons.filter((a) => a.isAddon).length} módulos como Add-on)`,
+  });
+
+  res.json({
+    success: true,
+    message: 'Configurações de Add-ons e valores salvos com sucesso!',
+    addons: enrichedAddons,
+  });
+});
+
 
 

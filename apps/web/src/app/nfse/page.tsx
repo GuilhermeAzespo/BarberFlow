@@ -156,7 +156,7 @@ const DEFAULT_STATS = {
 };
 
 export default function NfsePage() {
-  const { hasPlanFeature, refresh: refreshAuth, subscription } = useAuth();
+  const { hasPlanFeature, refresh: refreshAuth, subscription, isAddonFeature, getAddonPriceCents } = useAuth();
   const hasNfseAccess = hasPlanFeature('nfse');
 
   const [activeTab, setActiveTab] = useState<'invoices' | 'pending' | 'config'>('invoices');
@@ -194,6 +194,7 @@ export default function NfsePage() {
   });
 
   const [addonPriceCents, setAddonPriceCents] = useState(2990);
+  const [isNfseAddon, setIsNfseAddon] = useState(true);
   const [checkoutMethod, setCheckoutMethod] = useState<'PIX' | 'CARD'>('PIX');
   const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false);
   const [addonLoading, setAddonLoading] = useState(false);
@@ -214,11 +215,17 @@ export default function NfsePage() {
     setTimeout(() => setFeedback(null), 6000);
   };
 
+  useEffect(() => {
+    setAddonPriceCents(getAddonPriceCents('nfse'));
+    setIsNfseAddon(isAddonFeature('nfse'));
+  }, [getAddonPriceCents, isAddonFeature]);
+
   const loadAllNfseData = useCallback(async () => {
     if (!hasNfseAccess) {
       try {
-        const bill = await api.get<{ nfseAddon?: { priceCents: number } }>('/api/billing/status');
-        if (bill?.nfseAddon?.priceCents) setAddonPriceCents(bill.nfseAddon.priceCents);
+        const bill = await api.get<{ nfseAddon?: { priceCents: number; isAddon?: boolean } }>('/api/billing/status');
+        if (bill?.nfseAddon?.priceCents !== undefined) setAddonPriceCents(bill.nfseAddon.priceCents);
+        if (typeof bill?.nfseAddon?.isAddon === 'boolean') setIsNfseAddon(bill.nfseAddon.isAddon);
       } catch {
         // ignore
       }
@@ -679,59 +686,98 @@ export default function NfsePage() {
                     boxShadow: '0 20px 40px rgba(0, 0, 0, 0.4)',
                   }}
                 >
-                  <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: '#E5B338', letterSpacing: '0.06em' }}>
-                    Contratação Avulsa (Add-on)
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', margin: '10px 0 6px 0' }}>
-                    <span style={{ fontSize: '2.2rem', fontWeight: 900, color: '#F9FAFB' }}>{formatBRL(addonPriceCents)}</span>
-                    <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/mês</span>
-                  </div>
-                  <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
-                    Adicione o Emissor de NFS-e ao seu plano atual ({subscription?.plan?.name || 'Starter/Pro'}) com notas fiscais ilimitadas.
-                  </p>
+                  {isNfseAddon ? (
+                    <>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: '#E5B338', letterSpacing: '0.06em' }}>
+                        Contratação Avulsa (Add-on)
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', margin: '10px 0 6px 0' }}>
+                        <span style={{ fontSize: '2.2rem', fontWeight: 900, color: '#F9FAFB' }}>{formatBRL(addonPriceCents)}</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/mês</span>
+                      </div>
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                        Adicione o Emissor de NFS-e ao seu plano atual ({subscription?.plan?.name || 'Starter/Pro'}) com notas fiscais ilimitadas.
+                      </p>
 
-                  <button
-                    onClick={() => {
-                      setPixData(null);
-                      setAddonCheckoutOpen(true);
-                    }}
-                    className="gold-gradient-primary gold-glow btn-primary"
-                    style={{
-                      width: '100%',
-                      padding: '13px 18px',
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
-                      color: '#0B0F17',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontWeight: 800,
-                      fontSize: '0.92rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '8px',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    <Sparkles size={17} /> Ativar Módulo NFS-e Agora
-                  </button>
+                      <button
+                        onClick={() => {
+                          setPixData(null);
+                          setAddonCheckoutOpen(true);
+                        }}
+                        className="gold-gradient-primary gold-glow btn-primary"
+                        style={{
+                          width: '100%',
+                          padding: '13px 18px',
+                          borderRadius: '12px',
+                          background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                          color: '#0B0F17',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 800,
+                          fontSize: '0.92rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          marginBottom: '12px',
+                        }}
+                      >
+                        <Sparkles size={17} /> Ativar Módulo NFS-e Agora
+                      </button>
 
-                  <a
-                    href="/billing"
-                    style={{
-                      display: 'block',
-                      textAlign: 'center',
-                      padding: '11px 16px',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(255, 255, 255, 0.12)',
-                      color: '#E5E7EB',
-                      fontSize: '0.83rem',
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    Ou faça upgrade para o <strong>Plano Premium</strong> (Já Incluso) →
-                  </a>
+                      <a
+                        href="/planos"
+                        style={{
+                          display: 'block',
+                          textAlign: 'center',
+                          padding: '11px 16px',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#E5E7EB',
+                          fontSize: '0.83rem',
+                          fontWeight: 600,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        Ou faça upgrade para o <strong>Plano Premium</strong> (Já Incluso) →
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', color: '#E5B338', letterSpacing: '0.06em' }}>
+                        Disponível por Upgrade de Plano
+                      </div>
+                      <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#F9FAFB', margin: '10px 0 8px 0' }}>
+                        Módulo Fiscal NFS-e
+                      </div>
+                      <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '20px', lineHeight: 1.5 }}>
+                        O Emissor de NFS-e está incluso nos planos superiores do BarberFlow. Faça upgrade do seu plano ({subscription?.plan?.name || 'Starter'}) para liberar emissões ilimitadas.
+                      </p>
+
+                      <a
+                        href="/planos"
+                        className="gold-gradient-primary gold-glow btn-primary"
+                        style={{
+                          width: '100%',
+                          padding: '13px 18px',
+                          borderRadius: '12px',
+                          background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                          color: '#0B0F17',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 800,
+                          fontSize: '0.92rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <Sparkles size={17} /> Ver Planos e Fazer Upgrade →
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

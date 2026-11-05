@@ -14,6 +14,7 @@ import {
   inferPaymentMethodId,
 } from '../../lib/mercadopago.js';
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
+import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 
 export const billingRouter = Router();
 
@@ -60,8 +61,11 @@ billingRouter.get('/status', async (req, res) => {
     orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
   });
 
-  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-  const nfseAddonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+  const [addonsCatalog, nfseAddonCfg] = await Promise.all([
+    getAddonsCatalog(),
+    getAddonByKey('nfse'),
+  ]);
+  const nfseAddonPriceCents = nfseAddonCfg.priceCents;
 
   res.json({
     tenant: {
@@ -96,7 +100,9 @@ billingRouter.get('/status', async (req, res) => {
       active: Boolean(sub?.nfseAddonActive),
       expiresAt: sub?.nfseAddonExpiresAt ?? null,
       priceCents: nfseAddonPriceCents,
+      isAddon: nfseAddonCfg.isAddon,
     },
+    addons: addonsCatalog,
     access,
     plans,
     mercadopago: {
@@ -484,8 +490,13 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
     throw HttpError.notFound('Assinatura do salão não encontrada.');
   }
 
-  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-  const addonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+  const nfseAddonCfg = await getAddonByKey('nfse');
+  if (!nfseAddonCfg.isAddon) {
+    throw HttpError.badRequest(
+      'Este módulo não está disponível para contratação avulsa no momento. Faça upgrade do seu plano para liberá-lo.',
+    );
+  }
+  const addonPriceCents = nfseAddonCfg.priceCents;
 
   const owner = tenant.users[0];
   const payerEmail = body.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
@@ -583,8 +594,13 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     throw HttpError.notFound('Assinatura do salão não encontrada.');
   }
 
-  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
-  const addonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+  const nfseAddonCfg = await getAddonByKey('nfse');
+  if (!nfseAddonCfg.isAddon) {
+    throw HttpError.badRequest(
+      'Este módulo não está disponível para contratação avulsa no momento. Faça upgrade do seu plano para liberá-lo.',
+    );
+  }
+  const addonPriceCents = nfseAddonCfg.priceCents;
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
 

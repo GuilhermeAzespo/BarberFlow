@@ -7,6 +7,7 @@ import { HttpError } from '../../lib/http-error.js';
 import { logger } from '../../lib/logger.js';
 import { systemLog } from '../../lib/system-log.js';
 import { assertPlanFeature, effectiveLimits, loadTenant } from '../../lib/tenant-access.js';
+import { getAddonByKey } from '../../lib/addons.js';
 import { DEFAULT_FALLBACK_ORIGIN } from '../../lib/cloudflare.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { inspectPfxCertificate, transmitNfse } from './nfse.engine.js';
@@ -306,7 +307,7 @@ nfseRouter.get('/overview', async (req, res) => {
   const tenantId = req.tenantId!;
   const tenant = await loadTenant(tenantId);
   const limits = effectiveLimits(tenant.subscription);
-  const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+  const nfseAddonCfg = await getAddonByKey('nfse');
 
   let config = await prisma.fiscalConfig.findUnique({ where: { tenantId } });
   if (!config) {
@@ -363,7 +364,8 @@ nfseRouter.get('/overview', async (req, res) => {
     hasFeatureAccess: limits.permissions.nfse,
     nfseAddonActive: Boolean((tenant.subscription as any)?.nfseAddonActive),
     nfseAddonExpiresAt: (tenant.subscription as any)?.nfseAddonExpiresAt || null,
-    addonPriceCents: setting?.nfseAddonPriceCents ?? 2990,
+    addonPriceCents: nfseAddonCfg.priceCents,
+    isAddon: nfseAddonCfg.isAddon,
     config: {
       ...safeConfig,
       autoSendWhatsapp: safeConfig.autoSendWhatsApp,

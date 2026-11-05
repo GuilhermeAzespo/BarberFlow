@@ -107,11 +107,11 @@ async function bootstrap() {
         where: { id: existing.id },
         data: {
           sortOrder: planData.sortOrder,
-          features: planData.features,
+          features: (existing.features && typeof existing.features === 'object' && !Array.isArray(existing.features)) ? { items: (existing.features as any).items || planData.features.items, permissions: { ...planData.features.permissions, ...((existing.features as any).permissions || {}) } } : planData.features,
           badge: planData.badge,
           isHighlighted: planData.isHighlighted,
           description: existing.description || planData.description,
-          priceCents: planData.priceCents,
+          priceCents: existing.priceCents ?? planData.priceCents,
           maxProfessionals: planData.maxProfessionals,
           maxAppointmentsPerMonth: planData.maxAppointmentsPerMonth,
         },

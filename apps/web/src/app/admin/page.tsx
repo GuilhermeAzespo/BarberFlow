@@ -298,16 +298,31 @@ interface CloudflareConfigData {
   customDomainsCount: number;
 }
 
+interface AdminAddonItem {
+  key: keyof PlanPermissions;
+  name: string;
+  shortName: string;
+  description: string;
+  category: string;
+  isAddon: boolean;
+  priceCents: number;
+  priceReais: string;
+  includedInPlans: Record<string, boolean>;
+}
+
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
   const { toast, confirm } = useToast();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'plans' | 'addons' | 'growth' | 'smtp' | 'integrations' | 'mercadopago' | 'logs'>('tenants');
   const [activeIntegrationTab, setActiveIntegrationTab] = useState<'mercadopago' | 'cloudflare' | 'whatsapp' | 'others'>('mercadopago');
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [plans, setPlans] = useState<PlanItem[]>([]);
+  const [addonsList, setAddonsList] = useState<AdminAddonItem[]>([]);
+  const [savingAddons, setSavingAddons] = useState(false);
+  const [togglingAddonTenantId, setTogglingAddonTenantId] = useState<string | null>(null);
   const [logs, setLogs] = useState<SystemLogItem[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [smtpConfig, setSmtpConfig] = useState<SmtpConfigData | null>(null);
@@ -500,8 +515,98 @@ export default function SuperAdminPage() {
     }
   };
 
+  const loadAddons = async () => {
+    try {
+      const res = await api.get<{
+        addons: Array<{
+          key: keyof PlanPermissions;
+          name: string;
+          shortName: string;
+          description: string;
+          category: string;
+          isAddon: boolean;
+          priceCents: number;
+          includedInPlans?: Record<string, boolean>;
+        }>;
+      }>('/api/superadmin/addons');
+      if (Array.isArray(res.addons)) {
+        setAddonsList(
+          res.addons.map((a) => ({
+            ...a,
+            priceReais: ((a.priceCents || 0) / 100).toFixed(2),
+            includedInPlans: a.includedInPlans || { starter: false, pro: false, premium: true },
+          })),
+        );
+      }
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleSaveAddons = async (singleKey?: keyof PlanPermissions) => {
+    setSavingAddons(true);
+    try {
+      const payloadAddons = addonsList.map((a) => {
+        const parsedReais = parseFloat(String(a.priceReais || '0').replace(',', '.'));
+        const priceCents = Number.isFinite(parsedReais) && parsedReais >= 0 ? Math.round(parsedReais * 100) : a.priceCents;
+        return {
+          key: a.key,
+          isAddon: a.isAddon,
+          priceCents,
+          name: a.name,
+          description: a.description,
+          includedInPlans: a.includedInPlans,
+        };
+      });
+
+      const res = await api.put<{ message: string; addons: any[] }>('/api/superadmin/addons', {
+        addons: payloadAddons,
+      });
+
+      if (Array.isArray(res.addons)) {
+        setAddonsList(
+          res.addons.map((a) => ({
+            ...a,
+            priceReais: ((a.priceCents || 0) / 100).toFixed(2),
+            includedInPlans: a.includedInPlans || { starter: false, pro: false, premium: true },
+          })),
+        );
+      }
+
+      await Promise.all([loadPlans(), loadOverview(), refresh()]);
+      toast.success(
+        singleKey
+          ? 'Configuração e valor do módulo salvos com sucesso!'
+          : res.message || 'Configurações de Add-ons salvas com sucesso!',
+      );
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar configurações de Add-ons.');
+    } finally {
+      setSavingAddons(false);
+    }
+  };
+
+  const handleQuickToggleTenantAddon = async (tenant: TenantItem, nextActive: boolean) => {
+    setTogglingAddonTenantId(tenant.id);
+    try {
+      await api.patch(`/api/superadmin/tenants/${tenant.id}/subscription`, {
+        nfseAddonActive: nextActive,
+      });
+      await Promise.all([loadTenants(), loadAddons(), loadOverview()]);
+      toast.success(
+        nextActive
+          ? `Add-on ativado para o salão "${tenant.name}"!`
+          : `Add-on desativado para o salão "${tenant.name}".`,
+      );
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao alterar Add-on do salão.');
+    } finally {
+      setTogglingAddonTenantId(null);
+    }
+  };
+
   useEffect(() => {
-    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
+    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAddons(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
       setLoading(false),
     );
   }, []);
@@ -1115,6 +1220,31 @@ export default function SuperAdminPage() {
 
           <button
             type="button"
+            onClick={() => setActiveTab('addons')}
+            style={{
+              padding: '9px 16px',
+              borderRadius: '10px',
+              border: activeTab === 'addons' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
+              background: activeTab === 'addons' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
+              color: activeTab === 'addons' ? 'var(--primary)' : 'var(--text-muted)',
+              boxShadow: activeTab === 'addons' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
+              fontWeight: activeTab === 'addons' ? 700 : 600,
+              fontSize: '0.88rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Sparkles size={16} color={activeTab === 'addons' ? 'var(--primary)' : 'currentColor'} />
+            <span>Add-ons ({addonsList.filter((a) => a.isAddon).length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('growth')}
             style={{
               padding: '9px 16px',
@@ -1602,6 +1732,446 @@ export default function SuperAdminPage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ───────────────── ABA 2.5: Add-ons & Módulos Avulsos ───────────────── */}
+        {activeTab === 'addons' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Cabeçalho do Bloco Add-ons */}
+            <div
+              className="glass-panel"
+              style={{
+                padding: '24px 28px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                border: '1px solid rgba(229, 179, 56, 0.28)',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                  <Sparkles size={20} color="var(--primary)" />
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                    Gestão de Add-ons & Módulos Avulsos
+                  </h3>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+                  Defina se cada módulo pode ser contratado avulso como <strong>Add-on</strong> ou se é exclusivo dos planos, ajuste o valor mensal (R$) e escolha em quais planos ele já vem incluso gratuitamente.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={savingAddons}
+                onClick={() => handleSaveAddons()}
+                className="gold-gradient-primary gold-glow btn-primary"
+                style={{
+                  padding: '11px 22px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                  color: '#0B0F17',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  fontSize: '0.88rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Check size={16} />
+                <span>{savingAddons ? 'Salvando Add-ons...' : 'Salvar Todas as Configurações'}</span>
+              </button>
+            </div>
+
+            {/* KPIs Rápidos de Add-ons */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Módulos Liberados como Add-on
+                </span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#34D399' }}>
+                  {addonsList.filter((a) => a.isAddon).length} <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-dim)' }}>de {addonsList.length} módulos</span>
+                </span>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Salões com Add-on Avulso Ativo
+                </span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--primary)' }}>
+                  {tenants.filter((t) => t.subscription?.nfseAddonActive).length} <span style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-dim)' }}>salões</span>
+                </span>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '18px 22px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                  Valor do Add-on NFS-e Atual
+                </span>
+                <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#F9FAFB' }}>
+                  {formatBRL(
+                    Math.round(
+                      parseFloat(
+                        String(addonsList.find((a) => a.key === 'nfse')?.priceReais || '29.90').replace(',', '.'),
+                      ) * 100,
+                    ) || 2990,
+                  )}
+                  <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-dim)' }}>/mês</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Grid de Cards dos Módulos / Add-ons */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+                gap: '20px',
+              }}
+            >
+              {addonsList.map((addon) => {
+                const meta = PERMISSION_METADATA.find((m) => m.key === addon.key);
+                const IconComp = meta?.icon || Sparkles;
+
+                return (
+                  <div
+                    key={addon.key}
+                    className="glass-panel"
+                    style={{
+                      padding: '24px',
+                      borderRadius: '16px',
+                      border: addon.isAddon
+                        ? '1px solid rgba(16, 185, 129, 0.38)'
+                        : '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                    }}
+                  >
+                    <div>
+                      {/* Topo do Card */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div
+                            style={{
+                              width: '40px',
+                              height: '40px',
+                              borderRadius: '10px',
+                              background: addon.isAddon ? 'rgba(16, 185, 129, 0.14)' : 'rgba(229, 179, 56, 0.12)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: addon.isAddon ? '#34D399' : '#E5B338',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <IconComp size={20} />
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+                              {addon.category}
+                            </span>
+                            <h4 style={{ fontSize: '1.02rem', fontWeight: 700, color: '#F9FAFB', margin: '2px 0 0 0' }}>
+                              {addon.name}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '999px',
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.04em',
+                            background: addon.isAddon ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                            color: addon.isAddon ? '#34D399' : 'var(--text-muted)',
+                            border: addon.isAddon ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(255, 255, 255, 0.1)',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {addon.isAddon ? 'ADD-ON ATIVO' : 'APENAS PLANO'}
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.45, marginBottom: '16px' }}>
+                        {addon.description}
+                      </p>
+
+                      {/* Seletor: É Add-on ou Não? */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                          Modalidade de Contratação (É Add-on?)
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAddonsList((prev) =>
+                                prev.map((x) => (x.key === addon.key ? { ...x, isAddon: true } : x)),
+                              )
+                            }
+                            style={{
+                              padding: '9px 10px',
+                              borderRadius: '8px',
+                              border: addon.isAddon ? '1px solid #10B981' : '1px solid rgba(255,255,255,0.08)',
+                              background: addon.isAddon ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255,255,255,0.02)',
+                              color: addon.isAddon ? '#34D399' : 'var(--text-muted)',
+                              fontWeight: addon.isAddon ? 700 : 500,
+                              fontSize: '0.79rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <CheckCircle2 size={14} />
+                            <span>Sim, é Add-on</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAddonsList((prev) =>
+                                prev.map((x) => (x.key === addon.key ? { ...x, isAddon: false } : x)),
+                              )
+                            }
+                            style={{
+                              padding: '9px 10px',
+                              borderRadius: '8px',
+                              border: !addon.isAddon ? '1px solid #E5B338' : '1px solid rgba(255,255,255,0.08)',
+                              background: !addon.isAddon ? 'rgba(229, 179, 56, 0.14)' : 'rgba(255,255,255,0.02)',
+                              color: !addon.isAddon ? '#E5B338' : 'var(--text-muted)',
+                              fontWeight: !addon.isAddon ? 700 : 500,
+                              fontSize: '0.79rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <Lock size={13} />
+                            <span>Não (Só nos Planos)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Campo de Valor Mensal do Add-on */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                          Valor Mensal do Add-on Avulso (R$)
+                        </label>
+                        <div style={{ position: 'relative' }}>
+                          <span
+                            style={{
+                              position: 'absolute',
+                              left: '12px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              color: '#E5B338',
+                              fontWeight: 700,
+                              fontSize: '0.88rem',
+                            }}
+                          >
+                            R$
+                          </span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={addon.priceReais}
+                            onChange={(e) =>
+                              setAddonsList((prev) =>
+                                prev.map((x) =>
+                                  x.key === addon.key ? { ...x, priceReais: e.target.value } : x,
+                                ),
+                              )
+                            }
+                            style={{
+                              paddingLeft: '38px',
+                              fontWeight: 700,
+                              opacity: addon.isAddon ? 1 : 0.6,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Em quais Planos já vem Incluso Gratuitamente */}
+                      <div
+                        style={{
+                          padding: '12px',
+                          borderRadius: '10px',
+                          background: 'rgba(255, 255, 255, 0.025)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                        }}
+                      >
+                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-dim)', marginBottom: '8px' }}>
+                          Incluso gratuitamente nos planos:
+                        </span>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                          {(['starter', 'pro', 'premium'] as const).map((planSlug) => {
+                            const isIncluded = Boolean(addon.includedInPlans?.[planSlug]);
+                            const label =
+                              planSlug === 'starter' ? 'Starter' : planSlug === 'pro' ? 'Pro' : 'Premium';
+                            return (
+                              <label
+                                key={planSlug}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 8px',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.78rem',
+                                  fontWeight: isIncluded ? 700 : 500,
+                                  background: isIncluded ? 'rgba(229, 179, 56, 0.14)' : 'rgba(255,255,255,0.02)',
+                                  border: isIncluded ? '1px solid rgba(229, 179, 56, 0.35)' : '1px solid rgba(255,255,255,0.06)',
+                                  color: isIncluded ? '#E5B338' : 'var(--text-muted)',
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isIncluded}
+                                  onChange={(e) =>
+                                    setAddonsList((prev) =>
+                                      prev.map((x) =>
+                                        x.key === addon.key
+                                          ? {
+                                              ...x,
+                                              includedInPlans: {
+                                                ...x.includedInPlans,
+                                                [planSlug]: e.target.checked,
+                                              },
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                                <span>{label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={savingAddons}
+                      onClick={() => handleSaveAddons(addon.key)}
+                      className="gold-gradient-primary btn-primary"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                        color: '#0B0F17',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 700,
+                        fontSize: '0.84rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <Check size={15} />
+                      <span>Salvar {addon.shortName}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Controle de Add-on Ativo por Salão */}
+            <div className="glass-panel" style={{ padding: '24px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 4px 0' }}>
+                  Controle Rápido de Add-ons por Salão ({tenants.length})
+                </h4>
+                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: 0 }}>
+                  Visualize quais salões já possuem o módulo incluso pelo Plano e ative ou desative o Add-on avulso manualmente com 1 clique.
+                </p>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <th style={{ padding: '10px 12px' }}>Salão</th>
+                      <th style={{ padding: '10px 12px' }}>Plano Atual</th>
+                      <th style={{ padding: '10px 12px' }}>Status do Módulo NFS-e</th>
+                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Ação Rápida</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tenants.map((t) => {
+                      const planSlug = (t.subscription?.plan?.slug || 'starter').toLowerCase();
+                      const nfseAddonCfg = addonsList.find((a) => a.key === 'nfse');
+                      const includedInPlan = Boolean(nfseAddonCfg?.includedInPlans?.[planSlug]);
+                      const hasAddonActive = Boolean(t.subscription?.nfseAddonActive);
+
+                      return (
+                        <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{t.name}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>/{t.slug}</div>
+                          </td>
+                          <td style={{ padding: '12px', fontWeight: 600, color: 'var(--primary)' }}>
+                            {t.subscription?.plan?.name || 'Sem plano'}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {includedInPlan ? (
+                              <span className="badge badge-success">Incluso no Plano ({t.subscription?.plan?.name})</span>
+                            ) : hasAddonActive ? (
+                              <span className="badge badge-success">Add-on Avulso Ativo</span>
+                            ) : (
+                              <span className="badge badge-neutral">Não contratado</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              disabled={togglingAddonTenantId === t.id}
+                              onClick={() => handleQuickToggleTenantAddon(t, !hasAddonActive)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                border: hasAddonActive
+                                  ? '1px solid rgba(244, 63, 94, 0.35)'
+                                  : '1px solid rgba(16, 185, 129, 0.35)',
+                                background: hasAddonActive
+                                  ? 'rgba(244, 63, 94, 0.12)'
+                                  : 'rgba(16, 185, 129, 0.14)',
+                                color: hasAddonActive ? '#FB7185' : '#34D399',
+                              }}
+                            >
+                              {togglingAddonTenantId === t.id
+                                ? 'Atualizando...'
+                                : hasAddonActive
+                                ? 'Desativar Add-on Avulso'
+                                : 'Liberar Add-on Avulso'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

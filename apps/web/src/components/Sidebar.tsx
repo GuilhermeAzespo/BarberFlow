@@ -38,7 +38,7 @@ export const ALL_MENU_KEYS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { canAccessMenu, subscription, hasPlanFeature } = useAuth();
+  const { canAccessMenu, subscription, hasPlanFeature, isAddonFeature } = useAuth();
   const { unreadCount: whatsappUnreadCount } = useWhatsAppNotifications();
   const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
@@ -150,9 +150,9 @@ export function Sidebar() {
                     className="sidebar-badge"
                     style={{
                       marginLeft: 'auto',
-                      background: active ? '#0B0F17' : 'rgba(16, 185, 129, 0.14)',
-                      color: active ? '#10B981' : '#34D399',
-                      border: active ? 'none' : '1px solid rgba(16, 185, 129, 0.35)',
+                      background: active ? '#0B0F17' : isAddonFeature('nfse') ? 'rgba(16, 185, 129, 0.14)' : 'rgba(229, 179, 56, 0.15)',
+                      color: active ? (isAddonFeature('nfse') ? '#10B981' : '#E5B338') : isAddonFeature('nfse') ? '#34D399' : '#FBBF24',
+                      border: active ? 'none' : isAddonFeature('nfse') ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(229, 179, 56, 0.35)',
                       borderRadius: '6px',
                       padding: '1px 5px',
                       fontSize: '0.58rem',
@@ -161,7 +161,7 @@ export function Sidebar() {
                       flexShrink: 0,
                     }}
                   >
-                    ADD-ON
+                    {isAddonFeature('nfse') ? 'ADD-ON' : 'PRO'}
                   </span>
                 )}
                 {item.key === 'reports' && !hasPlanFeature('reports') && (
