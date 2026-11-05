@@ -60,6 +60,9 @@ billingRouter.get('/status', async (req, res) => {
     orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
   });
 
+  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+  const nfseAddonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+
   res.json({
     tenant: {
       id: tenant.id,
@@ -85,8 +88,15 @@ billingRouter.get('/status', async (req, res) => {
               : null,
           plan: sub.plan,
           limits: effectiveLimits(sub),
+          nfseAddonActive: sub.nfseAddonActive,
+          nfseAddonExpiresAt: sub.nfseAddonExpiresAt,
         }
       : null,
+    nfseAddon: {
+      active: Boolean(sub?.nfseAddonActive),
+      expiresAt: sub?.nfseAddonExpiresAt ?? null,
+      priceCents: nfseAddonPriceCents,
+    },
     access,
     plans,
     mercadopago: {
@@ -357,46 +367,67 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
       if (mpStatus.status === 'approved') {
         const now = new Date();
         const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
+        const isNfseAddon =
+          mpStatus.metadata?.addon_type === 'NFSE' ||
+          payment.mpStatusDetail?.startsWith('ADDON_NFSE');
 
         await prisma.saaSPayment.update({
           where: { id: payment.id },
           data: {
             status: 'APPROVED',
             mpStatus: mpStatus.status,
-            mpStatusDetail: mpStatus.statusDetail,
+            mpStatusDetail: isNfseAddon ? `ADDON_NFSE:${mpStatus.statusDetail || 'accredited'}` : mpStatus.statusDetail,
             paidAt: mpStatus.dateApproved ? new Date(mpStatus.dateApproved) : now,
           },
         });
 
-        await prisma.subscription.upsert({
-          where: { tenantId },
-          create: {
-            tenantId,
-            planId: payment.planId,
-            status: 'ACTIVE',
-            currentPeriodStart: now,
-            currentPeriodEnd,
-            lastPaymentAt: now,
-          },
-          update: {
-            planId: payment.planId,
-            status: 'ACTIVE',
-            currentPeriodStart: now,
-            currentPeriodEnd,
-            lastPaymentAt: now,
-          },
-        });
+        if (isNfseAddon) {
+          await prisma.subscription.update({
+            where: { tenantId },
+            data: {
+              nfseAddonActive: true,
+              nfseAddonExpiresAt: currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+          });
 
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: { status: 'ACTIVE', statusReason: null },
-        });
+          await systemLog({
+            tenantId,
+            source: 'billing',
+            message: 'Módulo Add-on NFS-e ativado via PIX no Mercado Pago',
+          });
+        } else {
+          await prisma.subscription.upsert({
+            where: { tenantId },
+            create: {
+              tenantId,
+              planId: payment.planId,
+              status: 'ACTIVE',
+              currentPeriodStart: now,
+              currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+            update: {
+              planId: payment.planId,
+              status: 'ACTIVE',
+              currentPeriodStart: now,
+              currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+          });
+
+          await prisma.tenant.update({
+            where: { id: tenantId },
+            data: { status: 'ACTIVE', statusReason: null },
+          });
+        }
 
         return res.json({
           id: payment.id,
           status: 'APPROVED',
           isPaid: true,
-          planName: payment.plan.name,
+          isAddon: isNfseAddon,
+          planName: isNfseAddon ? 'Módulo Emissor NFS-e (Add-on)' : payment.plan.name,
           amountCents: payment.amountCents,
           paidAt: now,
         });
@@ -429,4 +460,239 @@ billingRouter.get('/history', async (req, res) => {
   });
 
   res.json({ payments });
+});
+
+// Checkout Add-on Módulo Emissor Fiscal NFS-e via PIX
+billingRouter.post('/addon/nfse/pix', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const body = z
+    .object({
+      payerCpf: z.string().trim().optional(),
+      payerName: z.string().trim().optional(),
+      payerEmail: z.string().email('E-mail do pagador inválido').optional(),
+    })
+    .parse(req.body || {});
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      users: { where: { role: 'OWNER' }, select: { email: true, name: true } },
+      subscription: { include: { plan: true } },
+    },
+  });
+  if (!tenant || !tenant.subscription) {
+    throw HttpError.notFound('Assinatura do salão não encontrada.');
+  }
+
+  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+  const addonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+
+  const owner = tenant.users[0];
+  const payerEmail = body.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
+  const payerName = body.payerName || owner?.name || tenant.name;
+  const notificationUrl = getMercadoPagoWebhookUrl(req);
+
+  const saasPayment = await prisma.saaSPayment.create({
+    data: {
+      tenantId,
+      planId: tenant.subscription.planId,
+      amountCents: addonPriceCents,
+      method: 'PIX',
+      status: 'PENDING',
+      mpStatusDetail: 'ADDON_NFSE:pending',
+      payerEmail,
+      payerName,
+      payerDoc: body.payerCpf ? body.payerCpf.replace(/\D/g, '') : null,
+    },
+  });
+
+  try {
+    const pixResult = await createMercadoPagoPix({
+      amountCents: addonPriceCents,
+      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})`,
+      payerEmail,
+      payerName,
+      payerCpf: body.payerCpf,
+      notificationUrl,
+      metadata: {
+        tenant_id: tenantId,
+        plan_id: tenant.subscription.planId,
+        saas_payment_id: saasPayment.id,
+        addon_type: 'NFSE',
+      },
+    });
+
+    const updatedPayment = await prisma.saaSPayment.update({
+      where: { id: saasPayment.id },
+      data: {
+        mpPaymentId: pixResult.paymentId,
+        mpStatus: pixResult.status,
+        mpStatusDetail: `ADDON_NFSE:${pixResult.statusDetail || 'pending'}`,
+        qrCode: pixResult.qrCode,
+        qrCodeBase64: pixResult.qrCodeBase64,
+        ticketUrl: pixResult.ticketUrl,
+        expiresAt: pixResult.expiresAt,
+      },
+    });
+
+    res.json({
+      paymentId: updatedPayment.id,
+      mpPaymentId: pixResult.paymentId,
+      status: pixResult.status,
+      planName: 'Módulo Emissor NFS-e (Add-on)',
+      amountCents: addonPriceCents,
+      qrCode: pixResult.qrCode,
+      qrCodeBase64: pixResult.qrCodeBase64,
+      ticketUrl: pixResult.ticketUrl,
+      expiresAt: pixResult.expiresAt,
+    });
+  } catch (err: unknown) {
+    await prisma.saaSPayment.update({
+      where: { id: saasPayment.id },
+      data: { status: 'REJECTED', mpStatusDetail: `ADDON_NFSE:${err instanceof Error ? err.message : 'Falha Pix'}` },
+    });
+    throw HttpError.badRequest(err instanceof Error ? err.message : 'Falha ao gerar cobrança Pix do módulo NFS-e.');
+  }
+});
+
+// Checkout Add-on Módulo Emissor Fiscal NFS-e via Cartão de Crédito
+billingRouter.post('/addon/nfse/card', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const data = z
+    .object({
+      token: z.string().optional(),
+      cardNumber: z.string().optional(),
+      cardholderName: z.string().optional(),
+      cardholderCpf: z.string().optional(),
+      expMonth: z.union([z.string(), z.number()]).optional(),
+      expYear: z.union([z.string(), z.number()]).optional(),
+      cvv: z.string().optional(),
+      installments: z.coerce.number().int().min(1).max(12).default(1),
+      paymentMethodId: z.string().optional(),
+    })
+    .parse(req.body || {});
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      users: { where: { role: 'OWNER' }, select: { email: true, name: true } },
+      subscription: { include: { plan: true } },
+    },
+  });
+  if (!tenant || !tenant.subscription) {
+    throw HttpError.notFound('Assinatura do salão não encontrada.');
+  }
+
+  const sysSettings = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
+  const addonPriceCents = sysSettings?.nfseAddonPriceCents ?? 2990;
+  const owner = tenant.users[0];
+  const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
+
+  let cardToken = data.token;
+  if (!cardToken) {
+    if (!data.cardNumber || !data.cardholderName || !data.cardholderCpf || !data.expMonth || !data.expYear || !data.cvv) {
+      throw HttpError.badRequest('Preencha todos os dados do cartão de crédito.');
+    }
+    cardToken = await createMercadoPagoCardToken({
+      cardNumber: data.cardNumber,
+      cardholderName: data.cardholderName,
+      cardholderCpf: data.cardholderCpf,
+      expMonth: data.expMonth,
+      expYear: data.expYear,
+      cvv: data.cvv,
+    });
+  }
+
+  const notificationUrl = getMercadoPagoWebhookUrl(req);
+
+  const saasPayment = await prisma.saaSPayment.create({
+    data: {
+      tenantId,
+      planId: tenant.subscription.planId,
+      amountCents: addonPriceCents,
+      method: 'CREDIT_CARD',
+      status: 'PENDING',
+      mpStatusDetail: 'ADDON_NFSE:pending',
+      payerEmail,
+      payerName: data.cardholderName || owner?.name,
+      payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
+      installments: data.installments,
+    },
+  });
+
+  try {
+    const cardResult = await createMercadoPagoCardPayment({
+      amountCents: addonPriceCents,
+      token: cardToken,
+      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})`,
+      installments: data.installments,
+      paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
+      payerEmail,
+      payerCpf: data.cardholderCpf,
+      notificationUrl,
+      metadata: {
+        tenant_id: tenantId,
+        plan_id: tenant.subscription.planId,
+        saas_payment_id: saasPayment.id,
+        addon_type: 'NFSE',
+      },
+    });
+
+    const isApproved = cardResult.status === 'approved';
+
+    await prisma.saaSPayment.update({
+      where: { id: saasPayment.id },
+      data: {
+        mpPaymentId: cardResult.paymentId,
+        mpStatus: cardResult.status,
+        mpStatusDetail: `ADDON_NFSE:${cardResult.statusDetail || ''}`,
+        cardBrand: cardResult.cardBrand,
+        cardLastFour: cardResult.cardLastFour,
+        installments: cardResult.installments,
+        status: isApproved ? 'APPROVED' : cardResult.status === 'rejected' ? 'REJECTED' : 'PENDING',
+        paidAt: isApproved ? new Date() : null,
+      },
+    });
+
+    if (isApproved) {
+      const now = new Date();
+      const nfseAddonExpiresAt = DateTime.now().plus({ days: 30 }).toJSDate();
+
+      await prisma.subscription.update({
+        where: { tenantId },
+        data: {
+          nfseAddonActive: true,
+          nfseAddonExpiresAt,
+          lastPaymentAt: now,
+        },
+      });
+
+      await systemLog({
+        tenantId,
+        source: 'billing',
+        message: 'Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago',
+      });
+
+      return res.json({
+        success: true,
+        status: 'approved',
+        message: 'Pagamento aprovado! O Módulo Emissor de NFS-e já está liberado para sua barbearia.',
+        paymentId: saasPayment.id,
+      });
+    }
+
+    res.json({
+      success: false,
+      status: cardResult.status,
+      statusDetail: cardResult.statusDetail,
+      message: 'Pagamento não autorizado pela operadora do cartão.',
+      paymentId: saasPayment.id,
+    });
+  } catch (err: unknown) {
+    await prisma.saaSPayment.update({
+      where: { id: saasPayment.id },
+      data: { status: 'REJECTED', mpStatusDetail: `ADDON_NFSE:${err instanceof Error ? err.message : 'Falha Cartão'}` },
+    });
+    throw HttpError.badRequest(err instanceof Error ? err.message : 'Falha ao processar pagamento do módulo NFS-e.');
+  }
 });

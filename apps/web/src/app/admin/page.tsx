@@ -123,6 +123,14 @@ const PERMISSION_METADATA: Array<{
     category: 'Atendimento',
     icon: Crown,
   },
+  {
+    key: 'nfse',
+    label: 'Emissor de Nota Fiscal de Serviços (NFS-e)',
+    shortLabel: 'Emissor NFS-e',
+    description: 'Emissão de NFS-e Padrão Nacional com Certificado A1, Lei do Salão-Parceiro e DANFSE no WhatsApp',
+    category: 'Gestão Financeira',
+    icon: FileText,
+  },
 ];
 
 const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
@@ -135,6 +143,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     commissions: false,
     multiUserRoles: false,
     prioritySupport: false,
+    nfse: false,
   },
   pro: {
     reports: true,
@@ -145,6 +154,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     commissions: true,
     multiUserRoles: true,
     prioritySupport: false,
+    nfse: false,
   },
   premium: {
     reports: true,
@@ -155,6 +165,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     commissions: true,
     multiUserRoles: true,
     prioritySupport: true,
+    nfse: true,
   },
 };
 
@@ -218,6 +229,7 @@ interface TenantItem {
     status: string;
     plan: { id: string; name: string; slug: string; priceCents: number };
     maxProfessionalsOverride?: number | null;
+    nfseAddonActive?: boolean;
   } | null;
   _count: {
     users: number;
@@ -318,6 +330,7 @@ export default function SuperAdminPage() {
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
   const [selectedSubStatus, setSelectedSubStatus] = useState<string>('ACTIVE');
   const [profOverride, setProfOverride] = useState<string>('');
+  const [selectedNfseAddon, setSelectedNfseAddon] = useState<boolean>(false);
 
   // Modal Editar Plano
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
@@ -576,6 +589,7 @@ export default function SuperAdminPage() {
         planId: selectedPlanId || undefined,
         status: selectedSubStatus as any,
         maxProfessionalsOverride: profOverride ? Number(profOverride) : null,
+        nfseAddonActive: selectedNfseAddon,
       });
 
       setIsLimitModalOpen(false);
@@ -1339,6 +1353,7 @@ export default function SuperAdminPage() {
                                 setProfOverride(
                                   t.subscription?.maxProfessionalsOverride ? String(t.subscription.maxProfessionalsOverride) : '',
                                 );
+                                setSelectedNfseAddon(Boolean(t.subscription?.nfseAddonActive));
                                 setIsLimitModalOpen(true);
                               }}
                               className="glass-card"
@@ -3165,6 +3180,27 @@ export default function SuperAdminPage() {
               />
               <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
                 Permite conceder mais profissionais a este cliente sem alterar o plano global.
+              </span>
+            </div>
+
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: 'rgba(16, 185, 129, 0.08)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.86rem', fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedNfseAddon}
+                  onChange={(e) => setSelectedNfseAddon(e.target.checked)}
+                />
+                <span>Liberar Módulo Emissor de NFS-e (Add-on Avulso)</span>
+              </label>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px', marginLeft: '24px' }}>
+                Ativa o módulo de Nota Fiscal Eletrônica para este salão mesmo nos planos Starter ou Pro. (No Plano Premium já é liberado por padrão).
               </span>
             </div>
 

@@ -25,6 +25,7 @@ import { superAdminRouter } from './modules/superadmin/superadmin.routes.js';
 import { billingRouter } from './modules/billing/billing.routes.js';
 import { reportsRouter } from './modules/reports/reports.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
+import { nfseRouter } from './modules/nfse/nfse.routes.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 
 const app = express();
@@ -83,6 +84,7 @@ app.use('/api/whatsapp', requireAuth, requireTenant, requireMenuPermission('what
 app.use('/api/dashboard', requireAuth, requireTenant, requireMenuPermission('dashboard'), dashboardRouter);
 app.use('/api/reports', requireAuth, requireTenant, requireMenuPermission('reports'), reportsRouter);
 app.use('/api/billing', requireAuth, requireTenant, billingRouter);
+app.use('/api/nfse', requireAuth, requireTenant, requireMenuPermission('nfse'), nfseRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);

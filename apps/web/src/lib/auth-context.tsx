@@ -53,6 +53,7 @@ export interface PlanPermissions {
   commissions: boolean;          // Rateio e comissões automáticas por barbeiro
   multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
+  nfse: boolean;                 // Emissão de Nota Fiscal de Serviços Eletrônica (NFS-e)
 }
 
 export interface Subscription {
@@ -64,6 +65,8 @@ export interface Subscription {
   isTrial?: boolean;
   trialDaysLeft?: number | null;
   renewDaysLeft?: number | null;
+  nfseAddonActive?: boolean;
+  nfseAddonExpiresAt?: string | null;
   plan: {
     id: string;
     name: string;
@@ -222,7 +225,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const slug = (subscription?.plan?.slug || 'starter').toLowerCase();
       if (slug === 'premium' || slug === 'master') return true;
-      if (slug === 'pro') return feature !== 'customDomain';
+      if (feature === 'nfse' && subscription?.nfseAddonActive) return true;
+      if (slug === 'pro') return feature !== 'customDomain' && feature !== 'nfse';
       return false;
     },
     [user, subscription]

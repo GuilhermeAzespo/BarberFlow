@@ -39,6 +39,8 @@ const updateSubscriptionSchema = z.object({
   currentPeriodEnd: z.coerce.date().nullable().optional(),
   maxProfessionalsOverride: z.number().int().min(1).nullable().optional(),
   maxAppointmentsOverride: z.number().int().min(1).nullable().optional(),
+  nfseAddonActive: z.boolean().optional(),
+  nfseAddonExpiresAt: z.coerce.date().nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });
 

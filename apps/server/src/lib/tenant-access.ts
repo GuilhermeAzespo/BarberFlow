@@ -122,6 +122,7 @@ export interface PlanPermissions {
   commissions: boolean;          // Rateio e comissões automáticas por barbeiro
   multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
+  nfse: boolean;                 // Emissor de Nota Fiscal de Serviços Eletrônica (NFS-e Padrão Nacional)
 }
 
 export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
@@ -131,6 +132,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     customBotMessages: false,
     financialExport: false,
     customDomain: false,
+    nfse: false,
     commissions: false,
     multiUserRoles: false,
     prioritySupport: false,
@@ -141,6 +143,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     customBotMessages: true,
     financialExport: true,
     customDomain: false,
+    nfse: false,
     commissions: true,
     multiUserRoles: true,
     prioritySupport: true,
@@ -151,6 +154,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     customBotMessages: true,
     financialExport: true,
     customDomain: true,
+    nfse: true,
     commissions: true,
     multiUserRoles: true,
     prioritySupport: true,
@@ -203,7 +207,7 @@ export function effectiveLimits(subscription: (Subscription & { plan: Plan }) | 
     maxProfessionals: subscription.maxProfessionalsOverride ?? subscription.plan.maxProfessionals,
     maxAppointmentsPerMonth: subscription.maxAppointmentsOverride ?? subscription.plan.maxAppointmentsPerMonth,
     whatsappEnabled: subscription.plan.whatsappEnabled,
-    permissions: extractPlanPermissions(subscription.plan),
+    permissions: { ...extractPlanPermissions(subscription.plan), nfse: Boolean(extractPlanPermissions(subscription.plan).nfse || (subscription as any).nfseAddonActive) },
   };
 }
 

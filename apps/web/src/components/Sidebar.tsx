@@ -16,6 +16,7 @@ import {
   Settings,
   Sparkles,
   Crown,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { SYSTEM_VERSION } from '../lib/constants';
@@ -28,6 +29,7 @@ export const ALL_MENU_KEYS = [
   { key: 'services', label: 'Serviços & Preços', href: '/services', icon: Scissors },
   { key: 'customers', label: 'Clientes', href: '/customers', icon: UserCheck },
   { key: 'finance', label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
+  { key: 'nfse', label: 'Notas Fiscais (NFS-e)', href: '/nfse', icon: FileText },
   { key: 'reports', label: 'Relatórios', href: '/reports', icon: BarChart3 },
   { key: 'chat', label: 'Atendimento / Chat', href: '/chat', icon: MessageCircle, highlight: true },
   { key: 'whatsapp', label: 'Bot WhatsApp', href: '/whatsapp', icon: MessageSquare },
@@ -143,6 +145,25 @@ export function Sidebar() {
                 <span className="sidebar-label text-nowrap-ellipsis" style={{ flex: 1, minWidth: 0 }}>
                   {item.label}
                 </span>
+                {item.key === 'nfse' && !hasPlanFeature('nfse') && (
+                  <span
+                    className="sidebar-badge"
+                    style={{
+                      marginLeft: 'auto',
+                      background: active ? '#0B0F17' : 'rgba(16, 185, 129, 0.14)',
+                      color: active ? '#10B981' : '#34D399',
+                      border: active ? 'none' : '1px solid rgba(16, 185, 129, 0.35)',
+                      borderRadius: '6px',
+                      padding: '1px 5px',
+                      fontSize: '0.58rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.03em',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ADD-ON
+                  </span>
+                )}
                 {item.key === 'reports' && !hasPlanFeature('reports') && (
                   <span
                     className="sidebar-badge"

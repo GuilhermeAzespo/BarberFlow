@@ -13,6 +13,7 @@ import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { logger } from '../../lib/logger.js';
 import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant-access.js';
 import { systemLog } from '../../lib/system-log.js';
+import { renderDanfseHtml } from '../nfse/nfse.engine.js';
 import {
   getActiveSmtpConfig,
   sendEmail,
@@ -466,5 +467,34 @@ publicRouter.post('/contact', async (req, res) => {
     message: 'Mensagem recebida com sucesso! Em breve nossa equipe entrará em contato.',
   });
 });
+
+/** Visualização e Impressão Pública do DANFSE (Documento Auxiliar da NFS-e) */
+publicRouter.get('/nfse/:id/danfse', async (req, res) => {
+  const { id } = req.params;
+  const invoice = await prisma.nfseInvoice.findUnique({
+    where: { id },
+    include: {
+      tenant: {
+        include: {
+          fiscalConfig: true,
+        },
+      },
+    },
+  });
+
+  if (!invoice || !invoice.tenant) {
+    throw HttpError.notFound('Nota Fiscal não encontrada.');
+  }
+
+  const html = renderDanfseHtml({
+    invoice,
+    tenant: invoice.tenant,
+    config: invoice.tenant.fiscalConfig,
+  });
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
 
 

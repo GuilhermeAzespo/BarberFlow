@@ -6,6 +6,7 @@ import { assertAppointmentLimit } from '../../lib/tenant-access.js';
 import { normalizePhone, timeToMinutes, weekdayOf } from '../../lib/utils.js';
 import { logger } from '../../lib/logger.js';
 import { triggerAppointmentSurvey } from '../whatsapp/whatsapp-surveys.js';
+import { autoEmitNfseForCompletedAppointment } from '../nfse/nfse.routes.js';
 
 /** Status que ocupam a agenda do profissional. */
 export const BLOCKING_STATUSES: AppointmentStatus[] = ['SCHEDULED', 'CONFIRMED', 'DELAYED'];
@@ -436,6 +437,13 @@ export async function changeAppointmentStatus(params: {
         appointmentId: current.id,
       }).catch((err) => {
         logger.error({ err, tenantId: params.tenantId, appointmentId: current.id }, 'Erro ao disparar pesquisa de corte');
+      });
+      autoEmitNfseForCompletedAppointment(params.tenantId, current.id).catch((err) => {
+        logger.error({ err, tenantId: params.tenantId, appointmentId: current.id }, 'Erro ao emitir NFS-e automática');
+      });
+    }
+    if (false) {
+      Promise.resolve().catch(() => {
       });
     }
 

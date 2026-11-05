@@ -150,6 +150,8 @@ model Tenant {
   whatsAppMessages      WhatsAppMessage[]
   satisfactionSurveys   SatisfactionSurvey[]
   saasPayments          SaaSPayment[]
+  fiscalConfig          FiscalConfig?
+  nfseInvoices          NfseInvoice[]
   logs                  SystemLog[]
 
   @@index([status])
@@ -169,6 +171,9 @@ model Subscription {
   // Ajustes de limite por cliente (sobrescrevem o plano quando definidos)
   maxProfessionalsOverride Int?
   maxAppointmentsOverride  Int?
+  // Módulo Add-on de Emissão de NFS-e contratado à parte (ou liberado pelo Super Admin)
+  nfseAddonActive          Boolean            @default(false)
+  nfseAddonExpiresAt       DateTime?
   notes                    String?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
@@ -370,6 +375,7 @@ model Appointment {
   service             Service              @relation(fields: [serviceId], references: [id], onDelete: Restrict)
   transaction         Transaction?
   satisfactionSurveys SatisfactionSurvey[]
+  nfseInvoice         NfseInvoice?
 
   @@index([tenantId, startAt])
   @@index([tenantId, professionalId, startAt])
@@ -550,6 +556,9 @@ model SystemSetting {
   cfFallbackOrigin          String?  @default("barberflow.azespo.com.br")
   cfEnabled                 Boolean  @default(false)
 
+  // Preço do Módulo Add-on de NFS-e avulso (em centavos, padrão R$ 29,90)
+  nfseAddonPriceCents       Int      @default(2990)
+
   updatedAt                 DateTime @updatedAt
 }
 
@@ -594,4 +603,117 @@ model SaaSPayment {
   @@index([status])
   @@index([mpPaymentId])
 }
+
+// ────────────────────── Módulo Fiscal / NFS-e (Padrão Nacional) ──────────────────────
+
+model FiscalConfig {
+  id                        String    @id @default(cuid())
+  tenantId                  String    @unique
+  enabled                   Boolean   @default(false)
+  // "HOMOLOGATION" (Testes / Produção Restrita) ou "PRODUCTION" (Sefin Nacional com validade jurídica)
+  environment               String    @default("HOMOLOGATION")
+  // "ADN_NACIONAL" (Emissor Nativo Custo Zero via Certificado A1) ou "EXTERNAL_API" (Gateway opcional do salão)
+  providerMode              String    @default("ADN_NACIONAL")
+
+  cnpj                      String?
+  razaoSocial               String?
+  nomeFantasia              String?
+  inscricaoMunicipal        String?
+  codigoMunicipioIbge       String?   @default("3550308")
+  uf                        String?   @default("SP")
+  cep                       String?
+  logradouro                String?
+  numero                    String?
+  bairro                    String?
+  complemento               String?
+
+  // "MEI" | "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO"
+  regimeTributario          String    @default("MEI")
+  // 2 = MEI (Simples Nacional), 3 = ME/EPP (Simples Nacional), 1 = Não Optante
+  optanteSimples            Int       @default(2)
+  itemListaServico          String    @default("06.01")
+  codigoTributacaoNacional  String    @default("060101")
+  codigoTributacaoMunicipal String?
+  cnae                      String?   @default("9602501")
+  aliquotaIss               Float     @default(2.0)
+  retencaoIss               Boolean   @default(false)
+  serieDps                  String    @default("1")
+  proximoNumeroDps          Int       @default(1)
+
+  // Lei do Salão-Parceiro (Lei nº 13.352/2016) — deduz a cota-parte do barbeiro da base de cálculo
+  salaoParceiroEnabled      Boolean   @default(false)
+  // Automações
+  autoEmitOnComplete        Boolean   @default(false)
+  autoSendWhatsApp          Boolean   @default(true)
+
+  // Certificado Digital e-CNPJ A1 (.pfx) do próprio salão
+  certPfxData               Bytes?
+  certPassword              String?
+  certSubject               String?
+  certIssuer                String?
+  certValidTo               DateTime?
+  certUploadedAt            DateTime?
+
+  // Opcional: API externa caso o salão utilize integrador municipal próprio
+  externalApiUrl            String?
+  externalApiToken          String?
+
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  tenant                    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model NfseInvoice {
+  id                        String    @id @default(cuid())
+  tenantId                  String
+  appointmentId             String?   @unique
+  transactionId             String?
+  customerId                String?
+
+  // "PROCESSING" | "AUTHORIZED" | "REJECTED" | "CANCELED"
+  status                    String    @default("AUTHORIZED")
+  environment               String    @default("HOMOLOGATION")
+
+  numeroDps                 Int
+  serieDps                  String    @default("1")
+  numeroNfse                String?
+  chaveAcesso               String?
+  codigoVerificacao         String?
+
+  tomadorNome               String
+  tomadorDocumento          String?
+  tomadorEmail              String?
+  tomadorTelefone           String?
+
+  discriminacao             String    @db.Text
+  valorBrutoCents           Int
+  valorDeducaoParceiroCents Int       @default(0)
+  baseCalculoCents          Int
+  aliquotaIss               Float     @default(0)
+  valorIssCents             Int       @default(0)
+  valorLiquidoCents         Int
+
+  profissionalParceiroNome  String?
+  profissionalParceiroDoc   String?
+
+  xmlDps                    String?   @db.Text
+  xmlNfse                   String?   @db.Text
+  urlDanfse                 String?
+  errorMessage              String?   @db.Text
+  whatsappSentAt            DateTime?
+
+  issuedAt                  DateTime  @default(now())
+  canceledAt                DateTime?
+  cancelReason              String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  tenant                    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment               Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, issuedAt])
+  @@index([tenantId, status])
+}
+
 

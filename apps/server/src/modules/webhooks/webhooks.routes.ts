@@ -82,6 +82,9 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
       if (saasPayment) {
         const now = new Date();
         const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
+        const isNfseAddon =
+          metadata.addon_type === 'NFSE' ||
+          saasPayment.mpStatusDetail?.startsWith('ADDON_NFSE');
 
         await prisma.saaSPayment.update({
           where: { id: saasPayment.id },
@@ -89,45 +92,62 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
             status: 'APPROVED',
             mpPaymentId: String(paymentId),
             mpStatus: mpPayment.status,
-            mpStatusDetail: mpPayment.statusDetail,
+            mpStatusDetail: isNfseAddon ? `ADDON_NFSE:${mpPayment.statusDetail || 'accredited'}` : mpPayment.statusDetail,
             paidAt: mpPayment.dateApproved ? new Date(mpPayment.dateApproved) : now,
           },
         });
 
-        await prisma.subscription.upsert({
-          where: { tenantId: saasPayment.tenantId },
-          create: {
+        if (isNfseAddon) {
+          await prisma.subscription.update({
+            where: { tenantId: saasPayment.tenantId },
+            data: {
+              nfseAddonActive: true,
+              nfseAddonExpiresAt: currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+          });
+
+          await systemLog({
             tenantId: saasPayment.tenantId,
-            planId: saasPayment.planId,
-            status: 'ACTIVE',
-            currentPeriodStart: now,
-            currentPeriodEnd,
-            lastPaymentAt: now,
-          },
-          update: {
-            planId: saasPayment.planId,
-            status: 'ACTIVE',
-            currentPeriodStart: now,
-            currentPeriodEnd,
-            lastPaymentAt: now,
-          },
-        });
+            source: 'billing_webhook',
+            message: `Módulo Add-on NFS-e ativado via Webhook Mercado Pago (MP ID: ${paymentId})`,
+          });
+        } else {
+          await prisma.subscription.upsert({
+            where: { tenantId: saasPayment.tenantId },
+            create: {
+              tenantId: saasPayment.tenantId,
+              planId: saasPayment.planId,
+              status: 'ACTIVE',
+              currentPeriodStart: now,
+              currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+            update: {
+              planId: saasPayment.planId,
+              status: 'ACTIVE',
+              currentPeriodStart: now,
+              currentPeriodEnd,
+              lastPaymentAt: now,
+            },
+          });
 
-        await prisma.tenant.update({
-          where: { id: saasPayment.tenantId },
-          data: { status: 'ACTIVE', statusReason: null },
-        });
+          await prisma.tenant.update({
+            where: { id: saasPayment.tenantId },
+            data: { status: 'ACTIVE', statusReason: null },
+          });
 
-        await systemLog({
-          tenantId: saasPayment.tenantId,
-          source: 'billing_webhook',
-          message: `Assinatura Plano ${saasPayment.plan.name} ativada via Webhook Mercado Pago (MP ID: ${paymentId})`,
-        });
+          await systemLog({
+            tenantId: saasPayment.tenantId,
+            source: 'billing_webhook',
+            message: `Assinatura Plano ${saasPayment.plan.name} ativada via Webhook Mercado Pago (MP ID: ${paymentId})`,
+          });
 
-        logger.info(
-          { tenantId: saasPayment.tenantId, plan: saasPayment.plan.name },
-          'Assinatura renovada com sucesso via Webhook Mercado Pago',
-        );
+          logger.info(
+            { tenantId: saasPayment.tenantId, plan: saasPayment.plan.name },
+            'Assinatura renovada com sucesso via Webhook Mercado Pago',
+          );
+        }
       } else if (tenantId) {
         // Caso não ache o saasPayment específico mas tenha tenant_id no metadata
         const planId = (metadata.plan_id as string) || undefined;

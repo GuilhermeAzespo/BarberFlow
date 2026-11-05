@@ -46,6 +46,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-0',
+    version: 'v3.0',
+    date: '05 de Novembro de 2026',
+    title: 'Módulo de Emissão de Nota Fiscal de Serviços Eletrônica (NFS-e Nacional), Lei do Salão-Parceiro e Certificado Digital A1',
+    category: 'NEW',
+    categoryLabel: 'Grande Lançamento',
+    badgeColor: '#10B981',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    summary:
+      'Lançamento do Módulo Fiscal Integrado de Emissão de NFS-e (/nfse) no Padrão Nacional (Sefin Nacional / nfse.gov.br) com Certificado Digital e-CNPJ A1 (.pfx), cálculo automático de abatimento da Lei do Salão-Parceiro (Lei nº 13.352/2016), DANFSE oficial para impressão/PDF e envio automático no WhatsApp do cliente. Incluso no Plano Premium ou contratável como Módulo Add-on avulso.',
+    highlights: [
+      'Emissão Direta no Padrão Nacional NFS-e (Custo Zero de API): Transmissão segura via mTLS com o Certificado Digital A1 (.pfx) do próprio salão diretamente para a Sefin Nacional (nfse.gov.br), com suporte a Homologação e Produção.',
+      'Lei do Salão-Parceiro (Lei nº 13.352/2016): Dedução automática da cota-parte (comissão %) do barbeiro parceiro na base de cálculo do ISS, reduzindo legalmente a carga tributária da barbearia.',
+      'Emissão em 1 Clique ou 100% Automática: Gere a NFS-e a partir de qualquer agendamento concluído na agenda, emita notas avulsas ou ative a emissão automática assim que o corte for finalizado.',
+      'DANFSE Oficial & Envio pelo Bot WhatsApp: Documento Auxiliar da NFS-e pronto para visualização, impressão e PDF, com disparo automático do link oficial no WhatsApp do cliente.',
+      'Modelo Comercial Híbrido: Incluso gratuitamente para assinantes do Plano Premium e disponível para contratação avulsa (Add-on mensal via PIX ou Cartão) para salões nos planos Starter e Pro.',
+    ],
+    impact: 'Conformidade fiscal automatizada com economia tributária real pela Lei do Salão-Parceiro e zero custo de intermediação por nota emitida.',
+  },
+  {
     id: 'v2-9',
     version: 'v2.9',
     date: '28 de Outubro de 2026',
