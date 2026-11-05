@@ -3,6 +3,11 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '15mb',
+    },
+  },
   async rewrites() {
     const apiTarget = process.env.API_INTERNAL_URL || 'http://127.0.0.1:4000';
     return [

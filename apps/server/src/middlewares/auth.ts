@@ -82,6 +82,10 @@ export function requireMenuPermission(menuKey: string) {
  */
 export async function requireTenant(req: Request, _res: Response, next: NextFunction) {
   if (!req.auth) throw HttpError.unauthorized();
+  if (!req.auth.tenantId && req.auth.role === 'SUPER_ADMIN') {
+    const firstTenant = await prisma.tenant.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+    if (firstTenant) req.auth.tenantId = firstTenant.id;
+  }
   if (!req.auth.tenantId) throw HttpError.forbidden('Rota disponível apenas para contas de salão');
 
   const tenant = await loadTenant(req.auth.tenantId);

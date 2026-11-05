@@ -33,7 +33,15 @@ const fiscalConfigSchema = z.object({
   numero: z.string().trim().optional().nullable(),
   bairro: z.string().trim().optional().nullable(),
   complemento: z.string().trim().optional().nullable(),
-  regimeTributario: z.enum(['MEI', 'SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO']).default('MEI'),
+  regimeTributario: z
+    .union([z.enum(['MEI', 'SIMPLES_NACIONAL', 'LUCRO_PRESUMIDO']), z.coerce.number()])
+    .transform((v) => {
+      if (v === 1 || v === 'MEI') return 'MEI';
+      if (v === 2 || v === 'SIMPLES_NACIONAL') return 'SIMPLES_NACIONAL';
+      if (v === 3 || v === 'LUCRO_PRESUMIDO') return 'LUCRO_PRESUMIDO';
+      return 'MEI';
+    })
+    .default('MEI'),
   optanteSimples: z.coerce.number().int().min(1).max(3).default(2),
   itemListaServico: z.string().trim().default('06.01'),
   codigoTributacaoNacional: z.string().trim().default('060101'),
@@ -45,8 +53,10 @@ const fiscalConfigSchema = z.object({
   proximoNumeroDps: z.coerce.number().int().min(1).default(1),
   salaoParceiroEnabled: z.boolean().default(false),
   autoEmitOnComplete: z.boolean().default(false),
-  autoSendWhatsApp: z.boolean().default(true),
+  autoSendWhatsApp: z.boolean().optional(),
+  autoSendWhatsapp: z.boolean().optional(),
   externalApiUrl: z.string().trim().optional().nullable(),
+  externalWebhookUrl: z.string().trim().optional().nullable(),
   externalApiToken: z.string().trim().optional().nullable(),
 });
 
@@ -58,9 +68,12 @@ const emitNfseSchema = z.object({
   tomadorTelefone: z.string().trim().optional().nullable(),
   discriminacao: z.string().trim().optional(),
   valorBrutoCents: z.coerce.number().int().positive().optional(),
+  valorServicosCents: z.coerce.number().int().positive().optional(),
   valorDeducaoParceiroCents: z.coerce.number().int().min(0).optional(),
+  aplicarSalaoParceiro: z.boolean().optional(),
   profissionalParceiroNome: z.string().trim().optional().nullable(),
   sendWhatsApp: z.boolean().optional(),
+  sendWhatsapp: z.boolean().optional(),
 });
 
 function buildPublicDanfseUrl(tenant: { customDomain?: string | null }, invoiceId: string, codigoVerificacao?: string | null): string {
@@ -85,9 +98,12 @@ export async function executeEmitNfse(params: {
   tomadorTelefone?: string | null;
   discriminacao?: string;
   valorBrutoCents?: number;
+  valorServicosCents?: number;
   valorDeducaoParceiroCents?: number;
+  aplicarSalaoParceiro?: boolean;
   profissionalParceiroNome?: string | null;
   sendWhatsApp?: boolean;
+  sendWhatsapp?: boolean;
 }) {
   const { tenantId } = params;
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
@@ -108,7 +124,7 @@ export async function executeEmitNfse(params: {
   let tomadorEmail = params.tomadorEmail || null;
   let tomadorTelefone = params.tomadorTelefone || null;
   let discriminacao = params.discriminacao || 'Prestação de serviços de barbearia e cuidados pessoais.';
-  let valorBrutoCents = params.valorBrutoCents || 0;
+  let valorBrutoCents = params.valorBrutoCents ?? params.valorServicosCents ?? 0;
   let valorDeducaoParceiroCents = params.valorDeducaoParceiroCents || 0;
   let profissionalParceiroNome = params.profissionalParceiroNome || null;
   let customerId: string | null = null;
@@ -138,7 +154,7 @@ export async function executeEmitNfse(params: {
     tomadorNome = params.tomadorNome || app.customer.name;
     tomadorEmail = params.tomadorEmail ?? app.customer.email ?? null;
     tomadorTelefone = params.tomadorTelefone ?? app.customer.phone ?? null;
-    valorBrutoCents = params.valorBrutoCents ?? app.priceCents;
+    valorBrutoCents = params.valorBrutoCents ?? params.valorServicosCents ?? app.priceCents;
 
     const dataFormatada = DateTime.fromJSDate(app.startAt)
       .setZone(tenant.timezone || 'America/Sao_Paulo')
@@ -148,9 +164,10 @@ export async function executeEmitNfse(params: {
       params.discriminacao ||
       `Prestação de serviço de ${app.service.name} realizado em ${dataFormatada} pelo profissional ${app.professional.name}.`;
 
+    const shouldApplySalaoParceiro = params.aplicarSalaoParceiro ?? config.salaoParceiroEnabled;
     if (
       params.valorDeducaoParceiroCents === undefined &&
-      config.salaoParceiroEnabled &&
+      shouldApplySalaoParceiro &&
       app.professional.commissionPercent > 0
     ) {
       valorDeducaoParceiroCents = Math.round((valorBrutoCents * app.professional.commissionPercent) / 100);
@@ -235,7 +252,7 @@ export async function executeEmitNfse(params: {
   }
 
   // Envio automático via WhatsApp se autorizado e cliente tiver telefone
-  const shouldSendWhatsApp = params.sendWhatsApp ?? config.autoSendWhatsApp;
+  const shouldSendWhatsApp = params.sendWhatsApp ?? params.sendWhatsapp ?? config.autoSendWhatsApp;
   if (transmission.status === 'AUTHORIZED' && shouldSendWhatsApp && tomadorTelefone) {
     try {
       const msg =
@@ -289,7 +306,7 @@ nfseRouter.get('/overview', async (req, res) => {
   const tenantId = req.tenantId!;
   const tenant = await loadTenant(tenantId);
   const limits = effectiveLimits(tenant.subscription);
-  const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } });
+  const setting = await prisma.systemSetting.findUnique({ where: { id: 'default' } });
 
   let config = await prisma.fiscalConfig.findUnique({ where: { tenantId } });
   if (!config) {
@@ -332,6 +349,16 @@ nfseRouter.get('/overview', async (req, res) => {
 
   const { certPfxData, certPassword, externalApiToken, ...safeConfig } = config;
 
+  const statsPayload = {
+    monthAuthorizedCount: monthInvoices.length,
+    monthTotalIssuedCents: totalIssuedCents,
+    monthTotalValueCents: totalIssuedCents,
+    monthSalaoParceiroDeducaoCents: salaoParceiroSavingsCents,
+    monthTotalDeducoesCents: salaoParceiroSavingsCents,
+    monthTotalIssCents: totalIssCents,
+    pendingAppointmentsCount,
+  };
+
   res.json({
     hasFeatureAccess: limits.permissions.nfse,
     nfseAddonActive: Boolean((tenant.subscription as any)?.nfseAddonActive),
@@ -339,16 +366,12 @@ nfseRouter.get('/overview', async (req, res) => {
     addonPriceCents: setting?.nfseAddonPriceCents ?? 2990,
     config: {
       ...safeConfig,
+      autoSendWhatsapp: safeConfig.autoSendWhatsApp,
       hasCertificate: Boolean(certPfxData && certPfxData.length > 0),
       hasExternalToken: Boolean(externalApiToken),
     },
-    metrics: {
-      monthAuthorizedCount: monthInvoices.length,
-      monthTotalIssuedCents: totalIssuedCents,
-      monthSalaoParceiroDeducaoCents: salaoParceiroSavingsCents,
-      monthTotalIssCents: totalIssCents,
-      pendingAppointmentsCount,
-    },
+    metrics: statsPayload,
+    stats: statsPayload,
   });
 });
 
@@ -357,7 +380,10 @@ nfseRouter.put('/config', async (req, res) => {
   const tenantId = req.tenantId!;
   await assertPlanFeature(tenantId, 'nfse', 'Emissor de Notas Fiscais (NFS-e)');
 
-  const data = fiscalConfigSchema.parse(req.body);
+  const parsed = fiscalConfigSchema.parse(req.body);
+  const { autoSendWhatsapp, externalWebhookUrl, ...data } = parsed;
+  const effectiveAutoSendWhatsApp = data.autoSendWhatsApp ?? autoSendWhatsapp ?? true;
+  const effectiveExternalApiUrl = data.externalApiUrl ?? externalWebhookUrl ?? null;
   const cleanCnpj = data.cnpj ? data.cnpj.replace(/\D/g, '') : null;
 
   const existing = await prisma.fiscalConfig.findUnique({ where: { tenantId } });
@@ -367,11 +393,15 @@ nfseRouter.put('/config', async (req, res) => {
     create: {
       tenantId,
       ...data,
+      autoSendWhatsApp: effectiveAutoSendWhatsApp,
+      externalApiUrl: effectiveExternalApiUrl,
       cnpj: cleanCnpj,
       optanteSimples: data.regimeTributario === 'MEI' ? 2 : data.regimeTributario === 'SIMPLES_NACIONAL' ? 3 : 1,
     },
     update: {
       ...data,
+      autoSendWhatsApp: effectiveAutoSendWhatsApp,
+      externalApiUrl: effectiveExternalApiUrl,
       cnpj: cleanCnpj,
       optanteSimples: data.regimeTributario === 'MEI' ? 2 : data.regimeTributario === 'SIMPLES_NACIONAL' ? 3 : 1,
       externalApiToken:
@@ -388,6 +418,7 @@ nfseRouter.put('/config', async (req, res) => {
     message: 'Configurações fiscais de NFS-e salvas com sucesso!',
     config: {
       ...safeConfig,
+      autoSendWhatsapp: safeConfig.autoSendWhatsApp,
       hasCertificate: Boolean(certPfxData && certPfxData.length > 0),
       hasExternalToken: Boolean(externalApiToken),
     },
@@ -484,10 +515,11 @@ nfseRouter.delete('/certificate', async (req, res) => {
 // 5. Listar Notas Fiscais Emitidas
 nfseRouter.get('/invoices', async (req, res) => {
   const tenantId = req.tenantId!;
-  const status = typeof req.query.status === 'string' && req.query.status !== 'ALL' ? req.query.status : undefined;
+  const rawStatus = typeof req.query.status === 'string' && req.query.status !== 'ALL' ? req.query.status : undefined;
+  const status = rawStatus === 'CANCELLED' ? 'CANCELED' : rawStatus === 'ERROR' ? 'REJECTED' : rawStatus;
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
-  const invoices = await prisma.nfseInvoice.findMany({
+  const rawInvoices = await prisma.nfseInvoice.findMany({
     where: {
       tenantId,
       ...(status ? { status } : {}),
@@ -535,6 +567,19 @@ nfseRouter.get('/invoices', async (req, res) => {
     },
   });
 
+  const invoices = rawInvoices.map((inv) => ({
+    ...inv,
+    valorServicosCents: inv.valorBrutoCents,
+    valorDeducoesCents: inv.valorDeducaoParceiroCents,
+    salaoParceiroAplicado: inv.valorDeducaoParceiroCents > 0,
+    profissionalNome: inv.profissionalParceiroNome,
+    cotaParteProfissionalCents: inv.valorDeducaoParceiroCents,
+    danfseUrl: inv.urlDanfse,
+    emittedAt: inv.issuedAt,
+    createdAt: inv.issuedAt,
+    cancelledAt: inv.canceledAt,
+  }));
+
   res.json({ invoices });
 });
 
@@ -542,7 +587,7 @@ nfseRouter.get('/invoices', async (req, res) => {
 nfseRouter.get('/pending-appointments', async (req, res) => {
   const tenantId = req.tenantId!;
 
-  const appointments = await prisma.appointment.findMany({
+  const rawAppointments = await prisma.appointment.findMany({
     where: {
       tenantId,
       status: 'COMPLETED',
@@ -556,6 +601,18 @@ nfseRouter.get('/pending-appointments', async (req, res) => {
       professional: { select: { id: true, name: true, commissionPercent: true, color: true } },
     },
   });
+
+  const appointments = rawAppointments.map((app) => ({
+    ...app,
+    customer: {
+      ...app.customer,
+      cpf: null,
+    },
+    professional: {
+      ...app.professional,
+      commissionPct: app.professional.commissionPercent,
+    },
+  }));
 
   res.json({ appointments });
 });
@@ -599,11 +656,7 @@ nfseRouter.post('/invoices/:id/whatsapp', async (req, res) => {
   if (!invoice) throw HttpError.notFound('Nota Fiscal não encontrada.');
 
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-  const targetPhone = phoneOverride || invoice.tomadorTelefone;
-
-  if (!targetPhone) {
-    throw HttpError.badRequest('Informe o número de WhatsApp do cliente para enviar a nota.');
-  }
+  const targetPhone = phoneOverride || invoice.tomadorTelefone || '';
 
   const danfseUrl = invoice.urlDanfse || buildPublicDanfseUrl(tenant, invoice.id, invoice.codigoVerificacao);
 
@@ -615,24 +668,37 @@ nfseRouter.post('/invoices/:id/whatsapp', async (req, res) => {
     `🔐 *Código de Verificação:* ${invoice.codigoVerificacao || 'N/A'}\n\n` +
     `🔗 *Visualize ou imprima o PDF (DANFSE) clicando abaixo:*\n${danfseUrl}`;
 
-  const sent = await whatsAppService.sendMessage(tenantId, targetPhone, msg);
-  if (!sent) {
-    throw HttpError.badRequest(
-      'Não foi possível enviar no WhatsApp. Verifique se o seu Bot de WhatsApp está CONECTADO na aba Bot WhatsApp.'
-    );
+  let sentViaBot = false;
+  if (targetPhone) {
+    try {
+      sentViaBot = await whatsAppService.sendMessage(tenantId, targetPhone, msg);
+    } catch {
+      sentViaBot = false;
+    }
   }
 
-  await prisma.nfseInvoice.update({
-    where: { id: invoice.id },
-    data: {
-      whatsappSentAt: new Date(),
-      tomadorTelefone: targetPhone,
-    },
-  });
+  const cleanPhone = (targetPhone || '').replace(/\D/g, '');
+  const whatsappUrl = cleanPhone
+    ? `https://wa.me/55${cleanPhone.replace(/^55/, '')}?text=${encodeURIComponent(msg)}`
+    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+
+  if (sentViaBot) {
+    await prisma.nfseInvoice.update({
+      where: { id: invoice.id },
+      data: {
+        whatsappSentAt: new Date(),
+        ...(targetPhone ? { tomadorTelefone: targetPhone } : {}),
+      },
+    });
+  }
 
   res.json({
     success: true,
-    message: `Nota Fiscal enviada com sucesso para o WhatsApp (${targetPhone})!`,
+    sentViaBot,
+    whatsappUrl,
+    message: sentViaBot
+      ? `Nota Fiscal enviada automaticamente para o WhatsApp (${targetPhone})!`
+      : 'Link para envio da DANFSE via WhatsApp gerado com sucesso!',
   });
 });
 
@@ -642,7 +708,7 @@ nfseRouter.post('/invoices/:id/cancel', async (req, res) => {
   await assertPlanFeature(tenantId, 'nfse', 'Emissor de Notas Fiscais (NFS-e)');
 
   const { id } = req.params;
-  const reason = String(req.body?.reason || 'Cancelamento solicitado pelo prestador (erro de preenchimento)').trim();
+  const reason = String(req.body?.reason || req.body?.motivo || 'Cancelamento solicitado pelo prestador (erro de preenchimento)').trim();
 
   const invoice = await prisma.nfseInvoice.findFirst({
     where: { id, tenantId },

@@ -7,7 +7,6 @@ import {
   Upload,
   CheckCircle2,
   AlertTriangle,
-  ExternalLink,
   Send,
   Download,
   XCircle,
@@ -22,7 +21,6 @@ import {
   CreditCard,
   Copy,
   Check,
-  Clock,
   Scissors,
   Printer,
   Trash2,
@@ -40,28 +38,32 @@ interface FiscalConfigData {
   id: string;
   enabled: boolean;
   environment: 'HOMOLOGATION' | 'PRODUCTION';
-  integrationMode: 'NATIONAL_DIRECT' | 'WEBHOOK';
+  providerMode?: 'ADN_NACIONAL' | 'EXTERNAL_API';
+  integrationMode?: 'NATIONAL_DIRECT' | 'WEBHOOK';
   cnpj: string | null;
   inscricaoMunicipal: string | null;
   razaoSocial: string | null;
   nomeFantasia: string | null;
   codigoMunicipioIbge: string | null;
   uf: string | null;
-  regimeTributario: number;
-  optanteSimplesNacional: boolean;
+  regimeTributario: 'MEI' | 'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | number;
+  optanteSimples?: number;
+  optanteSimplesNacional?: boolean;
   aliquotaIss: number;
   codigoTributacaoNacional: string;
   codigoTributacaoMunicipal: string | null;
   itemListaServico: string;
   cnae: string | null;
-  descricaoServicoPadrao: string | null;
+  descricaoServicoPadrao?: string | null;
   serieDps: string;
   proximoNumeroDps: number;
   salaoParceiroEnabled: boolean;
   autoEmitOnComplete: boolean;
-  autoSendWhatsapp: boolean;
-  externalWebhookUrl: string | null;
-  externalApiToken: string | null;
+  autoSendWhatsApp?: boolean;
+  autoSendWhatsapp?: boolean;
+  externalApiUrl?: string | null;
+  externalWebhookUrl?: string | null;
+  externalApiToken?: string | null;
   hasCertificate: boolean;
   certSubject: string | null;
   certIssuer: string | null;
@@ -77,29 +79,34 @@ interface NfseInvoiceItem {
   chaveAcesso: string | null;
   numeroNfse: string | null;
   codigoVerificacao: string | null;
-  status: 'PENDING' | 'PROCESSING' | 'AUTHORIZED' | 'REJECTED' | 'CANCELLED' | 'ERROR';
+  status: string;
   environment: 'HOMOLOGATION' | 'PRODUCTION';
   tomadorNome: string;
   tomadorDocumento: string | null;
   tomadorEmail: string | null;
   tomadorTelefone: string | null;
   discriminacao: string;
-  valorServicosCents: number;
-  valorDeducoesCents: number;
+  valorBrutoCents?: number;
+  valorServicosCents?: number;
+  valorDeducaoParceiroCents?: number;
+  valorDeducoesCents?: number;
   baseCalculoCents: number;
   aliquotaIss: number;
   valorIssCents: number;
   valorLiquidoCents: number;
-  salaoParceiroAplicado: boolean;
-  profissionalNome: string | null;
-  profissionalCpfCnpj: string | null;
-  cotaParteProfissionalCents: number;
-  danfseUrl: string | null;
+  salaoParceiroAplicado?: boolean;
+  profissionalParceiroNome?: string | null;
+  profissionalNome?: string | null;
+  cotaParteProfissionalCents?: number;
+  urlDanfse?: string | null;
+  danfseUrl?: string | null;
   errorMessage: string | null;
   whatsappSentAt: string | null;
-  emittedAt: string | null;
-  cancelledAt: string | null;
-  createdAt: string;
+  issuedAt?: string | null;
+  emittedAt?: string | null;
+  canceledAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt?: string | null;
 }
 
 interface PendingAppointmentItem {
@@ -112,7 +119,7 @@ interface PendingAppointmentItem {
     name: string;
     phone: string | null;
     email: string | null;
-    cpf: string | null;
+    cpf?: string | null;
   };
   service: {
     id: string;
@@ -122,7 +129,8 @@ interface PendingAppointmentItem {
   professional: {
     id: string;
     name: string;
-    commissionPct: number;
+    commissionPercent?: number;
+    commissionPct?: number;
   };
 }
 
@@ -137,6 +145,16 @@ interface PixCheckoutResponse {
   expiresAt?: string;
 }
 
+const DEFAULT_STATS = {
+  monthAuthorizedCount: 0,
+  monthTotalValueCents: 0,
+  monthTotalIssuedCents: 0,
+  monthTotalIssCents: 0,
+  monthTotalDeducoesCents: 0,
+  monthSalaoParceiroDeducaoCents: 0,
+  pendingAppointmentsCount: 0,
+};
+
 export default function NfsePage() {
   const { hasPlanFeature, refresh: refreshAuth, subscription } = useAuth();
   const hasNfseAccess = hasPlanFeature('nfse');
@@ -149,27 +167,17 @@ export default function NfsePage() {
 
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Overview & Lists
   const [config, setConfig] = useState<FiscalConfigData | null>(null);
-  const [stats, setStats] = useState({
-    monthAuthorizedCount: 0,
-    monthTotalValueCents: 0,
-    monthTotalIssCents: 0,
-    monthTotalDeducoesCents: 0,
-    pendingAppointmentsCount: 0,
-  });
+  const [stats, setStats] = useState(DEFAULT_STATS);
   const [invoices, setInvoices] = useState<NfseInvoiceItem[]>([]);
   const [pendingAppointments, setPendingAppointments] = useState<PendingAppointmentItem[]>([]);
 
-  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
-  // Certificate upload state
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState('');
 
-  // Emit Modal state
   const [emitModalOpen, setEmitModalOpen] = useState(false);
   const [emitForm, setEmitForm] = useState({
     appointmentId: '' as string,
@@ -185,7 +193,6 @@ export default function NfsePage() {
     sendWhatsapp: true,
   });
 
-  // Add-on Purchase Modal state (when !hasNfseAccess)
   const [addonPriceCents, setAddonPriceCents] = useState(2990);
   const [checkoutMethod, setCheckoutMethod] = useState<'PIX' | 'CARD'>('PIX');
   const [addonCheckoutOpen, setAddonCheckoutOpen] = useState(false);
@@ -211,7 +218,7 @@ export default function NfsePage() {
     if (!hasNfseAccess) {
       try {
         const bill = await api.get<{ nfseAddon?: { priceCents: number } }>('/api/billing/status');
-        if (bill.nfseAddon?.priceCents) setAddonPriceCents(bill.nfseAddon.priceCents);
+        if (bill?.nfseAddon?.priceCents) setAddonPriceCents(bill.nfseAddon.priceCents);
       } catch {
         // ignore
       }
@@ -222,14 +229,36 @@ export default function NfsePage() {
     setLoading(true);
     try {
       const [overviewRes, invoicesRes, pendingRes] = await Promise.all([
-        api.get<{ config: FiscalConfigData; stats: typeof stats }>('/api/nfse/overview'),
-        api.get<{ invoices: NfseInvoiceItem[] }>('/api/nfse/invoices?limit=100'),
-        api.get<{ appointments: PendingAppointmentItem[] }>('/api/nfse/pending-appointments'),
+        api.get<{
+          config?: FiscalConfigData;
+          stats?: Partial<typeof DEFAULT_STATS>;
+          metrics?: Partial<typeof DEFAULT_STATS>;
+          addonPriceCents?: number;
+        }>('/api/nfse/overview'),
+        api.get<{ invoices?: NfseInvoiceItem[] }>('/api/nfse/invoices?limit=100'),
+        api.get<{ appointments?: PendingAppointmentItem[] }>('/api/nfse/pending-appointments'),
       ]);
-      setConfig(overviewRes.config);
-      setStats(overviewRes.stats);
-      setInvoices(invoicesRes.invoices);
-      setPendingAppointments(pendingRes.appointments);
+
+      if (overviewRes?.config) {
+        setConfig(overviewRes.config);
+      }
+      if (overviewRes?.addonPriceCents) {
+        setAddonPriceCents(overviewRes.addonPriceCents);
+      }
+
+      const rawStats = overviewRes?.stats || overviewRes?.metrics || {};
+      setStats({
+        monthAuthorizedCount: rawStats.monthAuthorizedCount ?? 0,
+        monthTotalValueCents: rawStats.monthTotalValueCents ?? rawStats.monthTotalIssuedCents ?? 0,
+        monthTotalIssuedCents: rawStats.monthTotalIssuedCents ?? rawStats.monthTotalValueCents ?? 0,
+        monthTotalIssCents: rawStats.monthTotalIssCents ?? 0,
+        monthTotalDeducoesCents: rawStats.monthTotalDeducoesCents ?? rawStats.monthSalaoParceiroDeducaoCents ?? 0,
+        monthSalaoParceiroDeducaoCents: rawStats.monthSalaoParceiroDeducaoCents ?? rawStats.monthTotalDeducoesCents ?? 0,
+        pendingAppointmentsCount: rawStats.pendingAppointmentsCount ?? 0,
+      });
+
+      setInvoices(Array.isArray(invoicesRes?.invoices) ? invoicesRes.invoices : []);
+      setPendingAppointments(Array.isArray(pendingRes?.appointments) ? pendingRes.appointments : []);
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Erro ao carregar dados do módulo NFS-e.');
     } finally {
@@ -241,7 +270,6 @@ export default function NfsePage() {
     loadAllNfseData();
   }, [loadAllNfseData]);
 
-  // Polling do PIX do Add-on NFS-e
   useEffect(() => {
     if (!pixData?.paymentId) return;
     const interval = setInterval(async () => {
@@ -262,18 +290,19 @@ export default function NfsePage() {
   }, [pixData, refreshAuth]);
 
   const handleOpenEmitFromAppointment = (appt: PendingAppointmentItem) => {
+    const comm = appt.professional?.commissionPercent ?? appt.professional?.commissionPct ?? 0;
     setEmitForm({
       appointmentId: appt.id,
-      tomadorNome: appt.customer.name,
-      tomadorDocumento: appt.customer.cpf || '',
-      tomadorEmail: appt.customer.email || '',
-      tomadorTelefone: appt.customer.phone || '',
-      discriminacao: `Prestação de serviços de barbearia: ${appt.service.name} — Profissional: ${appt.professional.name}`,
-      valorReais: (appt.priceCents / 100).toFixed(2),
+      tomadorNome: appt.customer?.name || 'Consumidor Final',
+      tomadorDocumento: appt.customer?.cpf || '',
+      tomadorEmail: appt.customer?.email || '',
+      tomadorTelefone: appt.customer?.phone || '',
+      discriminacao: `Prestação de serviços de barbearia: ${appt.service?.name || 'Serviço'} — Profissional: ${appt.professional?.name || ''}`,
+      valorReais: ((appt.priceCents || 0) / 100).toFixed(2),
       aplicarSalaoParceiro: Boolean(config?.salaoParceiroEnabled),
-      profissionalNome: appt.professional.name,
-      cotaPartePct: appt.professional.commissionPct || 0,
-      sendWhatsapp: Boolean(config?.autoSendWhatsapp ?? true),
+      profissionalNome: appt.professional?.name || '',
+      cotaPartePct: comm,
+      sendWhatsapp: Boolean(config?.autoSendWhatsApp ?? config?.autoSendWhatsapp ?? true),
     });
     setEmitModalOpen(true);
   };
@@ -316,9 +345,10 @@ export default function NfsePage() {
         tomadorEmail: emitForm.tomadorEmail || null,
         tomadorTelefone: emitForm.tomadorTelefone || null,
         discriminacao: emitForm.discriminacao,
+        valorBrutoCents: valorCents,
         valorServicosCents: valorCents,
         aplicarSalaoParceiro: emitForm.aplicarSalaoParceiro,
-        sendWhatsapp: emitForm.sendWhatsapp,
+        sendWhatsApp: emitForm.sendWhatsapp,
       });
 
       setEmitModalOpen(false);
@@ -335,8 +365,8 @@ export default function NfsePage() {
     try {
       const res = await api.post<{
         success: boolean;
-        sentViaBot: boolean;
-        whatsappUrl: string;
+        sentViaBot?: boolean;
+        whatsappUrl?: string;
         message: string;
       }>(`/api/nfse/invoices/${invoiceId}/whatsapp`, {});
 
@@ -345,6 +375,8 @@ export default function NfsePage() {
       } else if (res.whatsappUrl) {
         window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
         showToast('success', 'Abrindo WhatsApp com o link da DANFSE...');
+      } else {
+        showToast('success', res.message || 'Nota Fiscal enviada!');
       }
       await loadAllNfseData();
     } catch (err) {
@@ -360,7 +392,10 @@ export default function NfsePage() {
     if (!motivo) return;
 
     try {
-      const res = await api.post<{ message: string }>(`/api/nfse/invoices/${invoice.id}/cancel`, { motivo });
+      const res = await api.post<{ message: string }>(`/api/nfse/invoices/${invoice.id}/cancel`, {
+        reason: motivo,
+        motivo,
+      });
       showToast('success', res.message);
       await loadAllNfseData();
     } catch (err) {
@@ -376,28 +411,23 @@ export default function NfsePage() {
       const res = await api.put<{ message: string }>('/api/nfse/config', {
         enabled: config.enabled,
         environment: config.environment,
-        integrationMode: config.integrationMode,
         cnpj: config.cnpj,
         inscricaoMunicipal: config.inscricaoMunicipal,
         razaoSocial: config.razaoSocial,
         nomeFantasia: config.nomeFantasia,
         codigoMunicipioIbge: config.codigoMunicipioIbge,
         uf: config.uf,
-        regimeTributario: Number(config.regimeTributario),
-        optanteSimplesNacional: config.optanteSimplesNacional,
+        regimeTributario: config.regimeTributario,
         aliquotaIss: Number(config.aliquotaIss),
         codigoTributacaoNacional: config.codigoTributacaoNacional,
         codigoTributacaoMunicipal: config.codigoTributacaoMunicipal,
         itemListaServico: config.itemListaServico,
         cnae: config.cnae,
-        descricaoServicoPadrao: config.descricaoServicoPadrao,
         serieDps: config.serieDps,
         proximoNumeroDps: Number(config.proximoNumeroDps),
         salaoParceiroEnabled: config.salaoParceiroEnabled,
         autoEmitOnComplete: config.autoEmitOnComplete,
-        autoSendWhatsapp: config.autoSendWhatsapp,
-        externalWebhookUrl: config.externalWebhookUrl,
-        externalApiToken: config.externalApiToken,
+        autoSendWhatsApp: Boolean(config.autoSendWhatsApp ?? config.autoSendWhatsapp ?? true),
       });
       showToast('success', res.message || 'Configurações fiscais salvas com sucesso!');
       await loadAllNfseData();
@@ -484,17 +514,23 @@ export default function NfsePage() {
     }
   };
 
-  const filteredInvoices = invoices.filter((inv) => {
-    if (statusFilter !== 'ALL' && inv.status !== statusFilter) return false;
+  const filteredInvoices = (Array.isArray(invoices) ? invoices : []).filter((inv) => {
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'CANCELLED' && inv.status !== 'CANCELED' && inv.status !== 'CANCELLED') return false;
+      if (statusFilter === 'ERROR' && inv.status !== 'REJECTED' && inv.status !== 'ERROR') return false;
+      if (statusFilter === 'AUTHORIZED' && inv.status !== 'AUTHORIZED') return false;
+    }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      inv.tomadorNome.toLowerCase().includes(q) ||
+      (inv.tomadorNome || '').toLowerCase().includes(q) ||
       (inv.tomadorDocumento && inv.tomadorDocumento.toLowerCase().includes(q)) ||
       (inv.numeroNfse && inv.numeroNfse.toLowerCase().includes(q)) ||
-      String(inv.numeroDps).includes(q)
+      String(inv.numeroDps || '').includes(q)
     );
   });
+
+  const safeStats = stats || DEFAULT_STATS;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-app)' }}>
@@ -511,6 +547,7 @@ export default function NfsePage() {
               Emissor Fiscal Padrão Nacional integrado com Certificado Digital A1, Lei do Salão-Parceiro e envio via WhatsApp
             </p>
           </div>
+
           {feedback && (
             <div
               style={{
@@ -532,7 +569,6 @@ export default function NfsePage() {
             </div>
           )}
 
-          {/* TELA DE CONTRATAÇÃO HÍBRIDA (PARA PLANOS STARTER / PRO SEM O ADD-ON) */}
           {!hasNfseAccess ? (
             <div
               className="glass-panel"
@@ -632,7 +668,6 @@ export default function NfsePage() {
                   </div>
                 </div>
 
-                {/* Card de Contratação Híbrida */}
                 <div
                   style={{
                     flex: '1 1 340px',
@@ -702,7 +737,6 @@ export default function NfsePage() {
             </div>
           ) : (
             <>
-              {/* BANNER DE STATUS DO CERTIFICADO E AMBIENTE */}
               <div
                 className="glass-panel"
                 style={{
@@ -803,7 +837,6 @@ export default function NfsePage() {
                 </div>
               </div>
 
-              {/* KPI CARDS */}
               <div
                 style={{
                   display: 'grid',
@@ -814,16 +847,16 @@ export default function NfsePage() {
               >
                 <div className="glass-panel" style={{ padding: '20px', borderRadius: '14px' }}>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Notas Emitidas no Mês</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#F9FAFB' }}>{stats.monthAuthorizedCount}</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#F9FAFB' }}>{safeStats.monthAuthorizedCount}</div>
                   <div style={{ fontSize: '0.76rem', color: '#34D399', marginTop: '4px' }}>
-                    ISS Apurado: {formatBRL(stats.monthTotalIssCents)}
+                    ISS Apurado: {formatBRL(safeStats.monthTotalIssCents)}
                   </div>
                 </div>
 
                 <div className="glass-panel" style={{ padding: '20px', borderRadius: '14px' }}>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Total Faturado em NFS-e (Mês)</div>
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#E5B338' }}>
-                    {formatBRL(stats.monthTotalValueCents)}
+                    {formatBRL(safeStats.monthTotalValueCents || safeStats.monthTotalIssuedCents)}
                   </div>
                   <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                     Série {config?.serieDps || '1'} • Próx. DPS #{config?.proximoNumeroDps || 1}
@@ -833,7 +866,7 @@ export default function NfsePage() {
                 <div className="glass-panel" style={{ padding: '20px', borderRadius: '14px' }}>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '6px' }}>Dedução Salão-Parceiro (Mês)</div>
                   <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#34D399' }}>
-                    {formatBRL(stats.monthTotalDeducoesCents)}
+                    {formatBRL(safeStats.monthTotalDeducoesCents || safeStats.monthSalaoParceiroDeducaoCents)}
                   </div>
                   <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '4px' }}>
                     Cota-parte abatida da base de ISS (Lei 13.352/16)
@@ -855,7 +888,6 @@ export default function NfsePage() {
                 </div>
               </div>
 
-              {/* NAVEGAÇÃO DE ABAS */}
               <div
                 style={{
                   display: 'flex',
@@ -898,7 +930,6 @@ export default function NfsePage() {
                 })}
               </div>
 
-              {/* ABA 1: NOTAS FISCAIS EMITIDAS */}
               {activeTab === 'invoices' && (
                 <div className="glass-panel" style={{ padding: '22px', borderRadius: '16px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '18px', flexWrap: 'wrap' }}>
@@ -975,168 +1006,178 @@ export default function NfsePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredInvoices.map((inv) => (
-                            <tr key={inv.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                              <td style={{ padding: '12px 10px', fontWeight: 700, color: '#F9FAFB' }}>
-                                <div>{inv.numeroNfse || `DPS #${inv.numeroDps}`}</div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 500 }}>
-                                  {inv.environment === 'PRODUCTION' ? 'Produção' : 'Homologação'}
-                                </div>
-                              </td>
-                              <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
-                                {new Date(inv.emittedAt || inv.createdAt).toLocaleString('pt-BR', {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: '2-digit',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </td>
-                              <td style={{ padding: '12px 10px' }}>
-                                <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{inv.tomadorNome}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                  {inv.tomadorDocumento || 'CPF não informado'}
-                                </div>
-                              </td>
-                              <td style={{ padding: '12px 10px', fontWeight: 700, color: '#F9FAFB' }}>
-                                {formatBRL(inv.valorServicosCents)}
-                              </td>
-                              <td style={{ padding: '12px 10px' }}>
-                                {inv.salaoParceiroAplicado && inv.valorDeducoesCents > 0 ? (
-                                  <div>
-                                    <span style={{ color: '#34D399', fontWeight: 700 }}>
-                                      -{formatBRL(inv.valorDeducoesCents)}
-                                    </span>
-                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-                                      {inv.profissionalNome}
+                          {filteredInvoices.map((inv) => {
+                            const valorBruto = inv.valorBrutoCents ?? inv.valorServicosCents ?? 0;
+                            const valorDeducao = inv.valorDeducaoParceiroCents ?? inv.valorDeducoesCents ?? 0;
+                            const profNome = inv.profissionalParceiroNome || inv.profissionalNome;
+                            const dateStr = inv.issuedAt || inv.emittedAt || inv.createdAt;
+                            const isCanceled = inv.status === 'CANCELED' || inv.status === 'CANCELLED';
+
+                            return (
+                              <tr key={inv.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <td style={{ padding: '12px 10px', fontWeight: 700, color: '#F9FAFB' }}>
+                                  <div>{inv.numeroNfse || `DPS #${inv.numeroDps}`}</div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 500 }}>
+                                    {inv.environment === 'PRODUCTION' ? 'Produção' : 'Homologação'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
+                                  {dateStr
+                                    ? new Date(dateStr).toLocaleString('pt-BR', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })
+                                    : '—'}
+                                </td>
+                                <td style={{ padding: '12px 10px' }}>
+                                  <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{inv.tomadorNome}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {inv.tomadorDocumento || 'CPF não informado'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '12px 10px', fontWeight: 700, color: '#F9FAFB' }}>
+                                  {formatBRL(valorBruto)}
+                                </td>
+                                <td style={{ padding: '12px 10px' }}>
+                                  {valorDeducao > 0 ? (
+                                    <div>
+                                      <span style={{ color: '#34D399', fontWeight: 700 }}>
+                                        -{formatBRL(valorDeducao)}
+                                      </span>
+                                      {profNome && (
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{profNome}</div>
+                                      )}
                                     </div>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>—</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '12px 10px' }}>
+                                  <div style={{ color: '#E5B338', fontWeight: 700 }}>{formatBRL(inv.baseCalculoCents)}</div>
+                                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                                    ISS ({inv.aliquotaIss}%): {formatBRL(inv.valorIssCents)}
                                   </div>
-                                ) : (
-                                  <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>—</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '12px 10px' }}>
-                                <div style={{ color: '#E5B338', fontWeight: 700 }}>{formatBRL(inv.baseCalculoCents)}</div>
-                                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
-                                  ISS ({inv.aliquotaIss}%): {formatBRL(inv.valorIssCents)}
-                                </div>
-                              </td>
-                              <td style={{ padding: '12px 10px' }}>
-                                <span
-                                  style={{
-                                    padding: '4px 9px',
-                                    borderRadius: '999px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 800,
-                                    background:
-                                      inv.status === 'AUTHORIZED'
-                                        ? 'rgba(16, 185, 129, 0.14)'
-                                        : inv.status === 'CANCELLED'
-                                        ? 'rgba(244, 63, 94, 0.14)'
-                                        : 'rgba(245, 158, 11, 0.14)',
-                                    color:
-                                      inv.status === 'AUTHORIZED'
-                                        ? '#34D399'
-                                        : inv.status === 'CANCELLED'
-                                        ? '#FB7185'
-                                        : '#FBBF24',
-                                  }}
-                                >
-                                  {inv.status === 'AUTHORIZED'
-                                    ? 'AUTORIZADA'
-                                    : inv.status === 'CANCELLED'
-                                    ? 'CANCELADA'
-                                    : inv.status}
-                                </span>
-                                {inv.errorMessage && (
-                                  <div style={{ fontSize: '0.7rem', color: '#FB7185', marginTop: '4px', maxWidth: '200px' }}>
-                                    {inv.errorMessage}
-                                  </div>
-                                )}
-                              </td>
-                              <td style={{ padding: '12px 10px', textAlign: 'right' }}>
-                                <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
-                                  <a
-                                    href={`/api/public/nfse/${inv.id}/danfse`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Abrir / Imprimir DANFSE Oficial"
+                                </td>
+                                <td style={{ padding: '12px 10px' }}>
+                                  <span
                                     style={{
-                                      padding: '6px 10px',
-                                      borderRadius: '8px',
-                                      background: 'rgba(229, 179, 56, 0.14)',
-                                      color: '#E5B338',
-                                      textDecoration: 'none',
-                                      fontSize: '0.76rem',
-                                      fontWeight: 700,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
+                                      padding: '4px 9px',
+                                      borderRadius: '999px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: 800,
+                                      background:
+                                        inv.status === 'AUTHORIZED'
+                                          ? 'rgba(16, 185, 129, 0.14)'
+                                          : isCanceled
+                                          ? 'rgba(244, 63, 94, 0.14)'
+                                          : 'rgba(245, 158, 11, 0.14)',
+                                      color:
+                                        inv.status === 'AUTHORIZED'
+                                          ? '#34D399'
+                                          : isCanceled
+                                          ? '#FB7185'
+                                          : '#FBBF24',
                                     }}
                                   >
-                                    <Printer size={14} /> DANFSE
-                                  </a>
+                                    {inv.status === 'AUTHORIZED'
+                                      ? 'AUTORIZADA'
+                                      : isCanceled
+                                      ? 'CANCELADA'
+                                      : inv.status}
+                                  </span>
+                                  {inv.errorMessage && (
+                                    <div style={{ fontSize: '0.7rem', color: '#FB7185', marginTop: '4px', maxWidth: '200px' }}>
+                                      {inv.errorMessage}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ padding: '12px 10px', textAlign: 'right' }}>
+                                  <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                                    <a
+                                      href={`/api/public/nfse/${inv.id}/danfse`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Abrir / Imprimir DANFSE Oficial"
+                                      style={{
+                                        padding: '6px 10px',
+                                        borderRadius: '8px',
+                                        background: 'rgba(229, 179, 56, 0.14)',
+                                        color: '#E5B338',
+                                        textDecoration: 'none',
+                                        fontSize: '0.76rem',
+                                        fontWeight: 700,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Printer size={14} /> DANFSE
+                                    </a>
 
-                                  <button
-                                    onClick={() => handleSendWhatsapp(inv.id)}
-                                    title="Enviar DANFSE no WhatsApp do cliente"
-                                    style={{
-                                      padding: '6px 10px',
-                                      borderRadius: '8px',
-                                      background: 'rgba(16, 185, 129, 0.14)',
-                                      border: 'none',
-                                      color: '#34D399',
-                                      fontSize: '0.76rem',
-                                      fontWeight: 700,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <Send size={13} /> WhatsApp
-                                  </button>
-
-                                  <a
-                                    href={`/api/nfse/invoices/${inv.id}/xml`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Baixar XML Padrão Nacional"
-                                    style={{
-                                      padding: '6px 8px',
-                                      borderRadius: '8px',
-                                      background: 'rgba(255,255,255,0.06)',
-                                      color: 'var(--text-main)',
-                                      textDecoration: 'none',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                    }}
-                                  >
-                                    <Download size={14} />
-                                  </a>
-
-                                  {inv.status === 'AUTHORIZED' && (
                                     <button
-                                      onClick={() => handleCancelInvoice(inv)}
-                                      title="Cancelar NFS-e"
+                                      onClick={() => handleSendWhatsapp(inv.id)}
+                                      title="Enviar DANFSE no WhatsApp do cliente"
+                                      style={{
+                                        padding: '6px 10px',
+                                        borderRadius: '8px',
+                                        background: 'rgba(16, 185, 129, 0.14)',
+                                        border: 'none',
+                                        color: '#34D399',
+                                        fontSize: '0.76rem',
+                                        fontWeight: 700,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <Send size={13} /> WhatsApp
+                                    </button>
+
+                                    <a
+                                      href={`/api/nfse/invoices/${inv.id}/xml`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Baixar XML Padrão Nacional"
                                       style={{
                                         padding: '6px 8px',
                                         borderRadius: '8px',
-                                        background: 'rgba(244, 63, 94, 0.12)',
-                                        border: 'none',
-                                        color: '#FB7185',
-                                        cursor: 'pointer',
+                                        background: 'rgba(255,255,255,0.06)',
+                                        color: 'var(--text-main)',
+                                        textDecoration: 'none',
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                       }}
                                     >
-                                      <XCircle size={14} />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
+                                      <Download size={14} />
+                                    </a>
+
+                                    {inv.status === 'AUTHORIZED' && (
+                                      <button
+                                        onClick={() => handleCancelInvoice(inv)}
+                                        title="Cancelar NFS-e"
+                                        style={{
+                                          padding: '6px 8px',
+                                          borderRadius: '8px',
+                                          background: 'rgba(244, 63, 94, 0.12)',
+                                          border: 'none',
+                                          color: '#FB7185',
+                                          cursor: 'pointer',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                        }}
+                                      >
+                                        <XCircle size={14} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1144,7 +1185,6 @@ export default function NfsePage() {
                 </div>
               )}
 
-              {/* ABA 2: ATENDIMENTOS CONCLUÍDOS PENDENTES DE NOTA */}
               {activeTab === 'pending' && (
                 <div className="glass-panel" style={{ padding: '22px', borderRadius: '16px' }}>
                   <div style={{ marginBottom: '16px' }}>
@@ -1174,49 +1214,52 @@ export default function NfsePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {pendingAppointments.map((appt) => (
-                            <tr key={appt.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                              <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
-                                {new Date(appt.completedAt || appt.startAt).toLocaleString('pt-BR', {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: '2-digit',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </td>
-                              <td style={{ padding: '12px 10px' }}>
-                                <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{appt.customer.name}</div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                  {appt.customer.cpf ? `CPF: ${appt.customer.cpf}` : appt.customer.phone || 'Sem CPF'}
-                                </div>
-                              </td>
-                              <td style={{ padding: '12px 10px', color: '#E5E7EB' }}>{appt.service.name}</td>
-                              <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
-                                {appt.professional.name} ({appt.professional.commissionPct}%)
-                              </td>
-                              <td style={{ padding: '12px 10px', fontWeight: 700, color: '#E5B338' }}>
-                                {formatBRL(appt.priceCents)}
-                              </td>
-                              <td style={{ padding: '12px 10px', textAlign: 'right' }}>
-                                <button
-                                  onClick={() => handleOpenEmitFromAppointment(appt)}
-                                  className="btn-primary"
-                                  style={{
-                                    padding: '7px 14px',
-                                    borderRadius: '8px',
-                                    fontSize: '0.78rem',
-                                    fontWeight: 700,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                  }}
-                                >
-                                  <FileText size={14} /> Emitir NFS-e
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {pendingAppointments.map((appt) => {
+                            const comm = appt.professional?.commissionPercent ?? appt.professional?.commissionPct ?? 0;
+                            return (
+                              <tr key={appt.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
+                                  {new Date(appt.completedAt || appt.startAt).toLocaleString('pt-BR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </td>
+                                <td style={{ padding: '12px 10px' }}>
+                                  <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{appt.customer?.name}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {appt.customer?.cpf ? `CPF: ${appt.customer.cpf}` : appt.customer?.phone || 'Sem telefone'}
+                                  </div>
+                                </td>
+                                <td style={{ padding: '12px 10px', color: '#E5E7EB' }}>{appt.service?.name}</td>
+                                <td style={{ padding: '12px 10px', color: 'var(--text-muted)' }}>
+                                  {appt.professional?.name} ({comm}%)
+                                </td>
+                                <td style={{ padding: '12px 10px', fontWeight: 700, color: '#E5B338' }}>
+                                  {formatBRL(appt.priceCents)}
+                                </td>
+                                <td style={{ padding: '12px 10px', textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleOpenEmitFromAppointment(appt)}
+                                    className="btn-primary"
+                                    style={{
+                                      padding: '7px 14px',
+                                      borderRadius: '8px',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 700,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                    }}
+                                  >
+                                    <FileText size={14} /> Emitir NFS-e
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1224,10 +1267,8 @@ export default function NfsePage() {
                 </div>
               )}
 
-              {/* ABA 3: CONFIGURAÇÃO FISCAL & CERTIFICADO DIGITAL A1 */}
               {activeTab === 'config' && config && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '22px' }}>
-                  {/* CARD 1: UPLOAD DE CERTIFICADO DIGITAL A1 (.PFX) */}
                   <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
                       <KeyRound size={20} color="#E5B338" />
@@ -1263,7 +1304,7 @@ export default function NfsePage() {
                             </div>
                             {config.certValidTo && (
                               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                                <strong>Válido até:</strong> {config.certValidTo}
+                                <strong>Válido até:</strong> {new Date(config.certValidTo).toLocaleDateString('pt-BR')}
                               </div>
                             )}
                           </div>
@@ -1338,7 +1379,6 @@ export default function NfsePage() {
                     </form>
                   </div>
 
-                  {/* CARD 2: PARÂMETROS FISCAIS E TRIBUTÁRIOS DO SALÃO */}
                   <form onSubmit={handleSaveConfig} className="glass-panel" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
                       <Building2 size={20} color="#E5B338" />
@@ -1365,6 +1405,24 @@ export default function NfsePage() {
 
                       <div>
                         <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          Regime Tributário
+                        </label>
+                        <select
+                          value={String(config.regimeTributario || 'MEI')}
+                          onChange={(e) => setConfig({ ...config, regimeTributario: e.target.value as FiscalConfigData['regimeTributario'] })}
+                          className="input-field"
+                          style={{ width: '100%' }}
+                        >
+                          <option value="MEI">MEI (Microempreendedor Individual)</option>
+                          <option value="SIMPLES_NACIONAL">Simples Nacional (ME / EPP)</option>
+                          <option value="LUCRO_PRESUMIDO">Lucro Presumido / Normal</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                           CNPJ da Barbearia / Salão
                         </label>
                         <input
@@ -1376,9 +1434,7 @@ export default function NfsePage() {
                           style={{ width: '100%' }}
                         />
                       </div>
-                    </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
                           Inscrição Municipal (CMC)
@@ -1388,6 +1444,21 @@ export default function NfsePage() {
                           placeholder="Ex: 123456-7"
                           value={config.inscricaoMunicipal || ''}
                           onChange={(e) => setConfig({ ...config, inscricaoMunicipal: e.target.value })}
+                          className="input-field"
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          Razão Social do Emitente
+                        </label>
+                        <input
+                          type="text"
+                          value={config.razaoSocial || ''}
+                          onChange={(e) => setConfig({ ...config, razaoSocial: e.target.value })}
                           className="input-field"
                           style={{ width: '100%' }}
                         />
@@ -1406,19 +1477,6 @@ export default function NfsePage() {
                           style={{ width: '100%' }}
                         />
                       </div>
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                        Razão Social do Emitente
-                      </label>
-                      <input
-                        type="text"
-                        value={config.razaoSocial || ''}
-                        onChange={(e) => setConfig({ ...config, razaoSocial: e.target.value })}
-                        className="input-field"
-                        style={{ width: '100%' }}
-                      />
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -1463,7 +1521,6 @@ export default function NfsePage() {
                       </div>
                     </div>
 
-                    {/* TOGGLES DE AUTOMAÇÃO E LEI DO SALÃO-PARCEIRO */}
                     <div
                       style={{
                         padding: '14px',
@@ -1478,7 +1535,7 @@ export default function NfsePage() {
                       <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem' }}>
                         <input
                           type="checkbox"
-                          checked={config.salaoParceiroEnabled}
+                          checked={Boolean(config.salaoParceiroEnabled)}
                           onChange={(e) => setConfig({ ...config, salaoParceiroEnabled: e.target.checked })}
                         />
                         <span>
@@ -1489,7 +1546,7 @@ export default function NfsePage() {
                       <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem' }}>
                         <input
                           type="checkbox"
-                          checked={config.autoEmitOnComplete}
+                          checked={Boolean(config.autoEmitOnComplete)}
                           onChange={(e) => setConfig({ ...config, autoEmitOnComplete: e.target.checked })}
                         />
                         <span>
@@ -1500,8 +1557,14 @@ export default function NfsePage() {
                       <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.84rem' }}>
                         <input
                           type="checkbox"
-                          checked={config.autoSendWhatsapp}
-                          onChange={(e) => setConfig({ ...config, autoSendWhatsapp: e.target.checked })}
+                          checked={Boolean(config.autoSendWhatsApp ?? config.autoSendWhatsapp ?? true)}
+                          onChange={(e) =>
+                            setConfig({
+                              ...config,
+                              autoSendWhatsApp: e.target.checked,
+                              autoSendWhatsapp: e.target.checked,
+                            })
+                          }
                         />
                         <span>
                           <strong>Enviar link da DANFSE automaticamente no WhatsApp</strong> do cliente após autorizar a nota
@@ -1530,7 +1593,6 @@ export default function NfsePage() {
         </main>
       </div>
 
-      {/* MODAL DE EMISSÃO DE NFS-E (1 CLIQUE OU AVULSA) */}
       <Modal
         isOpen={emitModalOpen}
         onClose={() => setEmitModalOpen(false)}
@@ -1673,7 +1735,6 @@ export default function NfsePage() {
         </form>
       </Modal>
 
-      {/* MODAL DE CHECKOUT DO ADD-ON NFS-E (PIX / CARTÃO) */}
       <Modal
         isOpen={addonCheckoutOpen}
         onClose={() => setAddonCheckoutOpen(false)}
