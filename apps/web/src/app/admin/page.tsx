@@ -1154,42 +1154,47 @@ export default function SuperAdminPage() {
           </div>
         )}
 
-        {/* Navegação por Abas Master (Estilo Segmented Luxury Responsivo) */}
+        {/* Navegação por Abas Master (Estilo Segmented Luxury em Linha Única Preenchida) */}
         <div
+          className="custom-scrollbar"
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
+            justifyContent: 'space-between',
+            gap: '6px',
             padding: '6px',
             background: 'rgba(18, 24, 38, 0.75)',
             border: '1px solid var(--border-color)',
             borderRadius: '14px',
             marginBottom: '28px',
-            flexWrap: 'wrap',
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
           }}
         >
           <button
             type="button"
             onClick={() => setActiveTab('tenants')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'tenants' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'tenants' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'tenants' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'tenants' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'tenants' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <Building size={16} color={activeTab === 'tenants' ? 'var(--primary)' : 'currentColor'} />
+            <Building size={15} color={activeTab === 'tenants' ? 'var(--primary)' : 'currentColor'} />
             <span>Salões & Instâncias ({tenants.length})</span>
           </button>
 
@@ -1197,24 +1202,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('plans')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'plans' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'plans' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'plans' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'plans' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'plans' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <DollarSign size={16} color={activeTab === 'plans' ? 'var(--primary)' : 'currentColor'} />
+            <DollarSign size={15} color={activeTab === 'plans' ? 'var(--primary)' : 'currentColor'} />
             <span>Planos & Vitrine ({plans.length})</span>
           </button>
 
@@ -1222,24 +1229,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('addons')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'addons' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'addons' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'addons' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'addons' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'addons' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <Sparkles size={16} color={activeTab === 'addons' ? 'var(--primary)' : 'currentColor'} />
+            <Sparkles size={15} color={activeTab === 'addons' ? 'var(--primary)' : 'currentColor'} />
             <span>Add-ons ({addonsList.filter((a) => a.isAddon).length})</span>
           </button>
 
@@ -1247,24 +1256,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('growth')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'growth' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'growth' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'growth' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'growth' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'growth' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <TrendingUp size={16} color={activeTab === 'growth' ? 'var(--primary)' : 'currentColor'} />
+            <TrendingUp size={15} color={activeTab === 'growth' ? 'var(--primary)' : 'currentColor'} />
             <span>Relatórios de Crescimento</span>
           </button>
 
@@ -1272,24 +1283,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('smtp')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'smtp' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'smtp' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'smtp' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'smtp' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'smtp' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <Mail size={16} color={activeTab === 'smtp' ? 'var(--primary)' : 'currentColor'} />
+            <Mail size={15} color={activeTab === 'smtp' ? 'var(--primary)' : 'currentColor'} />
             <span>Servidor SMTP & E-mails</span>
           </button>
 
@@ -1297,24 +1310,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('integrations')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'integrations' || activeTab === 'mercadopago' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'integrations' || activeTab === 'mercadopago' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'integrations' || activeTab === 'mercadopago' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'integrations' || activeTab === 'mercadopago' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <Layers size={16} color={activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
+            <Layers size={15} color={activeTab === 'integrations' || activeTab === 'mercadopago' ? 'var(--primary)' : 'currentColor'} />
             <span>Integrações</span>
           </button>
 
@@ -1322,24 +1337,26 @@ export default function SuperAdminPage() {
             type="button"
             onClick={() => setActiveTab('logs')}
             style={{
-              padding: '9px 16px',
+              flex: '1 1 auto',
+              justifyContent: 'center',
+              padding: '9px 12px',
               borderRadius: '10px',
               border: activeTab === 'logs' ? '1px solid rgba(229, 179, 56, 0.45)' : '1px solid transparent',
               background: activeTab === 'logs' ? 'linear-gradient(135deg, rgba(229, 179, 56, 0.18) 0%, rgba(229, 179, 56, 0.06) 100%)' : 'transparent',
               color: activeTab === 'logs' ? 'var(--primary)' : 'var(--text-muted)',
               boxShadow: activeTab === 'logs' ? '0 2px 10px rgba(229, 179, 56, 0.15)' : 'none',
               fontWeight: activeTab === 'logs' ? 700 : 600,
-              fontSize: '0.88rem',
+              fontSize: '0.84rem',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
               transition: 'all 0.15s ease',
             }}
           >
-            <FileText size={16} color={activeTab === 'logs' ? 'var(--primary)' : 'currentColor'} />
+            <FileText size={15} color={activeTab === 'logs' ? 'var(--primary)' : 'currentColor'} />
             <span>Auditoria & Debug ({logs.length})</span>
           </button>
         </div>
