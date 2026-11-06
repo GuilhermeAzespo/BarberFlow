@@ -4,6 +4,9 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Play,
+  Bell,
+  RefreshCw,
   Shield,
   Building,
   Users,
@@ -328,6 +331,57 @@ interface AdminCouponItem {
   createdAt: string;
 }
 
+
+interface AdminDunningDetail {
+  tenantId: string;
+  tenantName: string;
+  stage: 'D-3' | 'D0' | 'D+2';
+  recipientEmail: string;
+  success: boolean;
+  pixGenerated: boolean;
+  paymentId?: string;
+  error?: string;
+}
+
+interface AdminDunningSummary {
+  tenantsChecked: number;
+  noticesSent: number;
+  pixGenerated: number;
+  errors: number;
+  details: AdminDunningDetail[];
+  executedAt: string;
+}
+
+interface AdminDunningStats {
+  config: {
+    enabled: boolean;
+    sendEmail: boolean;
+    sendInAppWarning: boolean;
+    dMinus3Enabled: boolean;
+    dDayEnabled: boolean;
+    dPlus2Enabled: boolean;
+    lastRunAt?: string | null;
+    lastRunSummary?: AdminDunningSummary | null;
+  };
+  counts: {
+    dMinus3: number;
+    dDay: number;
+    dPlus2: number;
+    pastDueOrBlocked: number;
+  };
+  recentLogs: Array<{
+    id: string;
+    tenantId: string | null;
+    tenantName?: string;
+    stage: 'D-3' | 'D0' | 'D+2';
+    recipientEmail: string;
+    success: boolean;
+    pixGenerated: boolean;
+    createdAt: string;
+    message: string;
+  }>;
+}
+
 interface AdminBillingCyclesConfig {
   SEMIANNUAL: { enabled: boolean; discountPct: number; maxInstallments: number };
   ANNUAL: { enabled: boolean; discountPct: number; maxInstallments: number };
@@ -348,6 +402,19 @@ export default function SuperAdminPage() {
     ANNUAL: { enabled: true, discountPct: 20, maxInstallments: 12 },
   });
   const [savingCycles, setSavingCycles] = useState(false);
+
+  const [dunningStats, setDunningStats] = useState<AdminDunningStats | null>(null);
+  const [dunningConfig, setDunningConfig] = useState({
+    enabled: true,
+    sendEmail: true,
+    sendInAppWarning: true,
+    dMinus3Enabled: true,
+    dDayEnabled: true,
+    dPlus2Enabled: true,
+  });
+  const [savingDunning, setSavingDunning] = useState(false);
+  const [runningDunning, setRunningDunning] = useState(false);
+
   const [addonsList, setAddonsList] = useState<AdminAddonItem[]>([]);
   const [savingAddons, setSavingAddons] = useState(false);
   const [togglingAddonTenantId, setTogglingAddonTenantId] = useState<string | null>(null);
@@ -765,6 +832,58 @@ export default function SuperAdminPage() {
       }
     } catch {
       // Ignora erro
+    }
+  };
+
+  
+  const loadDunningStats = async () => {
+    try {
+      const res = await api.get<AdminDunningStats>('/api/superadmin/billing-dunning');
+      setDunningStats(res);
+      if (res?.config) {
+        setDunningConfig({
+          enabled: res.config.enabled ?? true,
+          sendEmail: res.config.sendEmail ?? true,
+          sendInAppWarning: res.config.sendInAppWarning ?? true,
+          dMinus3Enabled: res.config.dMinus3Enabled ?? true,
+          dDayEnabled: res.config.dDayEnabled ?? true,
+          dPlus2Enabled: res.config.dPlus2Enabled ?? true,
+        });
+      }
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleSaveDunning = async () => {
+    setSavingDunning(true);
+    try {
+      const res = await api.put<{ success: boolean; config: any; message: string }>(
+        '/api/superadmin/billing-dunning',
+        dunningConfig,
+      );
+      toast.success(res.message || 'Configurações da régua de cobrança salvas com sucesso!');
+      await loadDunningStats();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar configurações da régua.');
+    } finally {
+      setSavingDunning(false);
+    }
+  };
+
+  const handleRunDunningNow = async () => {
+    setRunningDunning(true);
+    try {
+      const res = await api.post<{ success: boolean; summary: AdminDunningSummary; message: string }>(
+        '/api/superadmin/billing-dunning/run-now',
+        {},
+      );
+      toast.success(res.message || 'Varredura da régua de cobrança executada com sucesso!');
+      await loadDunningStats();
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao executar varredura da régua.');
+    } finally {
+      setRunningDunning(false);
     }
   };
 
@@ -2235,6 +2354,449 @@ export default function SuperAdminPage() {
                 </div>
               </div>
             </div>
+
+            {/* ───────────────── FASE 3: Régua Automática de Cobrança (D-3, D0, D+2) ───────────────── */}
+            <div
+              className="glass-panel"
+              style={{
+                marginTop: '36px',
+                padding: '28px',
+                border: '1px solid rgba(229, 179, 56, 0.35)',
+                background: 'linear-gradient(180deg, rgba(229, 179, 56, 0.04) 0%, rgba(18, 24, 38, 0.6) 100%)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '16px',
+                  marginBottom: '20px',
+                  paddingBottom: '16px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div
+                      style={{
+                        padding: '6px',
+                        borderRadius: '8px',
+                        background: 'rgba(229, 179, 56, 0.15)',
+                        color: 'var(--primary)',
+                      }}
+                    >
+                      <Bell size={20} />
+                    </div>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                      Régua Automática de Cobrança da Assinatura
+                    </h3>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '3px 9px',
+                        borderRadius: '999px',
+                        background: dunningConfig.enabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: dunningConfig.enabled ? '#34D399' : '#F87171',
+                        border: dunningConfig.enabled ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                      }}
+                    >
+                      {dunningConfig.enabled ? '● Ativa' : '○ Pausada'}
+                    </span>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', marginTop: '6px', maxWidth: '780px', lineHeight: 1.5 }}>
+                    Automação inteligente de renovação: aviso preventivo 3 dias antes (<strong>D-3</strong>), geração e envio automático do <strong>PIX Copia e Cola</strong> no vencimento (<strong>D0</strong>) e cobrança urgente no 2º dia de carência (<strong>D+2</strong>) para zero inadimplência.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleRunDunningNow}
+                    disabled={runningDunning}
+                    className="btn btn-secondary"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      padding: '9px 15px',
+                    }}
+                  >
+                    <RefreshCw size={14} className={runningDunning ? 'animate-spin' : ''} />
+                    <span>{runningDunning ? 'Verificando...' : 'Executar Verificação Agora'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveDunning}
+                    disabled={savingDunning}
+                    className="btn btn-primary"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      padding: '9px 16px',
+                    }}
+                  >
+                    <Save size={15} />
+                    <span>{savingDunning ? 'Salvando...' : 'Salvar Regras da Régua'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* KPIs de Salões na Régua Hoje */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+                  gap: '14px',
+                  marginBottom: '24px',
+                }}
+              >
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '16px',
+                    borderRadius: '10px',
+                    borderLeft: '4px solid #FBBF24',
+                    background: 'rgba(251, 191, 36, 0.05)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    🟡 Estágio D-3 (Vencem em 3 dias)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#FBBF24' }}>
+                      {dunningStats?.counts.dMinus3 ?? 0}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>salão(ões)</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                    Aviso preventivo amigável
+                  </span>
+                </div>
+
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '16px',
+                    borderRadius: '10px',
+                    borderLeft: '4px solid #FB923C',
+                    background: 'rgba(251, 146, 60, 0.05)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    🟠 Estágio D0 (Vencem Hoje)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#FB923C' }}>
+                      {dunningStats?.counts.dDay ?? 0}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>salão(ões)</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#34D399', display: 'block', marginTop: '4px', fontWeight: 600 }}>
+                    ⚡ PIX Copia & Cola automático
+                  </span>
+                </div>
+
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '16px',
+                    borderRadius: '10px',
+                    borderLeft: '4px solid #F87171',
+                    background: 'rgba(248, 113, 113, 0.05)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    🔴 Estágio D+2 (Carência / 2 dias)
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#F87171' }}>
+                      {dunningStats?.counts.dPlus2 ?? 0}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>salão(ões)</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                    Cobrança urgente antes do corte
+                  </span>
+                </div>
+
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '16px',
+                    borderRadius: '10px',
+                    borderLeft: '4px solid #A78BFA',
+                    background: 'rgba(167, 139, 250, 0.05)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    ⛔ Inadimplentes / Bloqueados
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '1.6rem', fontWeight: 800, color: '#A78BFA' }}>
+                      {dunningStats?.counts.pastDueOrBlocked ?? 0}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>salão(ões)</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)', display: 'block', marginTop: '4px' }}>
+                    Acesso restrito aguardando PIX
+                  </span>
+                </div>
+              </div>
+
+              {/* Controles de Configuração da Régua */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gap: '16px',
+                  marginBottom: '24px',
+                }}
+              >
+                {/* Coluna 1: Canais e Automação Geral */}
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.94rem', color: 'var(--text-main)', display: 'block', marginBottom: '14px' }}>
+                    ⚙️ Canais de Disparo & Políticas
+                  </strong>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.enabled}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, enabled: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: 'var(--text-main)', display: 'block' }}>
+                          Ativar Régua de Cobrança Global
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Habilita o agendador automático diário a cada 1h no servidor.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.sendEmail}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, sendEmail: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: 'var(--text-main)', display: 'block' }}>
+                          Disparar E-mails via SMTP
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Envia e-mails corporativos estilizados com código PIX Copia e Cola direto no corpo da mensagem.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.sendInAppWarning}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, sendInAppWarning: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: 'var(--text-main)', display: 'block' }}>
+                          Exibir Banners no Painel do Salão
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Alerta flutuante no topo do painel da barbearia com botão de renovação em 1 clique.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Coluna 2: Estágios Ativos */}
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.94rem', color: 'var(--text-main)', display: 'block', marginBottom: '14px' }}>
+                    🎯 Estágios de Disparo Ativos
+                  </strong>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.dMinus3Enabled}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, dMinus3Enabled: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: '#FBBF24', display: 'block' }}>
+                          Estágio D-3 (Aviso Prévio de 3 Dias)
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Lembrete amigável incentivando antecipação da renovação e planos Anuais/Semestrais.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.dDayEnabled}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, dDayEnabled: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: '#FB923C', display: 'block' }}>
+                          Estágio D0 (Dia do Vencimento + PIX Auto)
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Gera e anexa o código PIX Copia e Cola pronto para pagamento instantâneo.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={dunningConfig.dPlus2Enabled}
+                        onChange={(e) => setDunningConfig({ ...dunningConfig, dPlus2Enabled: e.target.checked })}
+                        style={{ marginTop: '3px' }}
+                      />
+                      <div>
+                        <strong style={{ fontSize: '0.84rem', color: '#F87171', display: 'block' }}>
+                          Estágio D+2 (Aviso Urgente de Carência)
+                        </strong>
+                        <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                          Aviso final de regularização antes de suspender a vitrine e agendamentos.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Histórico Recente de Disparos da Régua */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <strong style={{ fontSize: '0.92rem', color: 'var(--text-main)' }}>
+                    📋 Histórico de Disparos da Régua ({dunningStats?.recentLogs?.length || 0})
+                  </strong>
+                  {dunningStats?.config.lastRunAt && (
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>
+                      Última execução: {DateTime.fromISO(dunningStats.config.lastRunAt).setZone('America/Sao_Paulo').toFormat('dd/LL/yyyy HH:mm')}
+                    </span>
+                  )}
+                </div>
+
+                {(!dunningStats?.recentLogs || dunningStats.recentLogs.length === 0) ? (
+                  <div
+                    style={{
+                      padding: '24px',
+                      textAlign: 'center',
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      borderRadius: '8px',
+                      border: '1px dashed var(--border-color)',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    Nenhum disparo registrado ainda. Clique em <strong>"Executar Verificação Agora"</strong> para rodar a primeira checagem!
+                  </div>
+                ) : (
+                  <div className="table-responsive" style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                    <table className="data-table" style={{ fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Data/Hora</th>
+                          <th>Salão</th>
+                          <th>Estágio</th>
+                          <th>Destinatário</th>
+                          <th>PIX Gerado?</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dunningStats.recentLogs.slice(0, 15).map((log) => (
+                          <tr key={log.id}>
+                            <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                              {DateTime.fromISO(log.createdAt).setZone('America/Sao_Paulo').toFormat('dd/LL/yyyy HH:mm')}
+                            </td>
+                            <td>
+                              <strong style={{ color: 'var(--text-main)' }}>{log.tenantName}</strong>
+                            </td>
+                            <td>
+                              <span
+                                style={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 800,
+                                  padding: '2px 8px',
+                                  borderRadius: '6px',
+                                  background:
+                                    log.stage === 'D-3'
+                                      ? 'rgba(251, 191, 36, 0.15)'
+                                      : log.stage === 'D0'
+                                      ? 'rgba(251, 146, 60, 0.15)'
+                                      : 'rgba(248, 113, 113, 0.15)',
+                                  color:
+                                    log.stage === 'D-3'
+                                      ? '#FBBF24'
+                                      : log.stage === 'D0'
+                                      ? '#FB923C'
+                                      : '#F87171',
+                                }}
+                              >
+                                {log.stage}
+                              </span>
+                            </td>
+                            <td style={{ color: 'var(--text-muted)' }}>{log.recipientEmail}</td>
+                            <td>
+                              {log.pixGenerated ? (
+                                <span style={{ color: '#10B981', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <QrCode size={13} /> Sim
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-dim)' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              {log.success ? (
+                                <span style={{ color: '#10B981', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle2 size={13} /> Entregue
+                                </span>
+                              ) : (
+                                <span style={{ color: '#F87171', fontWeight: 600 }}>Falha</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
           </div>
         )}
 

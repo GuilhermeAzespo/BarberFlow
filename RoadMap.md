@@ -10,7 +10,7 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 | :---: | :---: | :--- | :---: | :--- | :---: |
 | **Fase 1** | Item 1 | **Sistema de Cupons de Desconto no Super Admin** | 🟢 Fácil | Receita & Vendas SaaS | ✅ **Concluído** |
 | **Fase 2** | Item 4 | **Planos Anuais / Semestrais no Checkout** | 🟢 Fácil–Médio | Receita & Caixa SaaS | ✅ **Concluído** |
-| **Fase 3** | Item 5 | **Régua Automática de Cobrança da Assinatura** | 🟡 Médio | Retenção & Automação SaaS | N/A (Automação SaaS) |
+| **Fase 3** | Item 5 | **Régua Automática de Cobrança da Assinatura** | 🟡 Médio | Retenção & Automação SaaS | ✅ **Concluído** |
 | **Fase 4** | Item 2 | **Cartão Fidelidade Digital Automático** | 🟡 Médio | Fidelização da Barbearia | ✅ Sim (Plano ou Add-on) |
 | **Fase 5** | Item 6 | **Recuperação de "Clientes Sumidos" & Aniversariantes (WhatsApp)** | 🟠 Médio–Avançado | Marketing & Retorno | ✅ Sim (Plano ou Add-on) |
 | **Fase 6** | Item 3 | **Clube de Assinatura da Barbearia (Planos para Clientes)** | 🔴 Avançado | Receita Recorrente do Salão | ✅ Sim (Plano ou Add-on) |
@@ -72,20 +72,23 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 
 ---
 
-### 🟡 FASE 3: Régua Automática de Cobrança da Assinatura *(Item 5)*
+### 🟢 FASE 3: Régua Automática de Cobrança da Assinatura *(Item 5)* — ✅ [CONCLUÍDO]
 **Objetivo:** Reduzir a inadimplência a zero automatizando os lembretes de renovação do SaaS com o PIX pronto para pagamento.
 
-#### Escopo de Implementação:
-- **Worker / Agendador Diário no Backend:**
-  - Varredura automática diária (ex: às 09:00 da manhã) nas assinaturas dos salões:
-    1. **Faltam 3 dias para vencer (`D-3`):** Aviso preventivo amigável.
-    2. **Dia do vencimento (`D0`):** Aviso de vencimento hoje + geração automática do **QR Code e PIX Copia e Cola** no Mercado Pago.
-    3. **Vencido há 2 dias (`D+2`):** Aviso de regularização antes de suspensão.
-- **Canais de Disparo:**
-  - Envio automático por **E-mail (SMTP)** com layout corporativo do BarberFlow, botão *"Renovar Agora"* e código PIX Copia e Cola direto no corpo do e-mail.
-  - Exibição de alerta direto no topo do painel da barbearia com botão de pagamento em 1 clique.
-- **Histórico de Disparos:**
-  - Controle de logs para nunca enviar a mesma cobrança duas vezes no mesmo dia.
+#### O que foi implementado:
+- [x] **Worker / Agendador Inteligente no Servidor (`billing-dunning.ts`):**
+  - Checagem automática periódica no background a cada 1 hora com deduplicação rigorosa (garante que nenhum salão receba a mesma notificação duas vezes no mesmo dia).
+  - **D-3 (3 dias antes):** Lembrete preventivo amigável com incentivo de planos Semestrais e Anuais.
+  - **D0 (Dia do Vencimento):** Cobrança oficial + geração instantânea do **código PIX Copia e Cola** no Mercado Pago anexado diretamente ao corpo do e-mail.
+  - **D+2 (2 dias de Carência):** Aviso urgente de regularização antes da suspensão de agendamentos e vitrine online.
+- [x] **Canais de Disparo Oficiais:**
+  - **E-mails Corporativos Dark & Gold via SMTP:** Template oficial BarberFlow com layout responsivo para smartphones e computadores, botão de ação e código PIX com clique para copiar.
+  - **Banners In-App Flutuantes no Topo do Painel:** Avisos dinâmicos com botão direto para a tela de faturas e planos (`/planos`) para renovação em 1 clique.
+- [x] **Painel de Controle no Super Admin (`/admin`):**
+  - Sub-bloco completo na aba "Planos & Vitrine" com KPIs em tempo real (salões em D-3, D0, D+2 e inadimplentes).
+  - Toggles para ativar/pausar a régua globalmente, habilitar e-mails SMTP, banners in-app e cada estágio individualmente.
+  - Botão de ação **"Executar Verificação Agora"** com feedback em tempo real para testes imediatos.
+  - Tabela com histórico detalhado dos últimos disparos da régua (Salão, Estágio, Data/Hora, E-mail, PIX Gerado e Status de Entrega).
 
 ---
 
@@ -143,9 +146,9 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 
 ## ✅ Status de Execução do RoadMap
 
-- [ ] **Fase 1:** Sistema de Cupons de Desconto no Super Admin
-- [ ] **Fase 2:** Planos Anuais / Semestrais no Checkout
-- [ ] **Fase 3:** Régua Automática de Cobrança da Assinatura
+- [x] **Fase 1:** Sistema de Cupons de Desconto no Super Admin (v3.1)
+- [x] **Fase 2:** Planos Anuais / Semestrais no Checkout (v3.2)
+- [x] **Fase 3:** Régua Automática de Cobrança da Assinatura (v3.3)
 - [ ] **Fase 4:** Cartão Fidelidade Digital Automático
 - [ ] **Fase 5:** Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp
 - [ ] **Fase 6:** Clube de Assinatura da Barbearia

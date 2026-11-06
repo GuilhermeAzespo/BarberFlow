@@ -27,6 +27,7 @@ import { reportsRouter } from './modules/reports/reports.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { nfseRouter } from './modules/nfse/nfse.routes.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
+import { billingDunningWorker } from './lib/billing-dunning.js';
 
 const app = express();
 
@@ -159,12 +160,16 @@ async function bootstrap() {
     logger.info('Serviço de WhatsApp inicializado');
   }
 
+  // 4. Inicializa Régua Automática de Cobrança da Assinatura (Fase 3)
+  billingDunningWorker.start();
+
   const server = app.listen(env.PORT, () => {
     logger.info(`🚀 BarberFlow Server rodando na porta ${env.PORT} [${env.NODE_ENV}]`);
   });
 
   // Tratamento de encerramento seguro (Tini / Easypanel)
   const shutdown = async (signal: string) => {
+    billingDunningWorker.stop();
     logger.info({ signal }, 'Encerrando servidor com segurança...');
     server.close(async () => {
       await prisma.$disconnect();

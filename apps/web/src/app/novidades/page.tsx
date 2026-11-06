@@ -46,6 +46,28 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-3',
+    version: 'v3.3',
+    date: '06 de Novembro de 2026',
+    title: 'Régua Automática de Cobrança da Assinatura: Lembretes D-3, D0 e D+2 com PIX Automático',
+    category: 'NEW',
+    categoryLabel: 'Fase 3 RoadMap',
+    badgeColor: '#E5B338',
+    badgeBg: 'rgba(229, 179, 56, 0.15)',
+    summary:
+      'Lançamento da Fase 3 do RoadMap Oficial: Motor completo de Régua Automática de Cobrança para reduzir a inadimplência do SaaS a zero. Notificações preventivas 3 dias antes (D-3), geração automática de PIX Copia e Cola no vencimento (D0), aviso de carência urgente (D+2), e-mails corporativos estilizados via SMTP e painel de controle completo no Super Admin com execução em tempo real.',
+    highlights: [
+      'Agendador Automático no Servidor: Varredura diária inteligente a cada 1h mapeando todas as assinaturas próximas ao vencimento sem duplicar disparos no mesmo dia.',
+      'Estágio D-3 (Aviso Preventivo): Envio de e-mail lembrando o salão 3 dias antes do vencimento com sugestão de economia em planos Anuais e Semestrais.',
+      'Estágio D0 (Dia do Vencimento + PIX Auto): Geração automática de cobrança PIX no Mercado Pago com código Copia e Cola formatado diretamente no corpo do e-mail para pagamento instantâneo.',
+      'Estágio D+2 (Aviso Urgente de Carência): Cobrança de regularização para contas vencidas há 2 dias antes da suspensão da vitrine e agendamentos.',
+      'Painel Super Admin Dedicado: KPIs em tempo real (salões em D-3, D0, D+2), toggles de canais/estágios, botão de disparo sob demanda e histórico completo de disparos.',
+      'Banners In-App no Painel do Salão: Avisos contextuais com botão direto para regularização em 1 clique.',
+    ],
+    impact: 'Redução drástica da inadimplência e automação 100% autônoma das renovações de assinaturas.',
+  },
+
+  {
     id: 'v3-2',
     version: 'v3.2',
     date: '06 de Novembro de 2026',

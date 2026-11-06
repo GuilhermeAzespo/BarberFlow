@@ -17,6 +17,11 @@ import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } 
 import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import { getCouponsCatalog, saveCouponsCatalog, type SaasCoupon } from '../../lib/coupons.js';
 import { getBillingCyclesConfig, saveBillingCyclesConfig } from '../../lib/billing-cycles.js';
+import {
+  getDunningDashboardStats,
+  saveBillingDunningConfig,
+  executeBillingDunning,
+} from '../../lib/billing-dunning.js';
 import crypto from 'node:crypto';
 import {
   getActiveMercadoPagoConfig,
@@ -1296,5 +1301,49 @@ superAdminRouter.delete('/coupons/:id', async (req, res) => {
   });
 });
 
+// ────────────────────── Régua Automática de Cobrança (Fase 3) ──────────────────────
 
+const updateDunningSchema = z.object({
+  enabled: z.boolean().optional(),
+  sendEmail: z.boolean().optional(),
+  sendInAppWarning: z.boolean().optional(),
+  dMinus3Enabled: z.boolean().optional(),
+  dDayEnabled: z.boolean().optional(),
+  dPlus2Enabled: z.boolean().optional(),
+});
 
+superAdminRouter.get('/billing-dunning', async (_req, res) => {
+  const stats = await getDunningDashboardStats();
+  res.json(stats);
+});
+
+superAdminRouter.put('/billing-dunning', async (req, res) => {
+  const data = updateDunningSchema.parse(req.body || {});
+  const updated = await saveBillingDunningConfig(data);
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Configurações da Régua de Cobrança atualizadas (Ativa: ${updated.enabled}, E-mail: ${updated.sendEmail}, D-3: ${updated.dMinus3Enabled}, D0: ${updated.dDayEnabled}, D+2: ${updated.dPlus2Enabled})`,
+  });
+
+  res.json({
+    success: true,
+    config: updated,
+    message: 'Configurações da régua de cobrança salvas com sucesso!',
+  });
+});
+
+superAdminRouter.post('/billing-dunning/run-now', async (_req, res) => {
+  const summary = await executeBillingDunning({ force: true });
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Régua de cobrança disparada manualmente pelo Super Admin: ${summary.noticesSent} avisos enviados, ${summary.pixGenerated} PIX gerados, ${summary.errors} erros (${summary.tenantsChecked} salões analisados)`,
+  });
+
+  res.json({
+    success: true,
+    summary,
+    message: `Varredura concluída! ${summary.noticesSent} aviso(s) enviado(s) e ${summary.pixGenerated} PIX gerado(s).`,
+  });
+});
