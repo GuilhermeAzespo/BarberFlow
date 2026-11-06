@@ -46,6 +46,28 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-4',
+    version: 'v3.4',
+    date: '06 de Novembro de 2026',
+    title: 'Cartão Fidelidade Digital Automático: Acúmulo por Agendamento, Alertas WhatsApp e Vitrine Interativa',
+    category: 'NEW',
+    categoryLabel: 'Fase 4 RoadMap',
+    badgeColor: '#E5B338',
+    badgeBg: 'rgba(229, 179, 56, 0.15)',
+    summary:
+      'Lançamento da Fase 4 do RoadMap Oficial: Sistema completo de Cartão Fidelidade Digital 100% automatizado para barbearias. A cada corte ou atendimento concluído na agenda, o cliente ganha automaticamente +1 selo e recebe comprovante pelo WhatsApp. Ao completar o ciclo (ex: 10 selos), ganha prêmio (ex: 1 Corte Grátis). Inclui painel de gestão em /fidelidade, consulta pública em tempo real na vitrine (/[slug]), ajuste manual e módulo de permissão Add-on no Super Admin.',
+    highlights: [
+      'Acúmulo 100% Automático via Agenda: Ao alterar o status de um agendamento para Concluído (COMPLETED), o sistema credita o selo na hora e dispara notificação comemorativa no WhatsApp.',
+      'Ciclos & Recompensas: Mapeamento de ciclos conquistados e saldo de recompensas prontas para resgate com zero perda de histórico.',
+      'Painel de Gestão da Barbearia (/fidelidade): Dashboard com KPIs (clientes fidelizados, selos concedidos, prêmios resgatados), busca com debounce, filtro de clientes prontos para resgate, botões de +1/-1 selo e histórico auditável.',
+      'Resgate de Prêmios com 1 Clique: O barbeiro valida o resgate com confirmação interativa e o sistema registra a transação com baixa no saldo do cliente.',
+      'Consulta Pública na Vitrine (/[slug]): Seção interativa onde o cliente digita seu telefone e visualiza seu cartão digital estilizado com selos dourados, barra de progresso e prêmios liberados.',
+      'Módulo Add-on no Super Admin: Permissão loyalty configurável nos planos Starter, Pro e Premium e catálogo de add-ons com precificação mensal flexível.',
+    ],
+    impact: 'Aumento expressivo na retenção e frequência de retorno dos clientes das barbearias com engajamento automático.',
+  },
+
+  {
     id: 'v3-3',
     version: 'v3.3',
     date: '06 de Novembro de 2026',

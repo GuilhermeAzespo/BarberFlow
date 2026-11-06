@@ -28,6 +28,11 @@ import {
   Flame,
   Tag,
   Repeat,
+  Award,
+  Gift,
+  Search,
+  RefreshCw,
+  Trophy,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -86,6 +91,22 @@ interface TenantPublic {
   gallery?: GalleryItem[];
 }
 
+
+interface PublicLoyaltyResponse {
+  enabled: boolean;
+  found?: boolean;
+  tenantName?: string;
+  customerName?: string;
+  targetStamps?: number;
+  currentStamps?: number;
+  remainingStamps?: number;
+  completedCycles?: number;
+  rewardsAvailable?: number;
+  rewardText?: string;
+  lastStampAt?: string | null;
+  message?: string;
+}
+
 const RESERVED_SLUGS = [
   'login',
   'register',
@@ -134,10 +155,16 @@ export default function TenantHomePage() {
   const [notFound, setNotFound] = useState(false);
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<string>('');
+  const [loyaltyProgram, setLoyaltyProgram] = useState<PublicLoyaltyResponse | null>(null);
+  const [loyaltyPhone, setLoyaltyPhone] = useState('');
+  const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+  const [loyaltyResult, setLoyaltyResult] = useState<PublicLoyaltyResponse | null>(null);
+  const [loyaltySearched, setLoyaltySearched] = useState(false);
+
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const sectionIds = ['servicos', 'equipe', 'galeria', 'sobre'];
+    const sectionIds = ['servicos', 'equipe', 'fidelidade', 'galeria', 'sobre'];
 
     const handleScroll = () => {
       if (window.scrollY < 220) {
@@ -239,6 +266,56 @@ export default function TenantHomePage() {
     const text = encodeURIComponent(`Olá! Gostaria de informações sobre os serviços da ${tenant?.name || 'barbearia'}.`);
     return `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`}?text=${text}`;
   }, [cleanPhone, tenant?.name]);
+
+  
+  useEffect(() => {
+    if (!slug) return;
+    const fetchLoyalty = async () => {
+      try {
+        const res = await api.get<PublicLoyaltyResponse>('/api/public/tenants/' + encodeURIComponent(slug) + '/loyalty');
+        if (res && res.enabled) {
+          setLoyaltyProgram(res);
+        }
+      } catch {
+        // Silêncio se não habilitado
+      }
+    };
+    fetchLoyalty();
+  }, [slug]);
+
+  const handleSearchLoyalty = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = loyaltyPhone.replace(/\D/g, '');
+    if (!clean || clean.length < 8) return;
+    try {
+      setLoyaltyLoading(true);
+      setLoyaltySearched(true);
+      const res = await api.get<PublicLoyaltyResponse>(
+        '/api/public/tenants/' + encodeURIComponent(slug) + '/loyalty?phone=' + encodeURIComponent(clean)
+      );
+      setLoyaltyResult(res);
+    } catch (err: any) {
+      setLoyaltyResult({
+        enabled: true,
+        found: false,
+        message: err?.message || 'Não foi possível consultar os carimbos no momento.',
+      });
+    } finally {
+      setLoyaltyLoading(false);
+    }
+  };
+
+  const handleLoyaltyPhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 11);
+    let formatted = raw;
+    if (raw.length > 2) {
+      formatted = '(' + raw.slice(0, 2) + ') ' + raw.slice(2);
+    }
+    if (raw.length > 7) {
+      formatted = '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 7) + '-' + raw.slice(7);
+    }
+    setLoyaltyPhone(formatted);
+  };
 
   const instagramUrl = useMemo(() => {
     if (!tenant?.instagram) return null;
@@ -451,6 +528,7 @@ export default function TenantHomePage() {
               {[
                 { id: 'servicos', label: 'Serviços', show: true },
                 { id: 'equipe', label: 'Barbeiros', show: tenant.professionals.length > 0 },
+                { id: 'fidelidade', label: 'Fidelidade', show: Boolean(loyaltyProgram?.enabled) },
                 { id: 'galeria', label: 'Galeria', show: Boolean(tenant.gallery && tenant.gallery.length > 0) },
                 { id: 'sobre', label: 'Horários & Local', show: true },
               ]
@@ -1110,6 +1188,538 @@ export default function TenantHomePage() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+      )}
+
+      
+      {/* ────────────────── Cartão Fidelidade Digital ────────────────── */}
+      {loyaltyProgram?.enabled && (
+        <section
+          id="fidelidade"
+          style={{
+            padding: '70px 24px',
+            maxWidth: '1200px',
+            width: '100%',
+            margin: '0 auto',
+          }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                background: 'rgba(229, 179, 56, 0.12)',
+                color: 'var(--primary)',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: '10px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+              }}
+            >
+              <Award size={15} />
+              Programa de Fidelidade
+            </span>
+            <h2
+              style={{
+                fontSize: '2.1rem',
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                marginTop: '4px',
+                marginBottom: '10px',
+              }}
+            >
+              Seu Cartão Fidelidade Digital
+            </h2>
+            <p
+              style={{
+                color: 'var(--text-muted)',
+                fontSize: '0.98rem',
+                maxWidth: '620px',
+                margin: '0 auto',
+                lineHeight: 1.5,
+              }}
+            >
+              A cada corte ou serviço concluído na barbearia, você ganha <strong>+1 carimbo</strong> no WhatsApp. Ao
+              completar <strong>{loyaltyProgram.targetStamps || 10} carimbos</strong>, você ganha{' '}
+              <strong style={{ color: 'var(--primary)' }}>
+                {loyaltyProgram.rewardText || '1 Corte Grátis'}
+              </strong>
+              !
+            </p>
+          </div>
+
+          <div
+            style={{
+              maxWidth: '680px',
+              margin: '0 auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '24px',
+            }}
+          >
+            {/* Caixa de Busca por Telefone */}
+            <form
+              onSubmit={handleSearchLoyalty}
+              className="glass-panel"
+              style={{
+                padding: '20px 24px',
+                borderRadius: '16px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.4)',
+              }}
+            >
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '0.86rem',
+                  fontWeight: 600,
+                  color: '#E2E8F0',
+                  marginBottom: '10px',
+                }}
+              >
+                Consulte seus carimbos acumulados:
+              </label>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+                  <Phone
+                    size={17}
+                    style={{
+                      position: 'absolute',
+                      left: '14px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--text-dim)',
+                    }}
+                  />
+                  <input
+                    type="tel"
+                    value={loyaltyPhone}
+                    onChange={handleLoyaltyPhoneChange}
+                    placeholder="(00) 00000-0000"
+                    style={{
+                      width: '100%',
+                      padding: '11px 14px 11px 40px',
+                      background: 'rgba(15, 23, 42, 0.8)',
+                      border: '1px solid rgba(255, 255, 255, 0.12)',
+                      borderRadius: '10px',
+                      color: '#FFF',
+                      fontSize: '0.92rem',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loyaltyLoading || loyaltyPhone.replace(/\D/g, '').length < 8}
+                  className="gold-gradient-primary gold-glow"
+                  style={{
+                    padding: '11px 22px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: loyaltyLoading ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    opacity: loyaltyLoading || loyaltyPhone.replace(/\D/g, '').length < 8 ? 0.6 : 1,
+                  }}
+                >
+                  {loyaltyLoading ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      <span>Buscando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search size={16} />
+                      <span>Consultar</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Resultado do Cartão */}
+            {loyaltySearched && loyaltyResult ? (
+              loyaltyResult.found ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Banner de Prêmio Disponível se houver */}
+                  {(loyaltyResult.rewardsAvailable ?? 0) > 0 && (
+                    <div
+                      style={{
+                        padding: '16px 20px',
+                        borderRadius: '14px',
+                        background:
+                          'linear-gradient(135deg, rgba(229, 179, 56, 0.22) 0%, rgba(217, 119, 6, 0.15) 100%)',
+                        border: '1.5px solid rgba(229, 179, 56, 0.5)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px',
+                        boxShadow: '0 8px 24px rgba(229, 179, 56, 0.15)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '12px',
+                          background: 'linear-gradient(135deg, #E5B338, #966C0F)',
+                          color: '#0B0F17',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Gift size={22} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: '#FDE68A' }}>
+                          🎉 Parabéns, {loyaltyResult.customerName}!
+                        </h4>
+                        <p style={{ margin: '3px 0 0', fontSize: '0.86rem', color: '#E2E8F0', lineHeight: 1.4 }}>
+                          Você possui <strong>{loyaltyResult.rewardsAvailable} recompensa(s) liberada(s)</strong>:{' '}
+                          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+                            {loyaltyResult.rewardText || loyaltyProgram.rewardText}
+                          </span>
+                          . Informe seu telefone ao barbeiro para resgatar!
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cartão Digital Interativo */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      overflow: 'hidden',
+                      padding: '28px 26px',
+                      borderRadius: '20px',
+                      background:
+                        'radial-gradient(ellipse at top left, rgba(229, 179, 56, 0.16) 0%, rgba(15, 23, 42, 0.95) 55%, #0B0F17 100%)',
+                      border: '1.5px solid rgba(229, 179, 56, 0.35)',
+                      boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6), 0 0 35px rgba(229, 179, 56, 0.08)',
+                    }}
+                  >
+                    {/* Cabeçalho do Cartão */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                        paddingBottom: '16px',
+                        marginBottom: '22px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {tenant.logoUrl ? (
+                          <img
+                            src={tenant.logoUrl}
+                            alt={tenant.name}
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              objectFit: 'cover',
+                              border: '1px solid rgba(229, 179, 56, 0.4)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
+                              background: 'linear-gradient(135deg, #E5B338, #966C0F)',
+                              color: '#0B0F17',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 800,
+                              fontSize: '1.1rem',
+                            }}
+                          >
+                            {tenant.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#FFF' }}>
+                            {tenant.name}
+                          </h4>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--primary)', fontWeight: 600 }}>
+                            Cliente VIP • {loyaltyResult.customerName}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '12px',
+                          background: 'rgba(229, 179, 56, 0.15)',
+                          border: '1px solid rgba(229, 179, 56, 0.3)',
+                          color: 'var(--primary)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <Award size={13} />
+                        <span>
+                          {loyaltyResult.currentStamps ?? 0} / {loyaltyProgram.targetStamps ?? 10} Selos
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Grade de Selos Visuais */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(' + Math.min(loyaltyProgram.targetStamps || 10, 5) + ', 1fr)',
+                        gap: '12px',
+                        marginBottom: '22px',
+                      }}
+                    >
+                      {Array.from({ length: loyaltyProgram.targetStamps || 10 }).map((_, idx) => {
+                        const isStamped = idx < (loyaltyResult.currentStamps ?? 0);
+                        const isLastSlot = idx === (loyaltyProgram.targetStamps || 10) - 1;
+
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              aspectRatio: '1/1',
+                              borderRadius: '14px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              transition: 'all 0.25s ease',
+                              background: isStamped
+                                ? 'linear-gradient(135deg, #FDE68A 0%, #D97706 100%)'
+                                : isLastSlot
+                                ? 'rgba(229, 179, 56, 0.08)'
+                                : 'rgba(255, 255, 255, 0.03)',
+                              border: isStamped
+                                ? '2px solid #FCD34D'
+                                : isLastSlot
+                                ? '2px dashed rgba(229, 179, 56, 0.4)'
+                                : '2px dashed rgba(255, 255, 255, 0.12)',
+                              boxShadow: isStamped
+                                ? '0 4px 14px rgba(229, 179, 56, 0.35)'
+                                : 'none',
+                              color: isStamped ? '#0B0F17' : isLastSlot ? 'var(--primary)' : 'var(--text-dim)',
+                            }}
+                          >
+                            {isStamped ? (
+                              <Scissors size={20} style={{ strokeWidth: 2.4 }} />
+                            ) : isLastSlot ? (
+                              <Gift size={20} />
+                            ) : (
+                              <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{idx + 1}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Barra de Progresso */}
+                    {(() => {
+                      const cur = loyaltyResult.currentStamps ?? 0;
+                      const tgt = loyaltyProgram.targetStamps ?? 10;
+                      const percent = Math.min(100, Math.round((cur / tgt) * 100));
+                      const remaining = Math.max(0, tgt - cur);
+
+                      return (
+                        <div>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              color: '#CBD5E1',
+                              marginBottom: '6px',
+                            }}
+                          >
+                            <span>Progresso do ciclo</span>
+                            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{percent}%</span>
+                          </div>
+                          <div
+                            style={{
+                              width: '100%',
+                              height: '8px',
+                              background: 'rgba(255, 255, 255, 0.08)',
+                              borderRadius: '999px',
+                              overflow: 'hidden',
+                              marginBottom: '14px',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: percent + '%',
+                                height: '100%',
+                                background: 'linear-gradient(90deg, #E5B338, #FDE68A)',
+                                borderRadius: '999px',
+                                transition: 'width 0.4s ease',
+                              }}
+                            />
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              fontSize: '0.82rem',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                            }}
+                          >
+                            <span style={{ color: 'var(--text-muted)' }}>
+                              {remaining > 0 ? (
+                                <>
+                                  Faltam apenas <strong>{remaining} selo(s)</strong> para ganhar{' '}
+                                  <strong style={{ color: 'var(--primary)' }}>
+                                    {loyaltyResult.rewardText || loyaltyProgram.rewardText}
+                                  </strong>
+                                </>
+                              ) : (
+                                <strong style={{ color: '#34D399' }}>Ciclo atual completo! 🎉</strong>
+                              )}
+                            </span>
+
+                            {(loyaltyResult.completedCycles ?? 0) > 0 && (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  color: 'var(--primary)',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <Trophy size={13} />
+                                {loyaltyResult.completedCycles} ciclo(s) conquistados
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: '28px 24px',
+                    textAlign: 'center',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      background: 'rgba(229, 179, 56, 0.12)',
+                      color: 'var(--primary)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <Scissors size={22} />
+                  </div>
+                  <h4 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 700, color: '#FFF' }}>
+                    Nenhum carimbo encontrado ainda
+                  </h4>
+                  <p
+                    style={{
+                      color: 'var(--text-muted)',
+                      fontSize: '0.88rem',
+                      maxWidth: '440px',
+                      margin: '0 auto 18px',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {loyaltyResult.message ||
+                      'Não encontramos cortes concluídos para este número. Faça seu primeiro agendamento online para começar a pontuar automaticamente!'}
+                  </p>
+                  <Link
+                    href={bookingBaseHref}
+                    className="gold-gradient-primary gold-glow"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      textDecoration: 'none',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                    }}
+                  >
+                    <Scissors size={15} />
+                    <span>Agendar Meu Primeiro Corte</span>
+                  </Link>
+                </div>
+              )
+            ) : (
+              /* Preview Didático quando ainda não pesquisou */
+              <div
+                style={{
+                  position: 'relative',
+                  overflow: 'hidden',
+                  padding: '24px 22px',
+                  borderRadius: '18px',
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid rgba(229, 179, 56, 0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '18px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '14px',
+                    background: 'linear-gradient(135deg, rgba(229, 179, 56, 0.2), rgba(217, 119, 6, 0.1))',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    color: 'var(--primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Gift size={24} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: '0 0 4px', fontSize: '0.94rem', fontWeight: 700, color: '#F8FAFC' }}>
+                    100% Automático via WhatsApp
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    Você não precisa baixar nenhum app! Ao finalizar seu corte na cadeira, o barbeiro conclui o
+                    atendimento e você recebe o comprovante do selo direto no seu celular.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}

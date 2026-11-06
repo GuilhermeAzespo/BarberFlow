@@ -123,6 +123,7 @@ export interface PlanPermissions {
   multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
   nfse: boolean;                 // Emissor de Nota Fiscal de Serviços Eletrônica (NFS-e Padrão Nacional)
+  loyalty: boolean;              // Cartão Fidelidade Digital Automático
 }
 
 export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
@@ -136,6 +137,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     commissions: false,
     multiUserRoles: false,
     prioritySupport: false,
+    loyalty: false,
   },
   pro: {
     reports: true,
@@ -147,6 +149,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     commissions: true,
     multiUserRoles: true,
     prioritySupport: true,
+    loyalty: true,
   },
   premium: {
     reports: true,
@@ -158,6 +161,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     commissions: true,
     multiUserRoles: true,
     prioritySupport: true,
+    loyalty: true,
   },
 };
 

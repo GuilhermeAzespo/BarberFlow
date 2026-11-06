@@ -153,6 +153,8 @@ model Tenant {
   fiscalConfig          FiscalConfig?
   nfseInvoices          NfseInvoice[]
   logs                  SystemLog[]
+  loyaltyConfig         LoyaltyConfig?
+  loyaltyCards          LoyaltyCard[]
 
   @@index([status])
   @@index([createdAt])
@@ -344,6 +346,7 @@ model Customer {
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   appointments Appointment[]
+  loyaltyCard  LoyaltyCard?
 
   @@unique([tenantId, phone])
   @@unique([tenantId, whatsappJid])
@@ -376,6 +379,7 @@ model Appointment {
   transaction         Transaction?
   satisfactionSurveys SatisfactionSurvey[]
   nfseInvoice         NfseInvoice?
+  loyaltyTransactions LoyaltyTransaction[]
 
   @@index([tenantId, startAt])
   @@index([tenantId, professionalId, startAt])
@@ -716,4 +720,60 @@ model NfseInvoice {
   @@index([tenantId, status])
 }
 
+// ────────────────────── Módulo Cartão Fidelidade Digital Automático ──────────────────────
 
+model LoyaltyConfig {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  enabled              Boolean  @default(true)
+  targetStamps         Int      @default(10)
+  rewardText           String   @default("1 Corte ou Barba Grátis")
+  autoSendWhatsApp     Boolean  @default(true)
+  showInPublicShowcase Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum LoyaltyTransactionType {
+  STAMP_ADDED
+  REWARD_REDEEMED
+  MANUAL_ADJUSTMENT
+}
+
+model LoyaltyCard {
+  id               String   @id @default(cuid())
+  tenantId         String
+  customerId       String   @unique
+  currentStamps    Int      @default(0)
+  completedCycles  Int      @default(0)
+  rewardsAvailable Int      @default(0)
+  lastStampAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactions LoyaltyTransaction[]
+
+  @@unique([tenantId, customerId])
+  @@index([tenantId, customerId])
+}
+
+model LoyaltyTransaction {
+  id            String                 @id @default(cuid())
+  tenantId      String
+  loyaltyCardId String
+  type          LoyaltyTransactionType @default(STAMP_ADDED)
+  stampsChange  Int                    @default(1)
+  appointmentId String?
+  notes         String?
+  createdAt     DateTime               @default(now())
+
+  loyaltyCard LoyaltyCard  @relation(fields: [loyaltyCardId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([loyaltyCardId, createdAt])
+  @@index([tenantId, createdAt])
+}

@@ -17,6 +17,7 @@ import {
   Sparkles,
   Crown,
   FileText,
+  Award,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { SYSTEM_VERSION } from '../lib/constants';
@@ -28,6 +29,7 @@ export const ALL_MENU_KEYS = [
   { key: 'professionals', label: 'Profissionais', href: '/professionals', icon: Users },
   { key: 'services', label: 'Serviços & Preços', href: '/services', icon: Scissors },
   { key: 'customers', label: 'Clientes', href: '/customers', icon: UserCheck },
+  { key: 'loyalty', label: 'Cartão Fidelidade', href: '/fidelidade', icon: Award },
   { key: 'finance', label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
   { key: 'nfse', label: 'Notas Fiscais (NFS-e)', href: '/nfse', icon: FileText },
   { key: 'reports', label: 'Relatórios', href: '/reports', icon: BarChart3 },
@@ -145,6 +147,25 @@ export function Sidebar() {
                 <span className="sidebar-label text-nowrap-ellipsis" style={{ flex: 1, minWidth: 0 }}>
                   {item.label}
                 </span>
+                                {item.key === 'loyalty' && !hasPlanFeature('loyalty') && (
+                  <span
+                    className="sidebar-badge"
+                    style={{
+                      marginLeft: 'auto',
+                      background: active ? '#0B0F17' : isAddonFeature('loyalty') ? 'rgba(16, 185, 129, 0.14)' : 'rgba(229, 179, 56, 0.15)',
+                      color: active ? (isAddonFeature('loyalty') ? '#10B981' : '#E5B338') : isAddonFeature('loyalty') ? '#34D399' : '#FBBF24',
+                      border: active ? 'none' : isAddonFeature('loyalty') ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(229, 179, 56, 0.35)',
+                      borderRadius: '6px',
+                      padding: '1px 5px',
+                      fontSize: '0.58rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.03em',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isAddonFeature('loyalty') ? 'ADD-ON' : 'PRO'}
+                  </span>
+                )}
                 {item.key === 'nfse' && !hasPlanFeature('nfse') && (
                   <span
                     className="sidebar-badge"

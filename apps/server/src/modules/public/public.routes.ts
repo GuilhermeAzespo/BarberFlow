@@ -14,6 +14,7 @@ import { logger } from '../../lib/logger.js';
 import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant-access.js';
 import { systemLog } from '../../lib/system-log.js';
 import { renderDanfseHtml } from '../nfse/nfse.engine.js';
+import { getPublicCustomerLoyalty } from '../loyalty/loyalty.service.js';
 import {
   getActiveSmtpConfig,
   sendEmail,
@@ -495,6 +496,10 @@ publicRouter.get('/nfse/:id/danfse', async (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 });
-
-
-
+/** Consulta Pública do Cartão Fidelidade pelo cliente na Vitrine */
+publicRouter.get('/tenants/:slug/loyalty', async (req, res) => {
+  const { slug } = req.params;
+  const phone = req.query.phone ? String(req.query.phone) : undefined;
+  const result = await getPublicCustomerLoyalty(slug, phone);
+  res.json(result);
+});

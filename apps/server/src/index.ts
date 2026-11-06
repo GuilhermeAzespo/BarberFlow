@@ -26,6 +26,7 @@ import { billingRouter } from './modules/billing/billing.routes.js';
 import { reportsRouter } from './modules/reports/reports.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { nfseRouter } from './modules/nfse/nfse.routes.js';
+import { loyaltyRouter } from './modules/loyalty/loyalty.routes.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 import { billingDunningWorker } from './lib/billing-dunning.js';
 
@@ -86,6 +87,7 @@ app.use('/api/dashboard', requireAuth, requireTenant, requireMenuPermission('das
 app.use('/api/reports', requireAuth, requireTenant, requireMenuPermission('reports'), reportsRouter);
 app.use('/api/billing', requireAuth, requireTenant, billingRouter);
 app.use('/api/nfse', requireAuth, requireTenant, requireMenuPermission('nfse'), nfseRouter);
+app.use('/api/loyalty', requireAuth, requireTenant, loyaltyRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);

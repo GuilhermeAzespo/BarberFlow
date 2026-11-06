@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Award,
   Play,
   Bell,
   RefreshCw,
@@ -138,6 +139,14 @@ const PERMISSION_METADATA: Array<{
     category: 'Gestão Financeira',
     icon: FileText,
   },
+  {
+    key: 'loyalty',
+    label: 'Cartão Fidelidade Digital Automático',
+    shortLabel: 'Cartão Fidelidade',
+    description: 'Acúmulo automático de selos pós-corte, celebração no WhatsApp, resgate na comanda e vitrine',
+    category: 'Fidelização & Marketing',
+    icon: Award,
+  },
 ];
 
 const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
@@ -151,6 +160,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     multiUserRoles: false,
     prioritySupport: false,
     nfse: false,
+    loyalty: false,
   },
   pro: {
     reports: true,
@@ -162,6 +172,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     multiUserRoles: true,
     prioritySupport: false,
     nfse: false,
+    loyalty: true,
   },
   premium: {
     reports: true,
@@ -173,6 +184,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     multiUserRoles: true,
     prioritySupport: true,
     nfse: true,
+    loyalty: true,
   },
 };
 

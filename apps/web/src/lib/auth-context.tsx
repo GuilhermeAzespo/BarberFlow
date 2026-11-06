@@ -54,6 +54,7 @@ export interface PlanPermissions {
   multiUserRoles: boolean;       // Múltiplos perfis de acesso da equipe (Recepção, Barbeiro, Gerente)
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
   nfse: boolean;                 // Emissão de Nota Fiscal de Serviços Eletrônica (NFS-e)
+  loyalty: boolean;              // Cartão Fidelidade Digital Automático
 }
 
 export interface Subscription {

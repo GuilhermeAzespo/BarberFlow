@@ -23,6 +23,16 @@ export const DEFAULT_ADDONS_CATALOG: AddonConfigItem[] = [
     priceCents: 2990,
   },
   {
+    key: 'loyalty',
+    name: 'Cartão Fidelidade Digital Automático',
+    shortName: 'Cartão Fidelidade',
+    description:
+      'Programa de fidelidade digital automático: selos computados na conclusão do agendamento, notificação de selos e prêmios no WhatsApp, resgate na comanda e consulta do cliente na vitrine pública.',
+    category: 'Fidelização & Marketing',
+    isAddon: true,
+    priceCents: 1990,
+  },
+  {
     key: 'customDomain',
     name: 'Domínio Próprio & DNS Personalizado (SSL)',
     shortName: 'Domínio Próprio',
@@ -234,3 +244,4 @@ export async function saveAddonsCatalog(
 
   return nextCatalog;
 }
+
