@@ -87,6 +87,21 @@ export function parseBillingCycle(value: unknown): BillingCycle {
   return v === 'SEMIANNUAL' || v === 'ANNUAL' ? v : 'MONTHLY';
 }
 
+/**
+ * Calcula a equivalência comercial em "meses grátis" com base no percentual de desconto e meses do ciclo.
+ * Ex: 20% em 12 meses = 2.4 meses economizados -> "2 meses grátis"
+ * Ex: 10% em 12 meses = 1.2 meses economizados -> "1 mês grátis"
+ * Ex: 5% em 12 meses = 0.6 meses economizados -> null (apenas 5% OFF)
+ */
+export function getCycleFreeMonthsLabel(months: number, discountPct: number): string | null {
+  if (!discountPct || discountPct <= 0 || months <= 1) return null;
+  const freeMonthsExact = (discountPct * months) / 100;
+  const freeMonths = Math.floor(freeMonthsExact + 0.05);
+  if (freeMonths >= 2) return `${freeMonths} meses grátis`;
+  if (freeMonths === 1) return `1 mês grátis`;
+  return null;
+}
+
 export interface CyclePriceBreakdown {
   cycle: BillingCycle;
   label: string;
@@ -98,6 +113,7 @@ export interface CyclePriceBreakdown {
   amountCents: number; // valor do ciclo com desconto progressivo
   monthlyEquivalentCents: number;
   maxInstallments: number;
+  freeMonthsLabel: string | null;
 }
 
 /**
@@ -138,6 +154,7 @@ export function calculateCyclePrice(
     amountCents,
     monthlyEquivalentCents: Math.round(amountCents / months),
     maxInstallments,
+    freeMonthsLabel: getCycleFreeMonthsLabel(months, discountPct),
   };
 }
 

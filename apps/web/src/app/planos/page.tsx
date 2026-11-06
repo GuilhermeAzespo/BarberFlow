@@ -38,6 +38,7 @@ import { useAuth } from '../../lib/auth-context';
 import { api, ApiError } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
+import { getCycleFreeMonthsLabel } from '../../lib/cycles';
 
 interface PublicPlan {
   id: string;
@@ -1180,7 +1181,10 @@ export default function PlanosPage() {
                             letterSpacing: '0.02em',
                           }}
                         >
-                          {cycle === 'ANNUAL' ? `${discountPct}% OFF • 2 meses grátis` : `${discountPct}% OFF`}
+                          {(() => {
+                            const freeText = getCycleFreeMonthsLabel(CYCLE_META[cycle].months, discountPct);
+                            return freeText ? `${discountPct}% OFF • ${freeText}` : `${discountPct}% OFF`;
+                          })()}
                         </span>
                       )}
                     </button>
@@ -1291,7 +1295,11 @@ export default function PlanosPage() {
                               Cobrado {formatBRL(cardCycle.amountCents)} a cada {cardCycle.months} meses
                             </div>
                             <span style={{ fontSize: '0.74rem', color: '#10B981', fontWeight: 700 }}>
-                              Economia de {formatBRL(cardCycle.savingsCents)} no ciclo ({cardCycle.discountPct}% OFF)
+                              Economia de {formatBRL(cardCycle.savingsCents)} no ciclo ({cardCycle.discountPct}% OFF
+                              {(() => {
+                                const free = getCycleFreeMonthsLabel(cardCycle.months, cardCycle.discountPct);
+                                return free ? ` • ${free}` : '';
+                              })()})
                             </span>
                           </div>
                         ) : (
@@ -1765,6 +1773,10 @@ export default function PlanosPage() {
                           }}
                         >
                           {optPrice.discountPct}% OFF
+                          {(() => {
+                            const free = getCycleFreeMonthsLabel(CYCLE_META[cycle].months, optPrice.discountPct);
+                            return free ? ` • ${free}` : '';
+                          })()}
                         </span>
                       )}
                     </button>

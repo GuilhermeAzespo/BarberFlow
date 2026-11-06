@@ -53,6 +53,7 @@ import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { useToast } from '../../components/Toast';
 import { DateTime } from 'luxon';
+import { getCycleFreeMonthsLabel } from '../../lib/cycles';
 
 const PERMISSION_METADATA: Array<{
   key: keyof PlanPermissions;
@@ -2078,6 +2079,24 @@ export default function SuperAdminPage() {
                         className="input-field"
                         style={{ padding: '8px 10px', fontSize: '0.85rem' }}
                       />
+                      {billingCycles.SEMIANNUAL.enabled && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                          {billingCycles.SEMIANNUAL.discountPct > 0 ? (
+                            <>
+                              💡 Na vitrine:{' '}
+                              <strong style={{ color: '#10B981' }}>
+                                {billingCycles.SEMIANNUAL.discountPct}% OFF
+                                {(() => {
+                                  const free = getCycleFreeMonthsLabel(6, billingCycles.SEMIANNUAL.discountPct);
+                                  return free ? ` • ${free}` : '';
+                                })()}
+                              </strong>
+                            </>
+                          ) : (
+                            'Sem desconto aplicado.'
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -2168,6 +2187,24 @@ export default function SuperAdminPage() {
                         className="input-field"
                         style={{ padding: '8px 10px', fontSize: '0.85rem' }}
                       />
+                      {billingCycles.ANNUAL.enabled && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                          {billingCycles.ANNUAL.discountPct > 0 ? (
+                            <>
+                              💡 Na vitrine:{' '}
+                              <strong style={{ color: '#10B981' }}>
+                                {billingCycles.ANNUAL.discountPct}% OFF
+                                {(() => {
+                                  const free = getCycleFreeMonthsLabel(12, billingCycles.ANNUAL.discountPct);
+                                  return free ? ` • ${free}` : '';
+                                })()}
+                              </strong>
+                            </>
+                          ) : (
+                            'Sem desconto aplicado.'
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     <div>
