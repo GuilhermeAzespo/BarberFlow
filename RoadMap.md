@@ -9,7 +9,7 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 | Ordem | Item Original | Funcionalidade / Módulo | Complexidade | Categoria | Pode ser Add-on? |
 | :---: | :---: | :--- | :---: | :--- | :---: |
 | **Fase 1** | Item 1 | **Sistema de Cupons de Desconto no Super Admin** | 🟢 Fácil | Receita & Vendas SaaS | ✅ **Concluído** |
-| **Fase 2** | Item 4 | **Planos Anuais / Semestrais no Checkout** | 🟢 Fácil–Médio | Receita & Caixa SaaS | N/A (Checkout SaaS) |
+| **Fase 2** | Item 4 | **Planos Anuais / Semestrais no Checkout** | 🟢 Fácil–Médio | Receita & Caixa SaaS | ✅ **Concluído** |
 | **Fase 3** | Item 5 | **Régua Automática de Cobrança da Assinatura** | 🟡 Médio | Retenção & Automação SaaS | N/A (Automação SaaS) |
 | **Fase 4** | Item 2 | **Cartão Fidelidade Digital Automático** | 🟡 Médio | Fidelização da Barbearia | ✅ Sim (Plano ou Add-on) |
 | **Fase 5** | Item 6 | **Recuperação de "Clientes Sumidos" & Aniversariantes (WhatsApp)** | 🟠 Médio–Avançado | Marketing & Retorno | ✅ Sim (Plano ou Add-on) |
@@ -47,21 +47,28 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 
 ---
 
-### 🟢 FASE 2: Planos Anuais e Semestrais no Checkout *(Item 4)*
+### 🟢 FASE 2: Planos Anuais e Semestrais no Checkout *(Item 4)* — ✅ [CONCLUÍDO]
 **Objetivo:** Antecipar 6 ou 12 meses de faturamento no seu caixa do Mercado Pago, oferecendo desconto progressivo para o salão que fechar o ciclo Semestral ou Anual.
 
-#### Escopo de Implementação:
-- **Seletor de Ciclo na Tela de Planos (`/planos`):**
-  - Chave seletora no topo da tabela de planos e no modal de checkout:
-    - **Mensal** (30 dias — preço padrão)
-    - **Semestral** (180 dias — ex: 10% OFF)
-    - **Anual** (365 dias — ex: 20% OFF / 2 meses grátis em destaque)
-- **Parcelamento no Cartão de Crédito (Mercado Pago):**
-  - Nos ciclos **Semestral** (até 6x) e **Anual** (até 12x), liberar o seletor de parcelas no checkout de Cartão de Crédito.
-- **Ativação Automática Inteligente (`billing.routes.ts` & `webhooks.routes.ts`):**
-  - Ao aprovar o pagamento, soma automaticamente `+30`, `+180` ou `+365` dias no `currentPeriodEnd` da assinatura do salão.
-- **Configuração no Super Admin:**
-  - Opção para definir a porcentagem de desconto dos ciclos Semestral e Anual.
+#### O que foi implementado:
+- [x] **Motor de Ciclos de Cobrança no Backend (`billing-cycles.ts`):**
+  - Definição dos ciclos `MONTHLY` (30 dias / 1 mês), `SEMIANNUAL` (180 dias / 6 meses) e `ANNUAL` (365 dias / 12 meses).
+  - Cálculo de desconto progressivo e valor mensal equivalente.
+  - Persistência das configurações dos ciclos em `SystemSetting`.
+- [x] **Seletor de Ciclos na Tela de Planos (`/planos`):**
+  - Seletor moderno de ciclos no topo da tabela de preços com badges de desconto (`10% OFF` e `20% OFF • 2 meses grátis`).
+  - Cards de planos recalculados dinamicamente com valor mensal equivalente, total a ser cobrado e economia destacada em verde.
+  - Seletor rápido de ciclo dentro do modal de checkout.
+- [x] **Parcelamento no Cartão de Crédito (Mercado Pago):**
+  - Dropdown de parcelas integrado no checkout de cartão de crédito.
+  - Suporte a até 6x no Semestral e até 12x no Anual, com validação de limite no backend.
+- [x] **Renovação Automática Inteligente (`billing.routes.ts` & `webhooks.routes.ts`):**
+  - Extensão exata do período de acesso (`+30`, `+180` ou `+365` dias) a partir da data de término atual da assinatura (ou da data atual para novas assinaturas).
+  - Registro de metadados do ciclo (`billingCycle`, `cycleDays`, `grossAmountCents`) no `SaaSPayment`.
+- [x] **Painel de Gestão no Super Admin (`/admin`):**
+  - Bloco completo de configuração dos ciclos na aba "Planos & Vitrine".
+  - Ativação/desativação individual de cada ciclo, edição da porcentagem de desconto (0% a 60%) e limite máximo de parcelas permitidas.
+  - Salva via `PUT /api/superadmin/billing-cycles` com feedback imediato.
 
 ---
 

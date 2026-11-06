@@ -5,6 +5,7 @@ import { logger } from '../../lib/logger.js';
 import { systemLog } from '../../lib/system-log.js';
 import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mercadopago.js';
 import { incrementCouponUsage } from '../../lib/coupons.js';
+import { resolvePaymentCycleDays } from '../../lib/billing-cycles.js';
 
 export const webhooksRouter = Router();
 
@@ -172,7 +173,8 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
           const baseDate = isSamePlanRenewal
             ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
             : DateTime.fromJSDate(now);
-          const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
+          const cycleDays = resolvePaymentCycleDays(paymentMeta, metadata);
+          const currentPeriodEnd = baseDate.plus({ days: cycleDays }).toJSDate();
 
           await prisma.subscription.upsert({
             where: { tenantId: saasPayment.tenantId },
@@ -212,9 +214,9 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
       } else if (tenantId) {
         // Caso não ache o saasPayment específico mas tenha tenant_id no metadata
         const planId = (metadata.plan_id as string) || undefined;
-        if (planId) {
+        if (planId && metadata.addon_type !== 'NFSE') {
           const now = new Date();
-          const currentPeriodEnd = DateTime.now().plus({ days: 30 }).toJSDate();
+          const currentPeriodEnd = DateTime.now().plus({ days: resolvePaymentCycleDays(metadata) }).toJSDate();
 
           await prisma.subscription.upsert({
             where: { tenantId },

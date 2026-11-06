@@ -16,6 +16,7 @@ import {
 import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import { getCouponsCatalog, saveCouponsCatalog, type SaasCoupon } from '../../lib/coupons.js';
+import { getBillingCyclesConfig, saveBillingCyclesConfig } from '../../lib/billing-cycles.js';
 import crypto from 'node:crypto';
 import {
   getActiveMercadoPagoConfig,
@@ -1144,6 +1145,38 @@ superAdminRouter.get('/coupons', async (_req, res) => {
       totalUses: coupons.reduce((acc, c) => acc + (c.usedCount || 0), 0),
     },
   });
+});
+
+// ───────────────── Ciclos de Cobrança (Mensal / Semestral / Anual) ─────────────────
+const cycleOptionSchema = z.object({
+  enabled: z.boolean(),
+  discountPct: z.coerce.number().int().min(0, 'Desconto mínimo de 0%').max(60, 'Desconto máximo de 60%'),
+  maxInstallments: z.coerce.number().int().min(1).max(12),
+});
+
+superAdminRouter.get('/billing-cycles', async (_req, res) => {
+  const config = await getBillingCyclesConfig();
+  res.json({ config });
+});
+
+superAdminRouter.put('/billing-cycles', async (req, res) => {
+  const data = z
+    .object({
+      SEMIANNUAL: cycleOptionSchema.refine((v) => v.maxInstallments <= 6, {
+        message: 'O ciclo Semestral permite no máximo 6 parcelas.',
+      }),
+      ANNUAL: cycleOptionSchema,
+    })
+    .parse(req.body || {});
+
+  const config = await saveBillingCyclesConfig(data);
+
+  await systemLog({
+    source: 'superadmin',
+    message: `Ciclos de cobrança atualizados: Semestral ${config.SEMIANNUAL.enabled ? `${config.SEMIANNUAL.discountPct}% OFF / ${config.SEMIANNUAL.maxInstallments}x` : 'desativado'} • Anual ${config.ANNUAL.enabled ? `${config.ANNUAL.discountPct}% OFF / ${config.ANNUAL.maxInstallments}x` : 'desativado'}`,
+  });
+
+  res.json({ config, message: 'Ciclos de cobrança salvos com sucesso!' });
 });
 
 superAdminRouter.post('/coupons', async (req, res) => {

@@ -43,6 +43,8 @@ import {
   ShieldCheck,
   Trash2,
   Tag,
+  Save,
+  Calendar,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth, PlanPermissions } from '../../lib/auth-context';
@@ -325,6 +327,11 @@ interface AdminCouponItem {
   createdAt: string;
 }
 
+interface AdminBillingCyclesConfig {
+  SEMIANNUAL: { enabled: boolean; discountPct: number; maxInstallments: number };
+  ANNUAL: { enabled: boolean; discountPct: number; maxInstallments: number };
+}
+
 export default function SuperAdminPage() {
   const { user, refresh } = useAuth();
   const { toast, confirm } = useToast();
@@ -335,6 +342,11 @@ export default function SuperAdminPage() {
   const [overview, setOverview] = useState<SuperAdminOverview | null>(null);
   const [tenants, setTenants] = useState<TenantItem[]>([]);
   const [plans, setPlans] = useState<PlanItem[]>([]);
+  const [billingCycles, setBillingCycles] = useState<AdminBillingCyclesConfig>({
+    SEMIANNUAL: { enabled: true, discountPct: 10, maxInstallments: 6 },
+    ANNUAL: { enabled: true, discountPct: 20, maxInstallments: 12 },
+  });
+  const [savingCycles, setSavingCycles] = useState(false);
   const [addonsList, setAddonsList] = useState<AdminAddonItem[]>([]);
   const [savingAddons, setSavingAddons] = useState(false);
   const [togglingAddonTenantId, setTogglingAddonTenantId] = useState<string | null>(null);
@@ -744,10 +756,47 @@ export default function SuperAdminPage() {
     }
   };
 
+  const loadBillingCycles = async () => {
+    try {
+      const res = await api.get<{ config: AdminBillingCyclesConfig }>('/api/superadmin/billing-cycles');
+      if (res?.config) {
+        setBillingCycles(res.config);
+      }
+    } catch {
+      // Ignora erro
+    }
+  };
+
+  const handleSaveBillingCycles = async () => {
+    setSavingCycles(true);
+    try {
+      const res = await api.put<{ config: AdminBillingCyclesConfig; message: string }>(
+        '/api/superadmin/billing-cycles',
+        billingCycles,
+      );
+      if (res.config) setBillingCycles(res.config);
+      toast.success(res.message || 'Configuração de ciclos de cobrança salva com sucesso!');
+    } catch (err: unknown) {
+      toast.error(err instanceof ApiError ? err.message : 'Falha ao salvar ciclos de cobrança.');
+    } finally {
+      setSavingCycles(false);
+    }
+  };
+
   useEffect(() => {
-    Promise.all([loadOverview(), loadTenants(), loadPlans(), loadAddons(), loadCoupons(), loadAnalytics(), loadSmtp(), loadMpConfig(), loadCfConfig(), loadLogs()]).finally(() =>
-      setLoading(false),
-    );
+    Promise.all([
+      loadOverview(),
+      loadTenants(),
+      loadPlans(),
+      loadBillingCycles(),
+      loadAddons(),
+      loadCoupons(),
+      loadAnalytics(),
+      loadSmtp(),
+      loadMpConfig(),
+      loadCfConfig(),
+      loadLogs(),
+    ]).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -1915,6 +1964,239 @@ export default function SuperAdminPage() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Bloco de Gestão de Ciclos de Cobrança (Semestral & Anual) */}
+            <div
+              className="glass-panel"
+              style={{
+                marginTop: '32px',
+                padding: '24px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+                background: 'linear-gradient(135deg, rgba(229, 179, 56, 0.05) 0%, rgba(18, 24, 38, 0.95) 100%)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={18} color="var(--primary)" />
+                    <h4 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                      Ciclos de Cobrança SaaS (Planos Semestrais & Anuais)
+                    </h4>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', margin: '4px 0 0 0' }}>
+                    Configure os descontos progressivos e o parcelamento máximo no cartão de crédito para antecipar caixa no checkout.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBillingCycles}
+                  disabled={savingCycles}
+                  className="gold-gradient-primary gold-glow btn-primary"
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: savingCycles ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <Save size={15} />
+                  <span>{savingCycles ? 'Salvando...' : 'Salvar Configuração de Ciclos'}</span>
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                  gap: '20px',
+                }}
+              >
+                {/* Ciclo Semestral */}
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border: billingCycles.SEMIANNUAL.enabled
+                      ? '1px solid rgba(229, 179, 56, 0.35)'
+                      : '1px solid var(--border-color)',
+                    background: billingCycles.SEMIANNUAL.enabled
+                      ? 'rgba(229, 179, 56, 0.04)'
+                      : 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <div>
+                      <strong style={{ fontSize: '1rem', color: 'var(--text-main)', display: 'block' }}>
+                        Ciclo Semestral (180 dias / 6 meses)
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Cobrado a cada 6 meses com desconto
+                      </span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={billingCycles.SEMIANNUAL.enabled}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            SEMIANNUAL: { ...billingCycles.SEMIANNUAL, enabled: e.target.checked },
+                          })
+                        }
+                      />
+                      <span>{billingCycles.SEMIANNUAL.enabled ? 'Ativo' : 'Desativado'}</span>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Desconto no Ciclo (%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        disabled={!billingCycles.SEMIANNUAL.enabled}
+                        value={billingCycles.SEMIANNUAL.discountPct}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            SEMIANNUAL: {
+                              ...billingCycles.SEMIANNUAL,
+                              discountPct: Math.min(60, Math.max(0, parseInt(e.target.value) || 0)),
+                            },
+                          })
+                        }
+                        className="input-field"
+                        style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Máx. Parcelas no Cartão:
+                      </label>
+                      <Select
+                        value={String(billingCycles.SEMIANNUAL.maxInstallments)}
+                        disabled={!billingCycles.SEMIANNUAL.enabled}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            SEMIANNUAL: {
+                              ...billingCycles.SEMIANNUAL,
+                              maxInstallments: Math.min(6, Math.max(1, parseInt(e.target.value) || 1)),
+                            },
+                          })
+                        }
+                      >
+                        {[1, 2, 3, 4, 5, 6].map((n) => (
+                          <option key={n} value={n}>
+                            Até {n}x {n === 1 ? 'à vista' : 'sem juros'}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ciclo Anual */}
+                <div
+                  className="glass-card"
+                  style={{
+                    padding: '20px',
+                    borderRadius: '12px',
+                    border: billingCycles.ANNUAL.enabled
+                      ? '1px solid rgba(16, 185, 129, 0.4)'
+                      : '1px solid var(--border-color)',
+                    background: billingCycles.ANNUAL.enabled
+                      ? 'rgba(16, 185, 129, 0.04)'
+                      : 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                    <div>
+                      <strong style={{ fontSize: '1rem', color: 'var(--text-main)', display: 'block' }}>
+                        Ciclo Anual (365 dias / 12 meses)
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Cobrado anualmente com desconto máximo
+                      </span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={billingCycles.ANNUAL.enabled}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            ANNUAL: { ...billingCycles.ANNUAL, enabled: e.target.checked },
+                          })
+                        }
+                      />
+                      <span>{billingCycles.ANNUAL.enabled ? 'Ativo' : 'Desativado'}</span>
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Desconto no Ciclo (%):
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="60"
+                        disabled={!billingCycles.ANNUAL.enabled}
+                        value={billingCycles.ANNUAL.discountPct}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            ANNUAL: {
+                              ...billingCycles.ANNUAL,
+                              discountPct: Math.min(60, Math.max(0, parseInt(e.target.value) || 0)),
+                            },
+                          })
+                        }
+                        className="input-field"
+                        style={{ padding: '8px 10px', fontSize: '0.85rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Máx. Parcelas no Cartão:
+                      </label>
+                      <Select
+                        value={String(billingCycles.ANNUAL.maxInstallments)}
+                        disabled={!billingCycles.ANNUAL.enabled}
+                        onChange={(e) =>
+                          setBillingCycles({
+                            ...billingCycles,
+                            ANNUAL: {
+                              ...billingCycles.ANNUAL,
+                              maxInstallments: Math.min(12, Math.max(1, parseInt(e.target.value) || 1)),
+                            },
+                          })
+                        }
+                      >
+                        {[1, 2, 3, 4, 6, 10, 12].map((n) => (
+                          <option key={n} value={n}>
+                            Até {n}x {n === 1 ? 'à vista' : 'sem juros'}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

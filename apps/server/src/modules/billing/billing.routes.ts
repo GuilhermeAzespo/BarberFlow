@@ -17,8 +17,57 @@ import {
 import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import { validateAndCalculateCoupon, incrementCouponUsage } from '../../lib/coupons.js';
+import {
+  BILLING_CYCLES,
+  CYCLE_LABELS,
+  calculateCyclePrice,
+  getBillingCyclesConfig,
+  parseBillingCycle,
+  resolvePaymentCycleDays,
+  type BillingCycle,
+} from '../../lib/billing-cycles.js';
 
 export const billingRouter = Router();
+
+const billingCycleSchema = z.enum(['MONTHLY', 'SEMIANNUAL', 'ANNUAL']).default('MONTHLY');
+
+/**
+ * Calcula o valor final de um plano considerando ciclo (Mensal/Semestral/Anual) + cupom.
+ * O cupom é aplicado sobre o valor do ciclo já com o desconto progressivo.
+ */
+async function resolvePlanCheckoutAmount(params: {
+  plan: { priceCents: number };
+  billingCycle: BillingCycle;
+  couponCode?: string;
+}) {
+  const cyclesConfig = await getBillingCyclesConfig();
+  let cycle;
+  try {
+    cycle = calculateCyclePrice(params.plan.priceCents, params.billingCycle, cyclesConfig);
+  } catch (err) {
+    throw HttpError.badRequest(err instanceof Error ? err.message : 'Ciclo de cobrança inválido.');
+  }
+
+  let finalAmountCents = cycle.amountCents;
+  let appliedCouponCode: string | null = null;
+  let couponDiscountCents = 0;
+
+  if (params.couponCode) {
+    const couponCheck = await validateAndCalculateCoupon({
+      code: params.couponCode,
+      targetType: 'PLAN',
+      originalAmountCents: cycle.amountCents,
+    });
+    if (!couponCheck.valid || !couponCheck.coupon) {
+      throw HttpError.badRequest(couponCheck.message);
+    }
+    finalAmountCents = couponCheck.finalAmountCents;
+    couponDiscountCents = couponCheck.discountCents;
+    appliedCouponCode = couponCheck.coupon.code;
+  }
+
+  return { cycle, finalAmountCents, appliedCouponCode, couponDiscountCents };
+}
 
 const pixCheckoutSchema = z.object({
   planId: z.string().min(1, 'ID do plano é obrigatório'),
@@ -26,6 +75,7 @@ const pixCheckoutSchema = z.object({
   payerName: z.string().trim().optional(),
   payerEmail: z.string().email('E-mail do pagador inválido').optional(),
   couponCode: z.string().trim().optional(),
+  billingCycle: billingCycleSchema,
 });
 
 const cardCheckoutSchema = z.object({
@@ -40,6 +90,7 @@ const cardCheckoutSchema = z.object({
   installments: z.coerce.number().int().min(1).max(12).default(1),
   paymentMethodId: z.string().optional(),
   couponCode: z.string().trim().optional(),
+  billingCycle: billingCycleSchema,
 });
 
 // Validação de Cupom de Desconto no Checkout (Planos ou Add-ons)
@@ -50,6 +101,7 @@ billingRouter.post('/coupons/validate', async (req, res) => {
       targetType: z.enum(['PLAN', 'ADDON']).default('PLAN'),
       planId: z.string().optional(),
       addonKey: z.string().optional(),
+      billingCycle: billingCycleSchema,
     })
     .parse(req.body || {});
 
@@ -63,7 +115,12 @@ billingRouter.post('/coupons/validate', async (req, res) => {
     if (!plan || !plan.isActive) {
       throw HttpError.badRequest('Plano selecionado inválido.');
     }
-    originalAmountCents = plan.priceCents;
+    try {
+      const cyclesConfig = await getBillingCyclesConfig();
+      originalAmountCents = calculateCyclePrice(plan.priceCents, body.billingCycle, cyclesConfig).amountCents;
+    } catch (err) {
+      throw HttpError.badRequest(err instanceof Error ? err.message : 'Ciclo de cobrança inválido.');
+    }
   } else {
     const addonCfg = await getAddonByKey((body.addonKey as any) || 'nfse');
     originalAmountCents = addonCfg.priceCents;
@@ -115,11 +172,23 @@ billingRouter.get('/status', async (req, res) => {
     orderBy: [{ sortOrder: 'asc' }, { priceCents: 'asc' }],
   });
 
-  const [addonsCatalog, nfseAddonCfg] = await Promise.all([
+  const [addonsCatalog, nfseAddonCfg, cyclesConfig, lastPlanPayment] = await Promise.all([
     getAddonsCatalog(),
     getAddonByKey('nfse'),
+    getBillingCyclesConfig(),
+    prisma.saaSPayment.findFirst({
+      where: {
+        tenantId,
+        status: 'APPROVED',
+        NOT: { mpStatusDetail: { startsWith: 'ADDON_NFSE' } },
+      },
+      orderBy: { paidAt: 'desc' },
+      select: { metadata: true },
+    }),
   ]);
   const nfseAddonPriceCents = nfseAddonCfg.priceCents;
+  const lastPaymentMeta = (lastPlanPayment?.metadata as Record<string, any> | null) || null;
+  const currentBillingCycle = parseBillingCycle(lastPaymentMeta?.billingCycle);
 
   res.json({
     tenant: {
@@ -145,6 +214,8 @@ billingRouter.get('/status', async (req, res) => {
               ? Math.ceil(DateTime.fromJSDate(sub.currentPeriodEnd).diffNow('days').days)
               : null,
           plan: sub.plan,
+          billingCycle: currentBillingCycle,
+          billingCycleLabel: CYCLE_LABELS[currentBillingCycle],
           limits: effectiveLimits(sub),
           nfseAddonActive: sub.nfseAddonActive,
           nfseAddonExpiresAt: sub.nfseAddonExpiresAt,
@@ -157,6 +228,11 @@ billingRouter.get('/status', async (req, res) => {
       isAddon: nfseAddonCfg.isAddon,
     },
     addons: addonsCatalog,
+    billingCycles: {
+      available: BILLING_CYCLES.filter((c) => c === 'MONTHLY' || cyclesConfig[c].enabled),
+      MONTHLY: { enabled: true, discountPct: 0, maxInstallments: 1 },
+      ...cyclesConfig,
+    },
     access,
     plans,
     mercadopago: {
@@ -187,23 +263,28 @@ billingRouter.post('/checkout/pix', async (req, res) => {
     throw HttpError.badRequest('Plano selecionado inválido ou indisponível.');
   }
 
-  let finalAmountCents = plan.priceCents;
-  let appliedCouponCode: string | null = null;
-  let discountCents = 0;
+  const {
+    cycle,
+    finalAmountCents,
+    appliedCouponCode,
+    couponDiscountCents: discountCents,
+  } = await resolvePlanCheckoutAmount({
+    plan,
+    billingCycle: data.billingCycle,
+    couponCode: data.couponCode,
+  });
 
-  if (data.couponCode) {
-    const couponCheck = await validateAndCalculateCoupon({
-      code: data.couponCode,
-      targetType: 'PLAN',
-      originalAmountCents: plan.priceCents,
-    });
-    if (!couponCheck.valid || !couponCheck.coupon) {
-      throw HttpError.badRequest(couponCheck.message);
-    }
-    finalAmountCents = couponCheck.finalAmountCents;
-    discountCents = couponCheck.discountCents;
-    appliedCouponCode = couponCheck.coupon.code;
-  }
+  const paymentMetadata = {
+    billingCycle: cycle.cycle,
+    cycleDays: cycle.days,
+    cycleMonths: cycle.months,
+    grossAmountCents: cycle.grossAmountCents,
+    cycleDiscountPct: cycle.cycleDiscountPct,
+    cycleDiscountCents: cycle.cycleDiscountCents,
+    originalAmountCents: cycle.amountCents,
+    ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
+  };
+  const cycleSuffix = cycle.cycle === 'MONTHLY' ? '' : ` - ${cycle.label} (${cycle.months} meses)`;
 
   const owner = tenant.users[0];
   const payerEmail = data.payerEmail || tenant.email || owner?.email || 'financeiro@barberflow.com.br';
@@ -222,20 +303,14 @@ billingRouter.post('/checkout/pix', async (req, res) => {
       payerEmail,
       payerName,
       payerDoc: data.payerCpf ? data.payerCpf.replace(/\D/g, '') : null,
-      metadata: appliedCouponCode
-        ? {
-            couponCode: appliedCouponCode,
-            discountCents,
-            originalAmountCents: plan.priceCents,
-          }
-        : undefined,
+      metadata: paymentMetadata,
     },
   });
 
   try {
     const pixResult = await createMercadoPagoPix({
       amountCents: finalAmountCents,
-      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})${
+      description: `BarberFlow - Assinatura Plano ${plan.name}${cycleSuffix} (${tenant.name})${
         appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
       }`,
       payerEmail,
@@ -245,6 +320,8 @@ billingRouter.post('/checkout/pix', async (req, res) => {
       metadata: {
         tenant_id: tenantId,
         plan_id: plan.id,
+        billing_cycle: cycle.cycle,
+        cycle_days: cycle.days,
         saas_payment_id: saasPayment.id,
         ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
@@ -269,7 +346,10 @@ billingRouter.post('/checkout/pix', async (req, res) => {
       status: pixResult.status,
       planName: plan.name,
       amountCents: finalAmountCents,
-      originalAmountCents: plan.priceCents,
+      originalAmountCents: cycle.amountCents,
+      grossAmountCents: cycle.grossAmountCents,
+      billingCycle: cycle.cycle,
+      billingCycleLabel: cycle.label,
       discountCents,
       couponCode: appliedCouponCode,
       qrCode: pixResult.qrCode,
@@ -305,27 +385,40 @@ billingRouter.post('/checkout/card', async (req, res) => {
     throw HttpError.badRequest('Plano selecionado inválido ou indisponível.');
   }
 
-  let finalAmountCents = plan.priceCents;
-  let appliedCouponCode: string | null = null;
-  let discountCents = 0;
+  const {
+    cycle,
+    finalAmountCents,
+    appliedCouponCode,
+    couponDiscountCents: discountCents,
+  } = await resolvePlanCheckoutAmount({
+    plan,
+    billingCycle: data.billingCycle,
+    couponCode: data.couponCode,
+  });
 
-  if (data.couponCode) {
-    const couponCheck = await validateAndCalculateCoupon({
-      code: data.couponCode,
-      targetType: 'PLAN',
-      originalAmountCents: plan.priceCents,
-    });
-    if (!couponCheck.valid || !couponCheck.coupon) {
-      throw HttpError.badRequest(couponCheck.message);
-    }
-    finalAmountCents = couponCheck.finalAmountCents;
-    discountCents = couponCheck.discountCents;
-    appliedCouponCode = couponCheck.coupon.code;
-  }
+  const paymentMetadata = {
+    billingCycle: cycle.cycle,
+    cycleDays: cycle.days,
+    cycleMonths: cycle.months,
+    grossAmountCents: cycle.grossAmountCents,
+    cycleDiscountPct: cycle.cycleDiscountPct,
+    cycleDiscountCents: cycle.cycleDiscountCents,
+    originalAmountCents: cycle.amountCents,
+    ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
+  };
+  const cycleSuffix = cycle.cycle === 'MONTHLY' ? '' : ` - ${cycle.label} (${cycle.months} meses)`;
 
   const owner = tenant.users[0];
   const payerEmail = tenant.email || owner?.email || 'financeiro@barberflow.com.br';
   const payerName = data.cardholderName || owner?.name || tenant.name;
+
+  if (data.installments > cycle.maxInstallments) {
+    throw HttpError.badRequest(
+      cycle.maxInstallments === 1
+        ? `O ciclo ${cycle.label} aceita apenas pagamento à vista no cartão.`
+        : `O ciclo ${cycle.label} permite parcelamento em até ${cycle.maxInstallments}x.`,
+    );
+  }
 
   let cardToken = data.token;
   if (!cardToken) {
@@ -356,13 +449,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
-      metadata: appliedCouponCode
-        ? {
-            couponCode: appliedCouponCode,
-            discountCents,
-            originalAmountCents: plan.priceCents,
-          }
-        : undefined,
+      metadata: paymentMetadata,
     },
   });
 
@@ -370,7 +457,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
     const cardResult = await createMercadoPagoCardPayment({
       amountCents: finalAmountCents,
       token: cardToken,
-      description: `BarberFlow - Assinatura Plano ${plan.name} (${tenant.name})${
+      description: `BarberFlow - Assinatura Plano ${plan.name}${cycleSuffix} (${tenant.name})${
         appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
       }`,
       installments: data.installments,
@@ -382,6 +469,8 @@ billingRouter.post('/checkout/card', async (req, res) => {
       metadata: {
         tenant_id: tenantId,
         plan_id: plan.id,
+        billing_cycle: cycle.cycle,
+        cycle_days: cycle.days,
         saas_payment_id: saasPayment.id,
         ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
@@ -419,7 +508,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
       const baseDate = isSamePlanRenewal
         ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
         : DateTime.fromJSDate(now);
-      const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
+      const currentPeriodEnd = baseDate.plus({ days: cycle.days }).toJSDate();
 
       await prisma.subscription.upsert({
         where: { tenantId },
@@ -567,7 +656,8 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
             const baseDate = isSamePlanRenewal
               ? DateTime.fromJSDate(existingSub!.currentPeriodEnd!)
               : DateTime.fromJSDate(now);
-            const currentPeriodEnd = baseDate.plus({ days: 30 }).toJSDate();
+            const cycleDays = resolvePaymentCycleDays(paymentMeta, mpStatus.metadata);
+            const currentPeriodEnd = baseDate.plus({ days: cycleDays }).toJSDate();
 
             await prisma.subscription.upsert({
               where: { tenantId },

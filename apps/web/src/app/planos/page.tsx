@@ -315,6 +315,55 @@ const COMPARISON_TABLE: ComparisonFeature[] = [
   },
 ];
 
+type BillingCycle = 'MONTHLY' | 'SEMIANNUAL' | 'ANNUAL';
+
+interface CycleOption {
+  enabled: boolean;
+  discountPct: number;
+  maxInstallments: number;
+}
+
+interface BillingCyclesInfo {
+  available: BillingCycle[];
+  MONTHLY: CycleOption;
+  SEMIANNUAL: CycleOption;
+  ANNUAL: CycleOption;
+}
+
+const DEFAULT_BILLING_CYCLES: BillingCyclesInfo = {
+  available: ['MONTHLY', 'SEMIANNUAL', 'ANNUAL'],
+  MONTHLY: { enabled: true, discountPct: 0, maxInstallments: 1 },
+  SEMIANNUAL: { enabled: true, discountPct: 10, maxInstallments: 6 },
+  ANNUAL: { enabled: true, discountPct: 20, maxInstallments: 12 },
+};
+
+const CYCLE_META: Record<BillingCycle, { label: string; months: number; period: string }> = {
+  MONTHLY: { label: 'Mensal', months: 1, period: 'mês' },
+  SEMIANNUAL: { label: 'Semestral', months: 6, period: 'semestre' },
+  ANNUAL: { label: 'Anual', months: 12, period: 'ano' },
+};
+
+// Espelho do cálculo do backend (lib/billing-cycles.ts) para exibição em tempo real
+const calcCyclePrice = (monthlyPriceCents: number, cycle: BillingCycle, cfg: BillingCyclesInfo) => {
+  const months = CYCLE_META[cycle].months;
+  const gross = Math.max(0, Math.round(monthlyPriceCents)) * months;
+  const discountPct = cycle === 'MONTHLY' ? 0 : cfg[cycle]?.discountPct ?? 0;
+  const amount = Math.max(gross > 0 ? 100 : 0, gross - Math.round((gross * discountPct) / 100));
+  const days = cycle === 'ANNUAL' ? 365 : cycle === 'SEMIANNUAL' ? 180 : 30;
+  return {
+    cycle,
+    label: CYCLE_META[cycle].label,
+    months,
+    days,
+    grossCents: gross,
+    discountPct,
+    savingsCents: gross - amount,
+    amountCents: amount,
+    monthlyEquivalentCents: Math.round(amount / months),
+    maxInstallments: cycle === 'MONTHLY' ? 1 : cfg[cycle]?.maxInstallments ?? 1,
+  };
+};
+
 interface BillingStatusResponse {
   subscription: {
     status: string;
@@ -325,6 +374,8 @@ interface BillingStatusResponse {
     isTrial?: boolean;
     trialDaysLeft?: number | null;
     renewDaysLeft?: number | null;
+    billingCycle?: BillingCycle;
+    billingCycleLabel?: string;
     plan: {
       id: string;
       name: string;
@@ -333,6 +384,7 @@ interface BillingStatusResponse {
     };
   } | null;
   plans: PublicPlan[];
+  billingCycles?: BillingCyclesInfo;
   mercadopago: {
     isConfigured: boolean;
     enabled: boolean;
@@ -408,6 +460,37 @@ export default function PlanosPage() {
     discountCents: number;
     finalAmountCents: number;
   } | null>(null);
+
+  // Ciclo de Cobrança (Mensal / Semestral / Anual) + Parcelamento
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY');
+  const [installments, setInstallments] = useState(1);
+  const cyclesCfg: BillingCyclesInfo = billingInfo?.billingCycles || DEFAULT_BILLING_CYCLES;
+  const availableCycles: BillingCycle[] = (cyclesCfg.available?.length ? cyclesCfg.available : ['MONTHLY']) as BillingCycle[];
+  const checkoutCycle = selectedPlanForCheckout
+    ? calcCyclePrice(selectedPlanForCheckout.priceCents, billingCycle, cyclesCfg)
+    : null;
+  const checkoutAmountCents = appliedCoupon
+    ? appliedCoupon.finalAmountCents
+    : checkoutCycle?.amountCents ?? 0;
+
+  // Garante que o ciclo selecionado continue disponível caso o Super Admin desative algum
+  useEffect(() => {
+    if (!availableCycles.includes(billingCycle)) setBillingCycle('MONTHLY');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingInfo]);
+
+  const handleChangeCycle = (cycle: BillingCycle) => {
+    if (cycle === billingCycle) return;
+    setBillingCycle(cycle);
+    setInstallments(1);
+    if (selectedPlanForCheckout) {
+      setPixResult(null);
+      if (appliedCoupon) {
+        setAppliedCoupon(null);
+        toast.info('O ciclo mudou o valor da assinatura. Aplique o cupom novamente para recalcular o desconto.');
+      }
+    }
+  };
 
   const loadBilling = async () => {
     try {
@@ -508,6 +591,7 @@ export default function PlanosPage() {
     setPaymentMethod('PIX');
     setCouponInput('');
     setAppliedCoupon(null);
+    setInstallments(1);
   };
 
   const handleCloseCheckout = () => {
@@ -537,6 +621,7 @@ export default function PlanosPage() {
         code: couponInput.trim(),
         targetType: 'PLAN',
         planId: selectedPlanForCheckout.id,
+        billingCycle,
       });
 
       if (res.valid) {
@@ -584,6 +669,7 @@ export default function PlanosPage() {
         planId: selectedPlanForCheckout.id,
         payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
         couponCode: appliedCoupon?.code,
+        billingCycle,
       });
 
       setPixResult(res);
@@ -639,8 +725,9 @@ export default function PlanosPage() {
           expMonth: cardForm.expMonth,
           expYear: cardForm.expYear,
           cvv: cardForm.cvv,
-          installments: 1,
+          installments,
           couponCode: appliedCoupon?.code,
+          billingCycle,
         },
       );
 
@@ -739,13 +826,28 @@ export default function PlanosPage() {
                 </span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
                 <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
                   Plano {subscription?.plan?.name || 'Starter'}
                 </h2>
                 <span style={{ fontSize: '1rem', color: 'var(--primary)', fontWeight: 700 }}>
                   {formatBRL(subscription?.plan?.priceCents || 4990)} / mês
                 </span>
+                {billingInfo?.subscription?.billingCycle && billingInfo.subscription.billingCycle !== 'MONTHLY' && (
+                  <span
+                    style={{
+                      fontSize: '0.74rem',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      background: 'rgba(229, 179, 56, 0.18)',
+                      color: 'var(--primary)',
+                      border: '1px solid rgba(229, 179, 56, 0.35)',
+                    }}
+                  >
+                    Ciclo {billingInfo.subscription.billingCycleLabel}
+                  </span>
+                )}
               </div>
 
               {/* Status de Trial / Renovação */}
@@ -1019,11 +1121,72 @@ export default function PlanosPage() {
 
           {/* ───────────────── CARDS DOS PLANOS (PRICING) ───────────────── */}
           <div style={{ marginBottom: '48px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <h2 style={{ fontSize: '1.75rem', fontWeight: 800 }}>Tabela Comparativa de Planos</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
-                Planos flexíveis que acompanham o crescimento da sua barbearia. Sem contratos de fidelidade.
+                Planos flexíveis que acompanham o crescimento da sua barbearia. Escolha o ciclo ideal e economize.
               </p>
+            </div>
+
+            {/* Seletor de Ciclo de Cobrança (Mensal / Semestral / Anual) */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '32px' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px',
+                  borderRadius: '14px',
+                  background: 'rgba(18, 24, 38, 0.85)',
+                  border: '1px solid rgba(229, 179, 56, 0.25)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+                }}
+              >
+                {availableCycles.map((cycle) => {
+                  const isActive = billingCycle === cycle;
+                  const discountPct = cycle === 'MONTHLY' ? 0 : cyclesCfg[cycle]?.discountPct ?? 0;
+                  return (
+                    <button
+                      key={cycle}
+                      type="button"
+                      onClick={() => handleChangeCycle(cycle)}
+                      style={{
+                        padding: '10px 18px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: isActive
+                          ? 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)'
+                          : 'transparent',
+                        color: isActive ? '#0B0F17' : 'var(--text-muted)',
+                        fontWeight: 700,
+                        fontSize: '0.88rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <span>{CYCLE_META[cycle].label}</span>
+                      {discountPct > 0 && (
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            padding: '2px 7px',
+                            borderRadius: '6px',
+                            background: isActive ? 'rgba(0,0,0,0.25)' : 'rgba(16, 185, 129, 0.2)',
+                            color: isActive ? '#0B0F17' : '#34D399',
+                            letterSpacing: '0.02em',
+                          }}
+                        >
+                          {cycle === 'ANNUAL' ? `${discountPct}% OFF • 2 meses grátis` : `${discountPct}% OFF`}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div
@@ -1037,6 +1200,7 @@ export default function PlanosPage() {
               {sortPlansFixed(plans).map((p) => {
                 const isCurrent = currentPlanSlug === p.slug.toLowerCase();
                 const isProCard = p.slug.toLowerCase() === 'pro';
+                const cardCycle = calcCyclePrice(p.priceCents, billingCycle, cyclesCfg);
 
                 return (
                   <div
@@ -1115,15 +1279,26 @@ export default function PlanosPage() {
                       </p>
 
                       <div style={{ marginBottom: '24px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                           <span style={{ fontSize: '2.3rem', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-                            {formatBRL(p.priceCents)}
+                            {formatBRL(cardCycle.monthlyEquivalentCents)}
                           </span>
                           <span style={{ color: 'var(--text-dim)', fontSize: '0.88rem' }}>/ mês</span>
                         </div>
-                        <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 600 }}>
-                          Sem fidelidade • Cancele quando quiser
-                        </span>
+                        {billingCycle !== 'MONTHLY' ? (
+                          <div style={{ marginTop: '6px' }}>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                              Cobrado {formatBRL(cardCycle.amountCents)} a cada {cardCycle.months} meses
+                            </div>
+                            <span style={{ fontSize: '0.74rem', color: '#10B981', fontWeight: 700 }}>
+                              Economia de {formatBRL(cardCycle.savingsCents)} no ciclo ({cardCycle.discountPct}% OFF)
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#10B981', fontWeight: 600 }}>
+                            Sem fidelidade • Cancele quando quiser
+                          </span>
+                        )}
                       </div>
 
                       {/* Lista de Recursos */}
@@ -1506,23 +1681,34 @@ export default function PlanosPage() {
             >
               <div>
                 <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Plano Selecionado
+                  Plano Selecionado • Ciclo {CYCLE_META[billingCycle].label}
                 </span>
                 <h4 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '2px 0 0 0', color: 'var(--text-main)' }}>
                   {selectedPlanForCheckout.name}
                 </h4>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Acesso liberado imediatamente após confirmação
+                  {billingCycle === 'MONTHLY'
+                    ? '30 dias de acesso com liberação imediata'
+                    : `${checkoutCycle?.days || 30} dias de acesso (${checkoutCycle?.months} meses)`}
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
                 {appliedCoupon ? (
                   <>
-                    <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
-                      {formatBRL(selectedPlanForCheckout.priceCents)}
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
+                      {formatBRL(checkoutCycle?.amountCents || selectedPlanForCheckout.priceCents)}
                     </span>
                     <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34D399' }}>
                       {formatBRL(appliedCoupon.finalAmountCents)}
+                    </span>
+                  </>
+                ) : checkoutCycle && checkoutCycle.discountPct > 0 ? (
+                  <>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
+                      {formatBRL(checkoutCycle.grossCents)}
+                    </span>
+                    <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
+                      {formatBRL(checkoutCycle.amountCents)}
                     </span>
                   </>
                 ) : (
@@ -1530,7 +1716,60 @@ export default function PlanosPage() {
                     {formatBRL(selectedPlanForCheckout.priceCents)}
                   </span>
                 )}
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', display: 'block' }}>/ mês</span>
+                <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)', display: 'block' }}>
+                  {billingCycle === 'MONTHLY' ? '/ mês' : `total (${CYCLE_META[billingCycle].period})`}
+                </span>
+              </div>
+            </div>
+
+            {/* Seletor Rápido de Ciclo no Modal */}
+            <div>
+              <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                Escolha o Ciclo de Cobrança:
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${availableCycles.length}, 1fr)`, gap: '8px' }}>
+                {availableCycles.map((cycle) => {
+                  const isActive = billingCycle === cycle;
+                  const optPrice = calcCyclePrice(selectedPlanForCheckout.priceCents, cycle, cyclesCfg);
+                  return (
+                    <button
+                      key={cycle}
+                      type="button"
+                      onClick={() => handleChangeCycle(cycle)}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '10px',
+                        border: isActive ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                        background: isActive ? 'rgba(229, 179, 56, 0.14)' : 'rgba(255, 255, 255, 0.03)',
+                        color: isActive ? 'var(--primary)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{CYCLE_META[cycle].label}</div>
+                      <div style={{ fontSize: '0.74rem', marginTop: '2px', color: isActive ? '#F8FAFC' : 'var(--text-dim)' }}>
+                        {formatBRL(optPrice.monthlyEquivalentCents)}/mês
+                      </div>
+                      {optPrice.discountPct > 0 && (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            marginTop: '4px',
+                            fontSize: '0.66rem',
+                            fontWeight: 800,
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            background: isActive ? 'var(--primary)' : 'rgba(16, 185, 129, 0.2)',
+                            color: isActive ? '#0B0F17' : '#34D399',
+                          }}
+                        >
+                          {optPrice.discountPct}% OFF
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1918,11 +2157,7 @@ export default function PlanosPage() {
                         <>
                           <QrCode size={18} />
                           <span>
-                            Gerar QR Code Pix (
-                            {formatBRL(
-                              appliedCoupon ? appliedCoupon.finalAmountCents : selectedPlanForCheckout.priceCents,
-                            )}
-                            )
+                            Gerar QR Code Pix ({formatBRL(checkoutAmountCents)})
                           </span>
                         </>
                       )}
@@ -2103,6 +2338,31 @@ export default function PlanosPage() {
                       </div>
                     </div>
 
+                    {/* Seletor de Parcelamento no Cartão */}
+                    <div>
+                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                        Opções de Parcelamento *
+                      </label>
+                      <Select
+                        value={String(installments)}
+                        onChange={(e) => setInstallments(Number(e.target.value))}
+                      >
+                        {Array.from({ length: checkoutCycle?.maxInstallments || 1 }, (_, i) => i + 1).map((n) => {
+                          const parcelCents = Math.round(checkoutAmountCents / n);
+                          return (
+                            <option key={n} value={n}>
+                              {n}x de {formatBRL(parcelCents)} {n === 1 ? 'à vista' : 'sem juros'}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                      {checkoutCycle && checkoutCycle.maxInstallments > 1 && (
+                        <span style={{ fontSize: '0.73rem', color: '#10B981', display: 'block', marginTop: '4px' }}>
+                          ✓ Parcelamento em até {checkoutCycle.maxInstallments}x sem juros no ciclo {checkoutCycle.label}
+                        </span>
+                      )}
+                    </div>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
                       <Lock size={14} color="#10B981" />
                       <span>Transação segura de ponta a ponta criptografada pelo Mercado Pago.</span>
@@ -2136,10 +2396,10 @@ export default function PlanosPage() {
                         <>
                           <CreditCard size={18} />
                           <span>
-                            Pagar{' '}
-                            {formatBRL(
-                              appliedCoupon ? appliedCoupon.finalAmountCents : selectedPlanForCheckout.priceCents,
-                            )}{' '}
+                            Pagar {formatBRL(checkoutAmountCents)}
+                            {installments > 1
+                              ? ` em ${installments}x de ${formatBRL(Math.round(checkoutAmountCents / installments))}`
+                              : ''}{' '}
                             com Cartão
                           </span>
                         </>

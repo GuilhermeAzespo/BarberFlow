@@ -46,6 +46,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-2',
+    version: 'v3.2',
+    date: '06 de Novembro de 2026',
+    title: 'Planos Semestrais e Anuais no Checkout, Descontos Progressivos e Parcelamento no Cartão',
+    category: 'NEW',
+    categoryLabel: 'Fase 2 RoadMap',
+    badgeColor: '#10B981',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    summary:
+      'Lançamento da Fase 2 do RoadMap Estratégico com suporte completo a ciclos Semestrais (180 dias) e Anuais (365 dias) no checkout de Planos (/planos), descontos progressivos configuráveis pelo Super Admin (/admin), parcelamento em até 12x no cartão de crédito via Mercado Pago e renovação inteligente com extensão de período.',
+    highlights: [
+      'Seletor de Ciclos na Tabela de Planos: Alternância dinâmica entre Mensal, Semestral (10% OFF) e Anual (20% OFF / 2 meses grátis) com exibição da economia anual e valor mensal equivalente.',
+      'Parcelamento no Cartão de Crédito: Opção de parcelamento sem juros liberada no checkout (até 6x no Semestral e até 12x no Anual) com valor das parcelas calculado na hora.',
+      'Renovação Inteligente de Assinatura: Ao aprovar o pagamento, o sistema adiciona automaticamente +180 ou +365 dias de acesso mantendo a continuidade do plano sem zerar dias restantes.',
+      'Gestão Centralizada no Super Admin: Aba Planos & Vitrine com painel para ativar/desativar ciclos, ajustar a % de desconto e limitar o número de parcelas permitidas.',
+      'Combinação com Cupons de Desconto: O salão pode acumular o desconto do ciclo com cupons promocionais criados no Super Admin.',
+    ],
+    impact: 'Antecipação de até 12 meses de receita SaaS no caixa com incentivo financeiro para as barbearias economizarem.',
+  },
+  {
     id: 'v3-1',
     version: 'v3.1',
     date: '05 de Novembro de 2026',
