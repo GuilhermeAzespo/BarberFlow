@@ -411,7 +411,7 @@ interface PaymentHistoryItem {
 }
 
 export default function PlanosPage() {
-  const { tenant, subscription, refresh } = useAuth();
+  const { tenant, subscription, refresh, isTrialExpired } = useAuth();
   const { toast } = useToast();
   const [plans, setPlans] = useState<PublicPlan[]>(sortPlansFixed(DEFAULT_PLANS));
   const [activeProfsCount, setActiveProfsCount] = useState<number>(1);
@@ -790,6 +790,48 @@ export default function PlanosPage() {
               Descubra todas as vantagens de cada plano e desbloqueie mais capacidade, automação e lucratividade para o seu salão.
             </p>
           </div>
+
+          {/* Banner de Teste Gratuito Expirado */}
+          {isTrialExpired && (
+            <div
+              style={{
+                padding: '20px 24px',
+                borderRadius: '16px',
+                marginBottom: '24px',
+                background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.16) 0%, rgba(185, 28, 28, 0.28) 100%)',
+                border: '1px solid rgba(239, 68, 68, 0.45)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                boxShadow: '0 0 20px rgba(239, 68, 68, 0.2)',
+              }}
+            >
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  background: 'rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <AlertTriangle size={24} color="#F87171" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', margin: '0 0 4px 0' }}>
+                  Seu período de teste de 14 dias terminou
+                </h3>
+                <p style={{ fontSize: '0.86rem', color: '#FCA5A5', margin: 0, lineHeight: 1.45 }}>
+                  O acesso à agenda, cadastro de clientes, automações e demais funcionalidades foi temporariamente pausado.
+                  Escolha um dos planos abaixo e ative sua assinatura via <strong>Pix</strong> ou <strong>Cartão de Crédito</strong> para desbloquear tudo imediatamente.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Banner do Plano Atual & Limites em Uso */}
           <div

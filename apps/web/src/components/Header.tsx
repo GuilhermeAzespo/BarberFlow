@@ -27,7 +27,7 @@ interface DelayedAppointmentItem {
 }
 
 export function Header() {
-  const { user, tenant, subscription, access, isImpersonated, exitImpersonation, logout } = useAuth();
+  const { user, tenant, subscription, access, isTrialExpired, isImpersonated, exitImpersonation, logout } = useAuth();
   const { unreadCount: whatsappUnreadCount, unreadConversations } = useWhatsAppNotifications();
   const [delayedAppointments, setDelayedAppointments] = useState<DelayedAppointmentItem[]>([]);
   const [delayedCount, setDelayedCount] = useState(0);
@@ -80,10 +80,10 @@ export function Header() {
       {/* Banner de Aviso de Fim de Trial / Renovação */}
       {subscription && user?.role !== 'SUPER_ADMIN' && (
         <>
-          {subscription.status === 'TRIALING' && (subscription.trialDaysLeft ?? 99) <= 3 && (
+          {(isTrialExpired || (subscription.status === 'TRIALING' && (subscription.trialDaysLeft ?? 99) <= 3)) && (
             <div
               style={{
-                background: (subscription.trialDaysLeft ?? 0) <= 0
+                background: isTrialExpired || (subscription.trialDaysLeft ?? 0) <= 0
                   ? 'linear-gradient(90deg, #991B1B 0%, #B91C1C 100%)'
                   : 'linear-gradient(90deg, #78350F 0%, #B45309 100%)',
                 color: '#FFFFFF',
@@ -100,7 +100,7 @@ export function Header() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={18} color="#FDE047" />
                 <span>
-                  {(subscription.trialDaysLeft ?? 0) <= 0 ? (
+                  {isTrialExpired || (subscription.trialDaysLeft ?? 0) <= 0 ? (
                     <>
                       <strong>Seu período de teste de 14 dias terminou!</strong> Cadastre um cartão de crédito ou realize o pagamento via Pix para continuar utilizando o BarberFlow.
                     </>

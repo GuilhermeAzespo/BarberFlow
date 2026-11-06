@@ -66,6 +66,7 @@ export interface Subscription {
   currentPeriodEnd?: string | null;
   lastPaymentAt?: string | null;
   isTrial?: boolean;
+  isTrialExpired?: boolean;
   trialDaysLeft?: number | null;
   renewDaysLeft?: number | null;
   nfseAddonActive?: boolean;
@@ -108,6 +109,7 @@ interface AuthContextType {
   tenant: Tenant | null;
   subscription: Subscription | null;
   access: AccessStatus | null;
+  isTrialExpired: boolean;
   isImpersonated: boolean;
   loading: boolean;
   canAccessMenu: (menuKey: string) => boolean;
@@ -116,7 +118,7 @@ interface AuthContextType {
   addons: AddonCatalogItem[];
   isAddonFeature: (feature: keyof PlanPermissions) => boolean;
   getAddonPriceCents: (feature: keyof PlanPermissions) => number;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<any>;
   logout: () => Promise<void>;
   exitImpersonation: () => Promise<void>;
 }
@@ -126,6 +128,7 @@ const AuthContext = createContext<AuthContextType>({
   tenant: null,
   subscription: null,
   access: null,
+  isTrialExpired: false,
   isImpersonated: false,
   loading: true,
   canAccessMenu: () => true,
@@ -185,6 +188,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
+  const isTrialExpired = Boolean(
+    user &&
+    user.role !== 'SUPER_ADMIN' &&
+    (
+      (subscription?.status === 'TRIALING' && ((subscription?.trialDaysLeft ?? 0) <= 0 || subscription?.isTrialExpired)) ||
+      (access && !access.allowed)
+    )
+  );
+
+  useEffect(() => {
+    if (loading || !user) return;
+    if (user.role === 'SUPER_ADMIN') return;
+
+    if (isTrialExpired) {
+      const lockedRoutes = [
+        '/dashboard',
+        '/calendar',
+        '/professionals',
+        '/services',
+        '/customers',
+        '/clube',
+        '/fidelidade',
+        '/marketing',
+        '/finance',
+        '/nfse',
+        '/reports',
+        '/chat',
+        '/whatsapp',
+        '/settings',
+        '/novidades',
+        '/onboarding',
+      ];
+
+      const isLocked = lockedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+      if (isLocked) {
+        router.replace('/planos');
+      }
+    }
+  }, [loading, user, isTrialExpired, pathname, router]);
+
   const logout = async () => {
     try {
       await api.post('/api/auth/logout');
@@ -214,12 +257,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canAccessMenu = useCallback(
     (menuKey: string): boolean => {
       if (!user) return false;
-      if (user.role === 'SUPER_ADMIN' || user.role === 'OWNER') return true;
+      if (user.role === 'SUPER_ADMIN') return true;
+      if (isTrialExpired) return false;
+      if (user.role === 'OWNER') return true;
       const allowed = user.permissions?.allowedMenus;
       if (!allowed || !Array.isArray(allowed)) return false;
       return allowed.includes(menuKey);
     },
-    [user]
+    [user, isTrialExpired]
   );
 
   const hasPermission = useCallback(
@@ -278,6 +323,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tenant,
         subscription,
         access,
+        isTrialExpired,
         isImpersonated,
         loading,
         canAccessMenu,

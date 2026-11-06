@@ -25,24 +25,37 @@ export default function LoginPage() {
   const { refresh } = useAuth();
 
   const redirectAfterLogin = async (user: any) => {
-    await refresh();
+    const data = await refresh();
     if (user.role === 'SUPER_ADMIN') {
       router.push('/admin');
-    } else {
-      const allowed = user.permissions?.allowedMenus;
-      if (allowed && Array.isArray(allowed)) {
-        if (allowed.includes('dashboard')) {
-          router.push('/dashboard');
-        } else if (allowed.includes('calendar')) {
-          router.push('/calendar');
-        } else if (allowed.length > 0) {
-          router.push(`/${allowed[0]}`);
-        } else {
-          router.push('/calendar');
-        }
-      } else {
+      return;
+    }
+
+    const sub = data?.subscription;
+    const acc = data?.access;
+    const isTrialExpired = Boolean(
+      (sub?.status === 'TRIALING' && ((sub?.trialDaysLeft ?? 0) <= 0 || sub?.isTrialExpired)) ||
+      (acc && !acc.allowed)
+    );
+
+    if (isTrialExpired) {
+      router.push('/planos');
+      return;
+    }
+
+    const allowed = user.permissions?.allowedMenus;
+    if (allowed && Array.isArray(allowed)) {
+      if (allowed.includes('dashboard')) {
         router.push('/dashboard');
+      } else if (allowed.includes('calendar')) {
+        router.push('/calendar');
+      } else if (allowed.length > 0) {
+        router.push(`/${allowed[0]}`);
+      } else {
+        router.push('/calendar');
       }
+    } else {
+      router.push('/dashboard');
     }
   };
 

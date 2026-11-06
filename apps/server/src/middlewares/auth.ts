@@ -89,10 +89,18 @@ export async function requireTenant(req: Request, _res: Response, next: NextFunc
   if (!req.auth.tenantId) throw HttpError.forbidden('Rota disponível apenas para contas de salão');
 
   const tenant = await loadTenant(req.auth.tenantId);
+  req.tenantId = tenant.id;
+
+  // As rotas de faturamento e checkout (/api/billing) devem ser permitidas mesmo se a assinatura
+  // estiver com o teste encerrado ou bloqueada por pagamento, para que o usuário consiga pagar e desbloquear.
+  const isBilling = req.baseUrl === '/api/billing' || req.originalUrl?.includes('/api/billing');
+  if (isBilling) {
+    return next();
+  }
+
   const access = evaluateTenantAccess(tenant);
   if (!access.allowed) throw HttpError.forbidden(access.message, access.code);
 
-  req.tenantId = tenant.id;
   next();
 }
 

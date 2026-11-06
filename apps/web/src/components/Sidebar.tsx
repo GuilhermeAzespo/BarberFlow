@@ -43,7 +43,7 @@ export const ALL_MENU_KEYS = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { canAccessMenu, subscription, hasPlanFeature, isAddonFeature } = useAuth();
+  const { canAccessMenu, subscription, hasPlanFeature, isAddonFeature, isTrialExpired } = useAuth();
   const { unreadCount: whatsappUnreadCount } = useWhatsAppNotifications();
   const visibleMenuItems = ALL_MENU_KEYS.filter((item) => canAccessMenu(item.key));
 
@@ -364,7 +364,11 @@ export function Sidebar() {
           </span>
         </div>
         <div style={{ fontSize: '0.74rem', lineHeight: 1.35, margin: '0 0 8px 0' }}>
-          {subscription?.status === 'TRIALING' ? (
+          {isTrialExpired ? (
+            <span style={{ color: '#F87171', fontWeight: 700 }}>
+              ⚠️ Teste encerrado — Clique para assinar
+            </span>
+          ) : subscription?.status === 'TRIALING' ? (
             <span style={{ color: (subscription.trialDaysLeft ?? 0) <= 3 ? '#F87171' : '#FBBF24', fontWeight: 600 }}>
               {(subscription.trialDaysLeft ?? 0) <= 0
                 ? '⚠️ Teste encerrado (14 dias)'

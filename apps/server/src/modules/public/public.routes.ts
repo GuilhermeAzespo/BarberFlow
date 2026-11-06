@@ -11,7 +11,7 @@ import {
 } from '../appointments/appointments.service.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { logger } from '../../lib/logger.js';
-import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant-access.js';
+import { extractPlanFeatureList, extractPlanPermissions, evaluateTenantAccess } from '../../lib/tenant-access.js';
 import { systemLog } from '../../lib/system-log.js';
 import { renderDanfseHtml } from '../nfse/nfse.engine.js';
 import { getPublicCustomerLoyalty } from '../loyalty/loyalty.service.js';
@@ -243,9 +243,20 @@ publicRouter.post('/tenants/by-slug/:slug/appointments', async (req, res) => {
 
   const tenant = await prisma.tenant.findUnique({
     where: { slug: req.params.slug },
-    select: { id: true, name: true, slug: true, timezone: true, status: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      timezone: true,
+      status: true,
+      subscription: { include: { plan: true } },
+    },
   });
   if (!tenant || tenant.status !== 'ACTIVE') throw HttpError.notFound('Salão não encontrado ou indisponível');
+  const access = evaluateTenantAccess(tenant as any);
+  if (!access.allowed) {
+    throw HttpError.forbidden('Os agendamentos online deste salão estão temporariamente suspensos.');
+  }
 
   const cleanPhone = normalizePhone(data.customerPhone);
   if (!cleanPhone || cleanPhone.length < 10) {

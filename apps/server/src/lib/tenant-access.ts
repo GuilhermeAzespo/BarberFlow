@@ -10,7 +10,7 @@ export type TenantWithSubscription = Tenant & {
 
 export interface TenantAccess {
   allowed: boolean;
-  code: 'OK' | 'TENANT_SUSPENDED' | 'TENANT_BLOCKED' | 'TENANT_CANCELED' | 'NO_SUBSCRIPTION' | 'SUBSCRIPTION_CANCELED';
+  code: 'OK' | 'TENANT_SUSPENDED' | 'TENANT_BLOCKED' | 'TENANT_CANCELED' | 'NO_SUBSCRIPTION' | 'SUBSCRIPTION_CANCELED' | 'TRIAL_EXPIRED';
   message: string;
   /** PAST_DUE ainda dentro da carência: acesso liberado, mas com aviso */
   warning?: string;
@@ -38,6 +38,13 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
   if (sub.status === 'PAST_DUE') {
     const reference = sub.currentPeriodEnd ?? sub.trialEndsAt;
     const blockAt = reference ? DateTime.fromJSDate(reference).plus({ days: env.BILLING_GRACE_DAYS }) : null;
+    if (blockAt && DateTime.now() > blockAt) {
+      return {
+        allowed: false,
+        code: 'TENANT_BLOCKED',
+        message: 'Conta bloqueada por pendência financeira. Regularize sua assinatura na tela de planos.',
+      };
+    }
     return {
       allowed: true,
       code: 'OK',
@@ -47,26 +54,24 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
         : 'Pagamento pendente.',
     };
   }
-  if (sub.status === 'TRIALING' && sub.trialEndsAt) {
+  if (sub.status === 'TRIALING') {
+    if (!sub.trialEndsAt) {
+      return {
+        allowed: false,
+        code: 'TRIAL_EXPIRED',
+        message: 'Seu período de teste gratuito terminou. Escolha um plano para continuar utilizando o BarberFlow.',
+      };
+    }
+
     const diff = DateTime.fromJSDate(sub.trialEndsAt).diffNow('days');
     const daysLeft = Math.ceil(diff.days);
     const dateFormatted = DateTime.fromJSDate(sub.trialEndsAt).setZone(tenant.timezone).toFormat('dd/LL/yyyy');
 
-    if (daysLeft <= 0) {
-      const graceEnd = DateTime.fromJSDate(sub.trialEndsAt).plus({ days: env.BILLING_GRACE_DAYS });
-      const graceDiff = Math.ceil(graceEnd.diffNow('days').days);
-      if (graceDiff <= 0) {
-        return {
-          allowed: false,
-          code: 'TENANT_BLOCKED',
-          message: 'Seu período de teste gratuito de 14 dias terminou. Cadastre seu cartão de crédito ou realize o pagamento via Pix para continuar utilizando o BarberFlow.',
-        };
-      }
+    if (daysLeft <= 0 || DateTime.fromJSDate(sub.trialEndsAt) <= DateTime.now()) {
       return {
-        allowed: true,
-        code: 'OK',
-        message: 'OK',
-        warning: `⚠️ Seu período de teste de 14 dias terminou! Cadastre um cartão de crédito ou gere um Pix agora para manter seu salão funcionando sem interrupções.`,
+        allowed: false,
+        code: 'TRIAL_EXPIRED',
+        message: 'Seu período de teste gratuito de 14 dias terminou. Escolha um plano e ative sua assinatura para continuar utilizando o BarberFlow.',
       };
     }
 
