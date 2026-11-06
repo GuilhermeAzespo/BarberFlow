@@ -14,6 +14,7 @@ interface Customer {
   name: string;
   phone?: string | null;
   email?: string | null;
+  birthDate?: string | null;
   notes?: string | null;
   createdAt: string;
   _count?: { appointments: number };
@@ -49,6 +50,7 @@ export default function CustomersPage() {
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newBirthDate, setNewBirthDate] = useState('');
   const [newNotes, setNewNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -96,6 +98,7 @@ export default function CustomersPage() {
         name: newName,
         phone: newPhone || null,
         email: newEmail || null,
+        birthDate: newBirthDate ? new Date(newBirthDate) : null,
         notes: newNotes || null,
       });
 
@@ -103,6 +106,7 @@ export default function CustomersPage() {
       setNewName('');
       setNewPhone('');
       setNewEmail('');
+      setNewBirthDate('');
       setNewNotes('');
       await loadCustomers();
       toast.success('Cliente cadastrado com sucesso!');
@@ -176,6 +180,7 @@ export default function CustomersPage() {
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>Nome</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>WhatsApp</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>E-mail</th>
+                      <th style={{ padding: '12px 16px', fontWeight: 600 }}>Aniversário</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600 }}>Agendamentos</th>
                       <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>Ações</th>
                     </tr>

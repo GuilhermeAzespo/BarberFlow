@@ -124,6 +124,7 @@ export interface PlanPermissions {
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
   nfse: boolean;                 // Emissor de Nota Fiscal de Serviços Eletrônica (NFS-e Padrão Nacional)
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
+  marketing: boolean;            // Recuperação de Clientes Inativos & Aniversariantes WhatsApp
 }
 
 export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
@@ -138,6 +139,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     multiUserRoles: false,
     prioritySupport: false,
     loyalty: false,
+    marketing: false,
   },
   pro: {
     reports: true,
@@ -150,6 +152,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     multiUserRoles: true,
     prioritySupport: true,
     loyalty: true,
+    marketing: true,
   },
   premium: {
     reports: true,
@@ -162,6 +165,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     multiUserRoles: true,
     prioritySupport: true,
     loyalty: true,
+    marketing: true,
   },
 };
 
@@ -267,4 +271,10 @@ export async function assertAppointmentLimit(tenantId: string): Promise<void> {
       `Limite mensal de ${maxAppointmentsPerMonth} agendamentos do seu plano atingido. Faça upgrade para continuar.`,
     );
   }
+}
+
+export async function hasPlanFeature(tenantId: string, feature: keyof PlanPermissions): Promise<boolean> {
+  const tenant = await loadTenant(tenantId);
+  const limits = effectiveLimits(tenant.subscription);
+  return Boolean(limits.permissions[feature]);
 }

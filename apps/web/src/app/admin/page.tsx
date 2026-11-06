@@ -49,6 +49,7 @@ import {
   Tag,
   Save,
   Calendar,
+  Flame,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth, PlanPermissions } from '../../lib/auth-context';
@@ -147,6 +148,15 @@ const PERMISSION_METADATA: Array<{
     category: 'Fidelização & Marketing',
     icon: Award,
   },
+  {
+    key: 'marketing',
+    label: 'Recuperação de Clientes & Aniversariantes (WhatsApp)',
+    shortLabel: 'Recuperação & Aniversários',
+    description: 'Robôs automáticos para resgatar clientes sumidos há 30+ dias e parabenizar aniversariantes no WhatsApp',
+    category: 'Fidelização & Marketing',
+    icon: Flame,
+  },
+
 ];
 
 const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
@@ -161,6 +171,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     prioritySupport: false,
     nfse: false,
     loyalty: false,
+    marketing: false,
   },
   pro: {
     reports: true,
@@ -173,6 +184,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     prioritySupport: false,
     nfse: false,
     loyalty: true,
+    marketing: true,
   },
   premium: {
     reports: true,
@@ -185,6 +197,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     prioritySupport: true,
     nfse: true,
     loyalty: true,
+    marketing: true,
   },
 };
 

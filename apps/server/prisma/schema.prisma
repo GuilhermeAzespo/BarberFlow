@@ -155,6 +155,8 @@ model Tenant {
   logs                  SystemLog[]
   loyaltyConfig         LoyaltyConfig?
   loyaltyCards          LoyaltyCard[]
+  marketingConfig       MarketingConfig?
+  marketingLogs         MarketingMessageLog[]
 
   @@index([status])
   @@index([createdAt])
@@ -347,6 +349,7 @@ model Customer {
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   appointments Appointment[]
   loyaltyCard  LoyaltyCard?
+  marketingLogs MarketingMessageLog[]
 
   @@unique([tenantId, phone])
   @@unique([tenantId, whatsappJid])
@@ -776,4 +779,61 @@ model LoyaltyTransaction {
 
   @@index([loyaltyCardId, createdAt])
   @@index([tenantId, createdAt])
+}
+
+enum MarketingCampaignType {
+  INACTIVE_RECOVERY
+  BIRTHDAY
+}
+
+enum MarketingDeliveryStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model MarketingConfig {
+  id                      String   @id @default(cuid())
+  tenantId                String   @unique
+  enabled                 Boolean  @default(true)
+
+  // Robô 1: Recuperação de Inativos ("Clientes Sumidos")
+  inactiveRecoveryEnabled Boolean  @default(true)
+  inactiveDaysThreshold   Int      @default(30)
+  inactiveMessageTemplate String   @default("Olá, {cliente}! Sentimos sua falta aqui na {barbearia}. Que tal renovar o visual esta semana? Agende seu horário em 1 clique: {link}")
+  inactiveDiscountPercent Int?
+
+  // Robô 2: Aniversariantes do Dia
+  birthdayEnabled         Boolean  @default(true)
+  birthdayMessageTemplate String   @default("🎉 Parabéns, {cliente}! A equipe da {barbearia} deseja um feliz aniversário! Preparamos um presente especial para você: agende com desconto exclusivo pelo link: {link}")
+  birthdayDiscountPercent Int?     @default(15)
+
+  // Regras de Disparo & Anti-Ban
+  sendWindowStart         String   @default("09:00")
+  sendWindowEnd           String   @default("19:00")
+  minDaysBetweenMessages  Int      @default(30)
+  maxDailyDispatches      Int      @default(20)
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant                  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model MarketingMessageLog {
+  id           String                  @id @default(cuid())
+  tenantId     String
+  customerId   String
+  type         MarketingCampaignType
+  status       MarketingDeliveryStatus @default(SENT)
+  phone        String
+  message      String
+  errorMessage String?
+  sentAt       DateTime                @default(now())
+
+  tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type, sentAt])
+  @@index([tenantId, customerId, sentAt])
 }

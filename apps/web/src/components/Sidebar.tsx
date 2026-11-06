@@ -18,6 +18,7 @@ import {
   Crown,
   FileText,
   Award,
+  Flame,
 } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { SYSTEM_VERSION } from '../lib/constants';
@@ -30,6 +31,7 @@ export const ALL_MENU_KEYS = [
   { key: 'services', label: 'Serviços & Preços', href: '/services', icon: Scissors },
   { key: 'customers', label: 'Clientes', href: '/customers', icon: UserCheck },
   { key: 'loyalty', label: 'Cartão Fidelidade', href: '/fidelidade', icon: Award },
+  { key: 'marketing', label: 'Campanhas & Retorno', href: '/marketing', icon: Flame },
   { key: 'finance', label: 'Fluxo de Caixa', href: '/finance', icon: DollarSign },
   { key: 'nfse', label: 'Notas Fiscais (NFS-e)', href: '/nfse', icon: FileText },
   { key: 'reports', label: 'Relatórios', href: '/reports', icon: BarChart3 },

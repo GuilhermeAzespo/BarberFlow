@@ -46,6 +46,28 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v3-5',
+    version: 'v3.5',
+    date: '06 de Novembro de 2026',
+    title: 'Recuperação Automática de Clientes Sumidos & Aniversariantes no WhatsApp com Proteção Anti-Ban',
+    category: 'NEW',
+    categoryLabel: 'Fase 5 RoadMap',
+    badgeColor: '#F59E0B',
+    badgeBg: 'rgba(245, 158, 11, 0.15)',
+    summary:
+      'Lançamento da Fase 5 do RoadMap Oficial: Robôs inteligentes e autônomos para alavancar a receita das barbearias no piloto automático. O sistema identifica clientes ausentes há semanas e aniversariantes do dia, disparando mensagens acolhedoras e ofertas exclusivas no WhatsApp com filtros rígidos anti-ban, painel de métricas de conversão e histórico auditável.',
+    highlights: [
+      'Robô 1 — Resgate de Clientes Inativos: Varredura contínua identificando clientes que cortavam com frequência mas estão há 20, 25, 30 ou 45 dias sem voltar e sem horário futuro marcado, com convite direto no WhatsApp.',
+      'Robô 2 — Parabéns de Aniversário: Identificação de aniversariantes do dia e envio de felicitações comemorativas matinais acompanhadas de desconto ou mimo configurável pelo salão.',
+      'Filtros Inteligentes Anti-Ban: Janela restrita a horário comercial (09h às 19h), espaçamento aleatório entre envios, cota máxima diária e bloqueio de reenvio para o mesmo cliente em menos de 30 dias.',
+      'Painel de Gestão da Barbearia (/marketing): Dashboard com KPIs de ROI (clientes sumidos identificados, aniversariantes de hoje, mensagens enviadas e clientes recuperados que voltaram a agendar).',
+      'Disparos Manuais & Teste em 1 Clique: O barbeiro pode testar o texto no próprio celular, enviar mensagens personalizadas individuais ou disparar lotes com um clique.',
+      'Data de Nascimento no Agendamento Web & Cadastro: Campo opcional de aniversário integrado à vitrine online (/[slug]/agendar) e à ficha de clientes (/customers).',
+    ],
+    impact: 'Aumento imediato do faturamento das barbearias com retorno ativo de clientes esquecidos e relacionamento humanizado.',
+  },
+
+  {
     id: 'v3-4',
     version: 'v3.4',
     date: '06 de Novembro de 2026',

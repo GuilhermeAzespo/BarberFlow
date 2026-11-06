@@ -12,7 +12,7 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 | **Fase 2** | Item 4 | **Planos Anuais / Semestrais no Checkout** | 🟢 Fácil–Médio | Receita & Caixa SaaS | ✅ **Concluído** |
 | **Fase 3** | Item 5 | **Régua Automática de Cobrança da Assinatura** | 🟡 Médio | Retenção & Automação SaaS | ✅ **Concluído** |
 | **Fase 4** | Item 2 | **Cartão Fidelidade Digital Automático** | 🟡 Médio | Fidelização da Barbearia | ✅ **Concluído** |
-| **Fase 5** | Item 6 | **Recuperação de "Clientes Sumidos" & Aniversariantes (WhatsApp)** | 🟠 Médio–Avançado | Marketing & Retorno | ✅ Sim (Plano ou Add-on) |
+| **Fase 5** | Item 6 | **Recuperação de "Clientes Sumidos" & Aniversariantes (WhatsApp)** | 🟠 Médio–Avançado | Marketing & Retorno | ✅ **Concluído** |
 | **Fase 6** | Item 3 | **Clube de Assinatura da Barbearia (Planos para Clientes)** | 🔴 Avançado | Receita Recorrente do Salão | ✅ Sim (Plano ou Add-on) |
 
 > 💡 **Por que essa ordem?**
@@ -109,7 +109,7 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 
 ---
 
-### 🟠 FASE 5: Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp *(Item 6)*
+### 🟢 FASE 5: Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp *(Item 6)* — ✅ [CONCLUÍDO]
 **Objetivo:** Fazer o BarberFlow gerar dinheiro ativo para o barbeiro, trazendo de volta clientes que estão há muito tempo sem cortar e parabenizando aniversariantes.
 
 #### Escopo de Implementação:
@@ -150,6 +150,6 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 - [x] **Fase 2:** Planos Anuais / Semestrais no Checkout (v3.2)
 - [x] **Fase 3:** Régua Automática de Cobrança da Assinatura (v3.3)
 - [x] **Fase 4:** Cartão Fidelidade Digital Automático (v3.4)
-- [ ] **Fase 5:** Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp
+- [x] **Fase 5:** Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp (v3.5)
 - [ ] **Fase 6:** Clube de Assinatura da Barbearia
 

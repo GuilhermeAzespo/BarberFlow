@@ -13,6 +13,17 @@ export interface AddonConfigItem {
 
 export const DEFAULT_ADDONS_CATALOG: AddonConfigItem[] = [
   {
+    key: 'marketing',
+    name: 'Recuperação de Clientes Sumidos & Aniversariantes (WhatsApp)',
+    shortName: 'Recuperação & Aniversários',
+    description:
+      'Robôs inteligentes que identificam clientes inativos há mais de 30 dias e aniversariantes do dia, disparando mensagens personalizadas no WhatsApp com filtros anti-ban para aumentar a frequência de retorno.',
+    category: 'Fidelização & Marketing',
+    isAddon: true,
+    priceCents: 2490,
+  },
+
+  {
     key: 'nfse',
     name: 'Emissor de Nota Fiscal de Serviços (NFS-e)',
     shortName: 'Emissor NFS-e',

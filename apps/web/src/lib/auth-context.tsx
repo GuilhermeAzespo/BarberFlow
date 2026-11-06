@@ -55,6 +55,7 @@ export interface PlanPermissions {
   prioritySupport: boolean;      // Suporte VIP Prioritário no WhatsApp
   nfse: boolean;                 // Emissão de Nota Fiscal de Serviços Eletrônica (NFS-e)
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
+  marketing: boolean;            // Recuperação de Clientes Sumidos & Aniversariantes WhatsApp
 }
 
 export interface Subscription {

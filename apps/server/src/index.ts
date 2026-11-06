@@ -27,6 +27,8 @@ import { reportsRouter } from './modules/reports/reports.routes.js';
 import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { nfseRouter } from './modules/nfse/nfse.routes.js';
 import { loyaltyRouter } from './modules/loyalty/loyalty.routes.js';
+import { marketingRouter } from './modules/marketing/marketing.routes.js';
+import { initMarketingWorker } from './modules/marketing/marketing-worker.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 import { billingDunningWorker } from './lib/billing-dunning.js';
 
@@ -88,6 +90,7 @@ app.use('/api/reports', requireAuth, requireTenant, requireMenuPermission('repor
 app.use('/api/billing', requireAuth, requireTenant, billingRouter);
 app.use('/api/nfse', requireAuth, requireTenant, requireMenuPermission('nfse'), nfseRouter);
 app.use('/api/loyalty', requireAuth, requireTenant, loyaltyRouter);
+app.use('/api/marketing', requireAuth, requireTenant, marketingRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);
@@ -164,6 +167,9 @@ async function bootstrap() {
 
   // 4. Inicializa Régua Automática de Cobrança da Assinatura (Fase 3)
   billingDunningWorker.start();
+
+  // 5. Inicializa Automação de Marketing & Clientes Inativos (Fase 5)
+  initMarketingWorker();
 
   const server = app.listen(env.PORT, () => {
     logger.info(`🚀 BarberFlow Server rodando na porta ${env.PORT} [${env.NODE_ENV}]`);

@@ -232,6 +232,7 @@ const publicBookSchema = z.object({
   customerName: z.string().trim().min(2, 'Informe seu nome completo'),
   customerPhone: z.string().trim().min(8, 'Informe seu WhatsApp para confirmação'),
   customerEmail: z.string().email('E-mail inválido').optional().nullable(),
+  customerBirthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data de nascimento inválida (formato YYYY-MM-DD)').optional().nullable(),
   notes: z.string().trim().max(400).optional().nullable(),
 });
 
@@ -269,11 +270,15 @@ publicRouter.post('/tenants/by-slug/:slug/appointments', async (req, res) => {
     enforceBusinessHours: true,
   });
 
-  // Atualiza e-mail do cliente se fornecido
-  if (data.customerEmail && appointment.customer.id) {
+  // Atualiza e-mail ou data de nascimento do cliente se fornecidos
+  if (appointment.customer.id && (data.customerEmail || data.customerBirthDate)) {
+    const updateData: { email?: string; birthDate?: Date } = {};
+    if (data.customerEmail) updateData.email = data.customerEmail;
+    if (data.customerBirthDate) updateData.birthDate = new Date(`${data.customerBirthDate}T12:00:00Z`);
+
     await prisma.customer.update({
       where: { id: appointment.customer.id },
-      data: { email: data.customerEmail },
+      data: updateData,
     }).catch(() => {});
   }
 

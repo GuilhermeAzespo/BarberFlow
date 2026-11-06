@@ -149,6 +149,7 @@ function PublicBookingContent() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerBirthDate, setCustomerBirthDate] = useState('');
   const [notes, setNotes] = useState('');
 
   // Submission
@@ -284,6 +285,7 @@ function PublicBookingContent() {
           customerName,
           customerPhone,
           customerEmail: customerEmail.trim() || null,
+          customerBirthDate: customerBirthDate || null,
           notes: notes.trim() || null,
         }
       );
@@ -1321,6 +1323,28 @@ function PublicBookingContent() {
                   placeholder="carlos@exemplo.com"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
+                />
+              </div>
+
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', color: 'var(--text-muted)', marginBottom: '6px', fontWeight: 500 }}>
+                  Data de Nascimento (opcional — para mimos e desconto de aniversário 🎉)
+                </label>
+                <input
+                  type="date"
+                  value={customerBirthDate}
+                  onChange={(e) => setCustomerBirthDate(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    color: '#FFF',
+                    fontSize: '0.92rem',
+                    outline: 'none',
+                  }}
                 />
               </div>
 
