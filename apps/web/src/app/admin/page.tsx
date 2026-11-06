@@ -2416,7 +2416,6 @@ export default function SuperAdminPage() {
                     type="button"
                     onClick={handleRunDunningNow}
                     disabled={runningDunning}
-                    className="btn btn-secondary"
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2424,17 +2423,22 @@ export default function SuperAdminPage() {
                       fontSize: '0.82rem',
                       fontWeight: 700,
                       padding: '9px 15px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      color: '#F8FAFC',
+                      cursor: runningDunning ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <RefreshCw size={14} className={runningDunning ? 'animate-spin' : ''} />
-                    <span>{runningDunning ? 'Verificando...' : 'Executar Verificação Agora'}</span>
+                    <RefreshCw size={14} className={runningDunning ? 'animate-spin' : ''} color="#E5B338" />
+                    <span style={{ color: '#F8FAFC' }}>{runningDunning ? 'Verificando...' : 'Executar Verificação Agora'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleSaveDunning}
                     disabled={savingDunning}
-                    className="btn btn-primary"
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2442,9 +2446,15 @@ export default function SuperAdminPage() {
                       fontSize: '0.82rem',
                       fontWeight: 700,
                       padding: '9px 16px',
+                      borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #E5B338 0%, #C99520 100%)',
+                      border: 'none',
+                      color: '#0B0F17',
+                      cursor: savingDunning ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 2px 10px rgba(229, 179, 56, 0.25)',
                     }}
                   >
-                    <Save size={15} />
+                    <Save size={15} color="#0B0F17" />
                     <span>{savingDunning ? 'Salvando...' : 'Salvar Regras da Régua'}</span>
                   </button>
                 </div>
