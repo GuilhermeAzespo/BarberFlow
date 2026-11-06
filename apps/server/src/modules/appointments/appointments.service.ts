@@ -8,6 +8,7 @@ import { logger } from '../../lib/logger.js';
 import { triggerAppointmentSurvey } from '../whatsapp/whatsapp-surveys.js';
 import { autoEmitNfseForCompletedAppointment } from '../nfse/nfse.routes.js';
 import { processLoyaltyForCompletedAppointment } from '../loyalty/loyalty.service.js';
+import { clubService } from '../club/club.service.js';
 
 /** Status que ocupam a agenda do profissional. */
 export const BLOCKING_STATUSES: AppointmentStatus[] = ['SCHEDULED', 'CONFIRMED', 'DELAYED'];
@@ -444,6 +445,9 @@ export async function changeAppointmentStatus(params: {
       });
       processLoyaltyForCompletedAppointment(params.tenantId, current.id).catch((err) => {
         logger.error({ err, tenantId: params.tenantId, appointmentId: current.id }, 'Erro ao processar Cartão Fidelidade');
+      });
+      clubService.processClubUsageForCompletedAppointment(params.tenantId, current.id).catch((err) => {
+        logger.error({ err, tenantId: params.tenantId, appointmentId: current.id }, 'Erro ao abater uso do Clube de Assinatura');
       });
     }
     if (false) {

@@ -56,6 +56,7 @@ export interface PlanPermissions {
   nfse: boolean;                 // Emissão de Nota Fiscal de Serviços Eletrônica (NFS-e)
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
   marketing: boolean;            // Recuperação de Clientes Sumidos & Aniversariantes WhatsApp
+  club: boolean;                 // Clube de Assinatura da Barbearia
 }
 
 export interface Subscription {

@@ -13,7 +13,7 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 | **Fase 3** | Item 5 | **Régua Automática de Cobrança da Assinatura** | 🟡 Médio | Retenção & Automação SaaS | ✅ **Concluído** |
 | **Fase 4** | Item 2 | **Cartão Fidelidade Digital Automático** | 🟡 Médio | Fidelização da Barbearia | ✅ **Concluído** |
 | **Fase 5** | Item 6 | **Recuperação de "Clientes Sumidos" & Aniversariantes (WhatsApp)** | 🟠 Médio–Avançado | Marketing & Retorno | ✅ **Concluído** |
-| **Fase 6** | Item 3 | **Clube de Assinatura da Barbearia (Planos para Clientes)** | 🔴 Avançado | Receita Recorrente do Salão | ✅ Sim (Plano ou Add-on) |
+| **Fase 6** | Item 3 | **Clube de Assinatura da Barbearia (Planos para Clientes)** | 🔴 Avançado | Receita Recorrente do Salão | ✅ **Concluído** |
 
 > 💡 **Por que essa ordem?**
 > - As **Fases 1, 2 e 3** atacam diretamente o módulo de **Billing / Mercado Pago** que acabamos de blindar, destravando vendas com cupons, antecipação de 6 a 12 meses de caixa e renovação automática sem inadimplência.
@@ -127,29 +127,40 @@ Este documento define o plano estratégico de evolução do **BarberFlow**, cont
 
 ---
 
-### 🔴 FASE 6: Clube de Assinatura da Barbearia *(Item 3)*
-**Objetivo:** Permitir que a barbearia crie e venda seus próprios planos recorrentes para os clientes finais (ex: *"Clube VIP: Cabelo Ilimitado por R$ 119,90/mês"* ou *"4 Cortes no mês por R$ 99,90"*).
+### 🟢 FASE 6: Clube de Assinatura da Barbearia *(Item 3)* — ✅ [CONCLUÍDO]
+**Objetivo:** Permitir que a barbearia crie e venda seus próprios planos recorrentes para os clientes finais (ex: *"Clube VIP: Cabelo Ilimitado por R$ 119,90/mês"* ou *"4 Cortes no mês por R$ 99,90"*), garantindo receita recorrente previsível (MRR) e fidelização máxima.
 
-#### Escopo de Implementação:
-- **Gestão de Planos do Clube (Painel do Salão):**
-  - Criação de planos do salão: nome, preço mensal, serviços cobertos, limite de usos no mês (ex: `4 usos/mês` ou `Ilimitado`) e dias da semana permitidos (ex: *Terça a Quinta* ou *Todos os dias*).
-- **Gestão de Clientes Assinantes:**
-  - Vínculo do cliente ao plano do clube, status (`Ativo`, `Pendente`, `Vencido`), data de renovação e contador de cortes utilizados no ciclo atual (`Ex: 2 de 4 cortes usados`).
-- **Integração com a Agenda & Vitrine (`/[slug]/agendar`):**
-  - Quando um cliente assinante ativo agenda pela vitrine ou na recepção, o sistema reconhece que o serviço faz parte do Clube VIP dele e abate 1 uso do pacote automaticamente.
-- **Cobrança Opcional via Mercado Pago do Próprio Salão:**
-  - A barbearia pode gerar o PIX de renovação do clube direto para o cliente usando o token Mercado Pago do próprio salão (100% sem custo e sem tributação para você).
-- **Integração com Add-ons Super Admin:**
-  - Módulo premium configurável na aba `Add-ons` do Super Admin.
+#### O que foi implementado:
+- [x] **Modelagem Prisma & Migração Idempotente:**
+  - Tabelas `ClubPlan`, `ClubPlanService`, `CustomerSubscription`, `ClubUsage` e enum `ClubSubscriptionStatus` (`ACTIVE`, `PENDING_PAYMENT`, `CANCELED`, `EXPIRED`).
+  - Índices compostos de alta performance e chaves estrangeiras com cascata segura.
+- [x] **Motor de Regras de Cobertura & Auditoria no Backend (`club.service.ts`):**
+  - Validação em tempo real de assinatura ativa, vigência do ciclo, limite mensal de utilizações e restrições de dias da semana.
+  - Abatimento automático de uso ao concluir agendamento (`COMPLETED`) em `appointments.service.ts`.
+  - Disparo de notificação de WhatsApp comemorativa da utilização do clube.
+  - Histórico auditável de utilizações (`ClubUsage`) com vínculo ao agendamento e serviço.
+- [x] **Painel de Gestão da Barbearia (`/clube`):**
+  - KPIs em tempo real: Assinantes Ativos, MRR do Clube em R$, Cortes Prestados no Mês e Assinaturas Vencendo em 7 Dias.
+  - Aba de Assinantes VIP com busca por nome/telefone, filtro por status, barra de progresso de utilizações e ações de renovação (+30 dias) e cancelamento.
+  - Aba de Planos com criação e edição (preço mensal, cota de utilizações ou ilimitado, dias válidos da semana, serviços inclusos e status ativo/inativo).
+  - Aba de Histórico de Utilizações com paginação e auditoria detalhada.
+- [x] **Vitrine Pública Online (/[slug]):**
+  - Seção dedicada e responsiva "Clube de Assinatura VIP" na página da barbearia.
+  - Exibição de cards de planos com valor mensal, benefícios, serviços inclusos e botão de contratação direta via WhatsApp.
+  - Navegação suave integrada ao menu do topo com scrollspy.
+- [x] **Super Admin & Catálogo de Add-ons:**
+  - Permissão de plano `club` em `PlanPermissions`, integrado ao painel Super Admin `/admin` e catálogo de add-ons com cobrança opcional para planos Starter.
 
 ---
 
-## ✅ Status de Execução do RoadMap
+## 🏆 Status de Execução do RoadMap
 
-- [x] **Fase 1:** Sistema de Cupons de Desconto no Super Admin (v3.1)
-- [x] **Fase 2:** Planos Anuais / Semestrais no Checkout (v3.2)
-- [x] **Fase 3:** Régua Automática de Cobrança da Assinatura (v3.3)
-- [x] **Fase 4:** Cartão Fidelidade Digital Automático (v3.4)
-- [x] **Fase 5:** Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp (v3.5)
-- [ ] **Fase 6:** Clube de Assinatura da Barbearia
+- [x] **Fase 1:** Sistema de Cupons de Desconto no Super Admin (v3.1) — ✅ **100% Concluído**
+- [x] **Fase 2:** Planos Anuais / Semestrais no Checkout (v3.2) — ✅ **100% Concluído**
+- [x] **Fase 3:** Régua Automática de Cobrança da Assinatura (v3.3) — ✅ **100% Concluído**
+- [x] **Fase 4:** Cartão Fidelidade Digital Automático (v3.4) — ✅ **100% Concluído**
+- [x] **Fase 5:** Recuperação Automática de "Clientes Sumidos" & Aniversariantes no WhatsApp (v3.5) — ✅ **100% Concluído**
+- [x] **Fase 6:** Clube de Assinatura da Barbearia (v4.0) — ✅ **100% Concluído**
+
+🎉 **TODAS AS 6 FASES DO ROADMAP FORAM IMPLEMENTADAS E VALIDADAS COM SUCESSO!**
 

@@ -125,6 +125,7 @@ export interface PlanPermissions {
   nfse: boolean;                 // Emissor de Nota Fiscal de Serviços Eletrônica (NFS-e Padrão Nacional)
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
   marketing: boolean;            // Recuperação de Clientes Inativos & Aniversariantes WhatsApp
+  club: boolean;                 // Clube de Assinatura da Barbearia (Planos VIP para Clientes)
 }
 
 export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
@@ -140,6 +141,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     prioritySupport: false,
     loyalty: false,
     marketing: false,
+    club: false,
   },
   pro: {
     reports: true,
@@ -153,6 +155,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     prioritySupport: true,
     loyalty: true,
     marketing: true,
+    club: true,
   },
   premium: {
     reports: true,
@@ -166,6 +169,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     prioritySupport: true,
     loyalty: true,
     marketing: true,
+    club: true,
   },
 };
 

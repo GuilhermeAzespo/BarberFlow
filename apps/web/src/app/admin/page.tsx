@@ -156,6 +156,15 @@ const PERMISSION_METADATA: Array<{
     category: 'Fidelização & Marketing',
     icon: Flame,
   },
+  {
+    key: 'club',
+    label: 'Clube de Assinatura da Barbearia (Planos VIP)',
+    shortLabel: 'Clube de Assinatura',
+    description: 'Gestão de planos recorrentes para clientes, abatimento automático na agenda e MRR garantido',
+    category: 'Receita Recorrente',
+    icon: Crown,
+  },
+
 
 ];
 
@@ -172,6 +181,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     nfse: false,
     loyalty: false,
     marketing: false,
+    club: false,
   },
   pro: {
     reports: true,
@@ -185,6 +195,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     nfse: false,
     loyalty: true,
     marketing: true,
+    club: true,
   },
   premium: {
     reports: true,
@@ -198,6 +209,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     nfse: true,
     loyalty: true,
     marketing: true,
+    club: true,
   },
 };
 

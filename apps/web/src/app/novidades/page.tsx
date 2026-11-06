@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Heart,
   MessageCircle,
+  Crown,
 } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
@@ -45,6 +46,27 @@ interface ChangelogItem {
 }
 
 const CHANGELOG_DATA: ChangelogItem[] = [
+  {
+    id: 'v4-0',
+    version: 'v4.0',
+    date: '06 de Novembro de 2026',
+    title: 'Clube de Assinatura VIP da Barbearia (MRR Recorrente & Fidelização Máxima)',
+    category: 'NEW',
+    categoryLabel: 'RoadMap Completo (Fase 6)',
+    badgeColor: '#E5B338',
+    badgeBg: 'rgba(229, 179, 56, 0.15)',
+    summary:
+      'Conclusão triunfal do RoadMap Oficial do BarberFlow! O Clube de Assinatura VIP permite que as barbearias criem planos mensais por assinatura recorrente (ex: Corte Ilimitado por R$ 119/mês ou 4 Atendimentos por R$ 99/mês), gerando previsibilidade financeira garantida (MRR), validação em tempo real e deduções automatizadas.',
+    highlights: [
+      'Criação & Gestão de Planos VIP: Planos customizáveis com preço mensal, serviços inclusos (corte, barba, sobrancelha, etc.), limite de utilizações (ilimitado ou cota mensal) e dias válidos na semana.',
+      'Controle Total de Assinantes (/clube): Painel de gestão da barbearia com KPIs em tempo real (Assinantes Ativos, MRR do Clube, Cortes Prestados no Mês e Assinaturas Vencendo em 7 Dias).',
+      'Abatimento & Auditoria Automática de Usos: Ao concluir um agendamento na barbearia, o BarberFlow identifica automaticamente se o cliente é assinante VIP, abate 1 uso do ciclo mensal, emite comprovante no WhatsApp e registra log auditável.',
+      'Vitrine Pública & Assinatura Facilitada (/[slug]): Apresentação sofisticada dos planos do clube na página pública da barbearia com conversão direta para adesão no WhatsApp.',
+      'Renovação Inteligente de Ciclo: Botão de renovação manual em 1 clique (+30 dias e zeramento de contador de usos) com controle de formas de pagamento (PIX, Cartão, Dinheiro).',
+      'Totalmente Integrado ao Super Admin: Gestão de permissões de plano SaaS e add-on dedicado com catálogo de preços e permissões granulares.',
+    ],
+    impact: 'Transforma barbearias em negócios de receita recorrente previsível com clientes fiéis e faturamento mensal garantido.',
+  },
   {
     id: 'v3-5',
     version: 'v3.5',

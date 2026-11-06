@@ -15,6 +15,7 @@ import { extractPlanFeatureList, extractPlanPermissions } from '../../lib/tenant
 import { systemLog } from '../../lib/system-log.js';
 import { renderDanfseHtml } from '../nfse/nfse.engine.js';
 import { getPublicCustomerLoyalty } from '../loyalty/loyalty.service.js';
+import { clubService } from '../club/club.service.js';
 import {
   getActiveSmtpConfig,
   sendEmail,
@@ -506,5 +507,12 @@ publicRouter.get('/tenants/:slug/loyalty', async (req, res) => {
   const { slug } = req.params;
   const phone = req.query.phone ? String(req.query.phone) : undefined;
   const result = await getPublicCustomerLoyalty(slug, phone);
+  res.json(result);
+});
+
+/** Consulta Pública dos Planos do Clube VIP da Barbearia na Vitrine */
+publicRouter.get('/tenants/:slug/club', async (req, res) => {
+  const { slug } = req.params;
+  const result = await clubService.getPublicPlans(slug);
   res.json(result);
 });

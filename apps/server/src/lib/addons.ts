@@ -13,6 +13,17 @@ export interface AddonConfigItem {
 
 export const DEFAULT_ADDONS_CATALOG: AddonConfigItem[] = [
   {
+    key: 'club',
+    name: 'Clube de Assinatura da Barbearia (Planos VIP)',
+    shortName: 'Clube VIP de Assinatura',
+    description:
+      'Criação e venda de planos recorrentes da barbearia (cortes ilimitados, pacotes mensais), abatimento automático de usos na agenda, controle de ciclos e faturamento recorrente garantido.',
+    category: 'Receita Recorrente & Fidelização',
+    isAddon: true,
+    priceCents: 3990,
+  },
+
+  {
     key: 'marketing',
     name: 'Recuperação de Clientes Sumidos & Aniversariantes (WhatsApp)',
     shortName: 'Recuperação & Aniversários',

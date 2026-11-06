@@ -28,6 +28,7 @@ import { webhooksRouter } from './modules/webhooks/webhooks.routes.js';
 import { nfseRouter } from './modules/nfse/nfse.routes.js';
 import { loyaltyRouter } from './modules/loyalty/loyalty.routes.js';
 import { marketingRouter } from './modules/marketing/marketing.routes.js';
+import { clubRouter } from './modules/club/club.routes.js';
 import { initMarketingWorker } from './modules/marketing/marketing-worker.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 import { billingDunningWorker } from './lib/billing-dunning.js';
@@ -91,6 +92,7 @@ app.use('/api/billing', requireAuth, requireTenant, billingRouter);
 app.use('/api/nfse', requireAuth, requireTenant, requireMenuPermission('nfse'), nfseRouter);
 app.use('/api/loyalty', requireAuth, requireTenant, loyaltyRouter);
 app.use('/api/marketing', requireAuth, requireTenant, marketingRouter);
+app.use('/api/club', requireAuth, requireTenant, requireMenuPermission('club'), clubRouter);
 
 // Rotas do Super Admin do SaaS
 app.use('/api/superadmin', requireSuperAdmin, superAdminRouter);

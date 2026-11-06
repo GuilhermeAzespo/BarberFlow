@@ -33,6 +33,7 @@ import {
   Search,
   RefreshCw,
   Trophy,
+  Crown,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -107,6 +108,29 @@ interface PublicLoyaltyResponse {
   message?: string;
 }
 
+interface PublicClubPlan {
+  id: string;
+  name: string;
+  description?: string | null;
+  priceCents: number;
+  maxUsagesPerMonth?: number | null;
+  allowedDaysOfWeek?: number[];
+  services: {
+    service: {
+      id: string;
+      name: string;
+      priceCents: number;
+      durationMinutes: number;
+    };
+  }[];
+}
+
+interface PublicClubResponse {
+  tenantName: string;
+  phone?: string | null;
+  plans: PublicClubPlan[];
+}
+
 const RESERVED_SLUGS = [
   'login',
   'register',
@@ -160,11 +184,11 @@ export default function TenantHomePage() {
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
   const [loyaltyResult, setLoyaltyResult] = useState<PublicLoyaltyResponse | null>(null);
   const [loyaltySearched, setLoyaltySearched] = useState(false);
-
+  const [clubPlans, setClubPlans] = useState<PublicClubPlan[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const sectionIds = ['servicos', 'equipe', 'fidelidade', 'galeria', 'sobre'];
+    const sectionIds = ['servicos', 'equipe', 'clube', 'fidelidade', 'galeria', 'sobre'];
 
     const handleScroll = () => {
       if (window.scrollY < 220) {
@@ -280,7 +304,18 @@ export default function TenantHomePage() {
         // Silêncio se não habilitado
       }
     };
+    const fetchClub = async () => {
+      try {
+        const res = await api.get<PublicClubResponse>('/api/public/tenants/' + encodeURIComponent(slug) + '/club');
+        if (res && res.plans && res.plans.length > 0) {
+          setClubPlans(res.plans);
+        }
+      } catch {
+        // Silêncio se não houver planos
+      }
+    };
     fetchLoyalty();
+    fetchClub();
   }, [slug]);
 
   const handleSearchLoyalty = async (e?: React.FormEvent) => {
@@ -528,6 +563,7 @@ export default function TenantHomePage() {
               {[
                 { id: 'servicos', label: 'Serviços', show: true },
                 { id: 'equipe', label: 'Barbeiros', show: tenant.professionals.length > 0 },
+                { id: 'clube', label: 'Clube VIP', show: Boolean(clubPlans && clubPlans.length > 0) },
                 { id: 'fidelidade', label: 'Fidelidade', show: Boolean(loyaltyProgram?.enabled) },
                 { id: 'galeria', label: 'Galeria', show: Boolean(tenant.gallery && tenant.gallery.length > 0) },
                 { id: 'sobre', label: 'Horários & Local', show: true },
@@ -1193,6 +1229,214 @@ export default function TenantHomePage() {
       )}
 
       
+      {/* ────────────────── Clube de Assinatura VIP ────────────────── */}
+      {clubPlans && clubPlans.length > 0 && (
+        <section
+          id="clube"
+          style={{
+            padding: '70px 24px',
+            maxWidth: '1200px',
+            width: '100%',
+            margin: '0 auto',
+          }}
+        >
+          <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 12px',
+                borderRadius: '20px',
+                background: 'rgba(229, 179, 56, 0.12)',
+                color: 'var(--primary)',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: '10px',
+                border: '1px solid rgba(229, 179, 56, 0.25)',
+              }}
+            >
+              <Crown size={15} />
+              Clube de Assinatura VIP
+            </span>
+            <h2
+              style={{
+                fontSize: '2.1rem',
+                fontWeight: 800,
+                letterSpacing: '-0.02em',
+                marginTop: '4px',
+                marginBottom: '10px',
+              }}
+            >
+              Cortes e Barbas Ilimitados Todo Mês
+            </h2>
+            <p
+              style={{
+                color: 'var(--text-muted)',
+                fontSize: '0.98rem',
+                maxWidth: '640px',
+                margin: '0 auto',
+                lineHeight: 1.5,
+              }}
+            >
+              Economize e mantenha o visual sempre impecável. Assine um plano mensal e tenha agendamentos garantidos com condições exclusivas!
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: '24px',
+              maxWidth: '1000px',
+              margin: '0 auto',
+            }}
+          >
+            {clubPlans.map((plan) => {
+              const whatsappPlanUrl = cleanPhone
+                ? `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`}?text=${encodeURIComponent(
+                    `Olá! Gostaria de assinar o plano ${plan.name} (${formatBRL(plan.priceCents)}/mês) do Clube VIP da ${tenant.name}. Como posso aderir?`
+                  )}`
+                : null;
+
+              return (
+                <div
+                  key={plan.id}
+                  className="glass-panel"
+                  style={{
+                    padding: '30px 24px',
+                    borderRadius: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    position: 'relative',
+                    border: '1px solid rgba(229, 179, 56, 0.35)',
+                    background: 'linear-gradient(180deg, rgba(229, 179, 56, 0.08) 0%, rgba(11, 15, 23, 0.85) 100%)',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          color: '#E5B338',
+                          background: 'rgba(229, 179, 56, 0.16)',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        {plan.maxUsagesPerMonth === null ? 'Ilimitado' : `${plan.maxUsagesPerMonth} Usos / mês`}
+                      </span>
+                      <Crown size={20} color="#E5B338" />
+                    </div>
+
+                    <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 6px 0' }}>
+                      {plan.name}
+                    </h3>
+
+                    {plan.description && (
+                      <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                        {plan.description}
+                      </p>
+                    )}
+
+                    <div style={{ margin: '18px 0', display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                      <span style={{ fontSize: '2.1rem', fontWeight: 900, color: '#FFFFFF', letterSpacing: '-0.02em' }}>
+                        {formatBRL(plan.priceCents)}
+                      </span>
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-dim)' }}>/ mês</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: 'var(--text-main)' }}>
+                        <Check size={16} color="#34D399" />
+                        <span>
+                          {plan.maxUsagesPerMonth === null
+                            ? 'Utilizações ilimitadas durante o ciclo'
+                            : `Até ${plan.maxUsagesPerMonth} atendimentos no mês`}
+                        </span>
+                      </div>
+
+                      {plan.services && plan.services.length > 0 && (
+                        <div style={{ marginTop: '4px' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
+                            Serviços inclusos:
+                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                            {plan.services.map((s, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  fontSize: '0.74rem',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  color: 'var(--text-main)',
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                }}
+                              >
+                                {s.service?.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    {whatsappPlanUrl ? (
+                      <a
+                        href={whatsappPlanUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-primary"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '11px 16px',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <MessageSquare size={16} />
+                        Assinar via WhatsApp
+                      </a>
+                    ) : (
+                      <Link
+                        href={bookingBaseHref}
+                        className="btn-primary"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '11px 16px',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <CalendarIcon size={16} />
+                        Agendar Atendimento
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* ────────────────── Cartão Fidelidade Digital ────────────────── */}
       {loyaltyProgram?.enabled && (
         <section
