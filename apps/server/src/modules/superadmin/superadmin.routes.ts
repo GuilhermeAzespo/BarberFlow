@@ -13,7 +13,12 @@ import {
   sendEmail,
   buildBarberFlowEmailHtml,
 } from '../../lib/email.js';
-import { extractPlanPermissions, extractPlanFeatureList, type PlanPermissions } from '../../lib/tenant-access.js';
+import {
+  extractPlanPermissions,
+  extractPlanFeatureList,
+  syncExpiredTenantsAndSubscriptions,
+  type PlanPermissions,
+} from '../../lib/tenant-access.js';
 import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import { getCouponsCatalog, saveCouponsCatalog, type SaasCoupon } from '../../lib/coupons.js';
 import { getBillingCyclesConfig, saveBillingCyclesConfig } from '../../lib/billing-cycles.js';
@@ -117,6 +122,8 @@ const testMpSchema = z.object({
 
 // Métricas globais da plataforma SaaS
 superAdminRouter.get('/overview', async (_req, res) => {
+  await syncExpiredTenantsAndSubscriptions();
+
   const [
     totalTenants,
     activeTenants,
@@ -230,6 +237,8 @@ superAdminRouter.get('/analytics', async (_req, res) => {
 
 // Listagem de salões / instâncias com filtros
 superAdminRouter.get('/tenants', async (req, res) => {
+  await syncExpiredTenantsAndSubscriptions();
+
   const { search, status, page = '1', pageSize = '30' } = req.query;
   const p = Math.max(1, parseInt(page as string, 10));
   const ps = Math.min(100, Math.max(1, parseInt(pageSize as string, 10)));
@@ -384,6 +393,8 @@ superAdminRouter.delete('/tenants/:id', async (req, res) => {
 
 // Detalhes completos de uma instância
 superAdminRouter.get('/tenants/:id', async (req, res) => {
+  await syncExpiredTenantsAndSubscriptions(req.params.id);
+
   const tenant = await prisma.tenant.findUnique({
     where: { id: req.params.id },
     include: {
@@ -410,16 +421,54 @@ superAdminRouter.get('/tenants/:id', async (req, res) => {
 // Alterar status do salão (suspensão, bloqueio por inadimplência, reativação)
 superAdminRouter.patch('/tenants/:id/status', async (req, res) => {
   const data = updateTenantStatusSchema.parse(req.body);
+  const now = new Date();
+
+  const existingSub = await prisma.subscription.findUnique({
+    where: { tenantId: req.params.id },
+  });
+
+  if (existingSub) {
+    if (data.status === 'ACTIVE') {
+      const isPeriodExpired = !existingSub.currentPeriodEnd || existingSub.currentPeriodEnd <= now;
+      const isTrialExpired = !existingSub.trialEndsAt || existingSub.trialEndsAt <= now;
+      if (
+        existingSub.status === 'PAST_DUE' ||
+        existingSub.status === 'CANCELED' ||
+        (existingSub.status === 'ACTIVE' && isPeriodExpired) ||
+        (existingSub.status === 'TRIALING' && isTrialExpired)
+      ) {
+        await prisma.subscription.update({
+          where: { id: existingSub.id },
+          data: {
+            status: 'ACTIVE',
+            currentPeriodStart: now,
+            currentPeriodEnd: DateTime.fromJSDate(now).plus({ days: 30 }).toJSDate(),
+          },
+        });
+      }
+    } else if (data.status === 'BLOCKED' && (existingSub.status === 'ACTIVE' || existingSub.status === 'TRIALING')) {
+      await prisma.subscription.update({
+        where: { id: existingSub.id },
+        data: { status: 'PAST_DUE' },
+      });
+    } else if (data.status === 'CANCELED') {
+      await prisma.subscription.update({
+        where: { id: existingSub.id },
+        data: { status: 'CANCELED' },
+      });
+    }
+  }
 
   const tenant = await prisma.tenant.update({
     where: { id: req.params.id },
     data: {
       status: data.status,
-      statusReason: data.statusReason,
-      statusChangedAt: new Date(),
+      statusReason: data.status === 'ACTIVE' ? (data.statusReason || null) : data.statusReason,
+      statusChangedAt: now,
     },
     include: {
       users: { where: { role: 'OWNER' } },
+      subscription: { include: { plan: true } },
     },
   });
 
@@ -469,6 +518,7 @@ superAdminRouter.patch('/tenants/:id/status', async (req, res) => {
 // Ajustar assinatura e limites do salão
 superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
   const data = updateSubscriptionSchema.parse(req.body);
+  const now = new Date();
 
   const current = await prisma.subscription.findUnique({
     where: { tenantId: req.params.id },
@@ -476,9 +526,50 @@ superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
 
   if (!current) throw HttpError.notFound('Assinatura não encontrada para este salão');
 
+  const subUpdateData: Prisma.SubscriptionUncheckedUpdateInput = { ...data };
+
+  if (data.status === 'ACTIVE') {
+    const effectiveEnd = data.currentPeriodEnd !== undefined ? data.currentPeriodEnd : current.currentPeriodEnd;
+    if (!effectiveEnd || effectiveEnd <= now) {
+      subUpdateData.currentPeriodStart = now;
+      subUpdateData.currentPeriodEnd = DateTime.fromJSDate(now).plus({ days: 30 }).toJSDate();
+    }
+    await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: { status: 'ACTIVE', statusReason: null, statusChangedAt: now },
+    });
+  } else if (data.status === 'TRIALING') {
+    const effectiveTrialEnd = data.trialEndsAt !== undefined ? data.trialEndsAt : current.trialEndsAt;
+    if (!effectiveTrialEnd || effectiveTrialEnd <= now) {
+      subUpdateData.trialEndsAt = DateTime.fromJSDate(now).plus({ days: 14 }).toJSDate();
+    }
+    await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: { status: 'ACTIVE', statusReason: null, statusChangedAt: now },
+    });
+  } else if (data.status === 'PAST_DUE') {
+    await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: {
+        status: 'BLOCKED',
+        statusReason: 'Inadimplência — aguardando pagamento da assinatura',
+        statusChangedAt: now,
+      },
+    });
+  } else if (data.status === 'CANCELED') {
+    await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: {
+        status: 'BLOCKED',
+        statusReason: 'Assinatura cancelada',
+        statusChangedAt: now,
+      },
+    });
+  }
+
   const subscription = await prisma.subscription.update({
     where: { id: current.id },
-    data,
+    data: subUpdateData,
     include: { plan: true },
   });
 

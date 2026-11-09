@@ -14,6 +14,7 @@ import {
   evaluateTenantAccess,
   extractPlanPermissions,
   extractPlanFeatureList,
+  syncExpiredTenantsAndSubscriptions,
 } from '../../lib/tenant-access.js';
 import { slugify } from '../../lib/utils.js';
 import { getAddonsCatalog } from '../../lib/addons.js';
@@ -201,6 +202,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
     return res.json({ user: formattedUser, tenant: null, access: { allowed: true, code: 'OK', message: 'OK' } });
   }
 
+  await syncExpiredTenantsAndSubscriptions(user.tenantId);
   const tenant = await prisma.tenant.findUniqueOrThrow({
     where: { id: user.tenantId },
     include: { subscription: { include: { plan: true } } },

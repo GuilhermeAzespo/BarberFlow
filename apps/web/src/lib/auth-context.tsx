@@ -172,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccess(res.access);
       if (Array.isArray(res.addons)) setAddons(res.addons);
       setIsImpersonated(Boolean(res.isImpersonated));
+      return res;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setUser(null);

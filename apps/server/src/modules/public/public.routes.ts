@@ -11,7 +11,12 @@ import {
 } from '../appointments/appointments.service.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import { logger } from '../../lib/logger.js';
-import { extractPlanFeatureList, extractPlanPermissions, evaluateTenantAccess } from '../../lib/tenant-access.js';
+import {
+  extractPlanFeatureList,
+  extractPlanPermissions,
+  evaluateTenantAccess,
+  syncExpiredTenantsAndSubscriptions,
+} from '../../lib/tenant-access.js';
 import { systemLog } from '../../lib/system-log.js';
 import { renderDanfseHtml } from '../nfse/nfse.engine.js';
 import { getPublicCustomerLoyalty } from '../loyalty/loyalty.service.js';
@@ -149,6 +154,7 @@ function formatPublicTenant(tenant: any) {
 
 /** Dados públicos do salão (vitrine/link de agendamento web) por slug. */
 publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
+  await syncExpiredTenantsAndSubscriptions();
   const tenant = await prisma.tenant.findUnique({
     where: { slug: String(req.params.slug) },
     select: publicTenantSelect,
@@ -160,6 +166,7 @@ publicRouter.get('/tenants/by-slug/:slug', async (req, res) => {
 
 /** Dados públicos do salão (vitrine/link de agendamento web) por Domínio Próprio / DNS. */
 publicRouter.get('/tenants/by-domain/:domain', async (req, res) => {
+  await syncExpiredTenantsAndSubscriptions();
   const cleanDomain = String(req.params.domain)
     .toLowerCase()
     .replace(/^https?:\/\//i, '')

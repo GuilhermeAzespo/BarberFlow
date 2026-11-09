@@ -173,6 +173,16 @@ export class ClubService {
    * Obtém métricas e KPIs do Clube de Assinatura.
    */
   async getStats(tenantId: string) {
+    // Atualiza automaticamente assinaturas cujo ciclo expirou sem renovação/pagamento
+    await prisma.customerSubscription.updateMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        cycleEndDate: { lt: new Date() },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: { timezone: true },
@@ -225,6 +235,16 @@ export class ClubService {
     tenantId: string,
     options: { page?: number; pageSize?: number; search?: string; status?: ClubSubscriptionStatus }
   ) {
+    // Atualiza automaticamente assinaturas cujo ciclo expirou sem renovação/pagamento
+    await prisma.customerSubscription.updateMany({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        cycleEndDate: { lt: new Date() },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
     const page = options.page || 1;
     const pageSize = options.pageSize || 20;
 

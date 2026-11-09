@@ -916,7 +916,7 @@ export default function SuperAdminPage() {
         {},
       );
       toast.success(res.message || 'Varredura da régua de cobrança executada com sucesso!');
-      await loadDunningStats();
+      await Promise.all([loadDunningStats(), loadOverview(), loadTenants()]);
     } catch (err: unknown) {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao executar varredura da régua.');
     } finally {
@@ -1795,8 +1795,40 @@ export default function SuperAdminPage() {
                         </td>
                         <td style={{ padding: '14px', color: 'var(--text-muted)' }}>{t.email || '—'}</td>
                         <td style={{ padding: '14px' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{t.subscription?.plan.name || 'Sem plano'}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{t.subscription?.plan.name || 'Sem plano'}</span>
+                            {t.subscription && (
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  padding: '2px 7px',
+                                  borderRadius: '999px',
+                                  fontWeight: 700,
+                                  background:
+                                    t.subscription.status === 'ACTIVE'
+                                      ? 'rgba(16, 185, 129, 0.14)'
+                                      : t.subscription.status === 'TRIALING'
+                                        ? 'rgba(59, 130, 246, 0.16)'
+                                        : 'rgba(239, 68, 68, 0.16)',
+                                  color:
+                                    t.subscription.status === 'ACTIVE'
+                                      ? '#10B981'
+                                      : t.subscription.status === 'TRIALING'
+                                        ? '#60A5FA'
+                                        : '#F87171',
+                                }}
+                              >
+                                {t.subscription.status === 'ACTIVE'
+                                  ? 'Ativa'
+                                  : t.subscription.status === 'TRIALING'
+                                    ? 'Em Trial'
+                                    : t.subscription.status === 'PAST_DUE'
+                                      ? 'Inadimplente'
+                                      : 'Cancelada'}
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '2px' }}>
                             {t._count.professionals} prof. | {t._count.appointments} agend.
                           </span>
                         </td>

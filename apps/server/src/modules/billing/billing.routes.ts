@@ -14,7 +14,7 @@ import {
   inferPaymentMethodId,
   translateMpStatusDetail,
 } from '../../lib/mercadopago.js';
-import { effectiveLimits, evaluateTenantAccess } from '../../lib/tenant-access.js';
+import { effectiveLimits, evaluateTenantAccess, syncExpiredTenantsAndSubscriptions } from '../../lib/tenant-access.js';
 import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
 import { validateAndCalculateCoupon, incrementCouponUsage } from '../../lib/coupons.js';
 import {
@@ -154,6 +154,7 @@ billingRouter.post('/coupons/validate', async (req, res) => {
 // Informações gerais de faturamento do salão
 billingRouter.get('/status', async (req, res) => {
   const tenantId = req.tenantId!;
+  await syncExpiredTenantsAndSubscriptions(tenantId);
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     include: {

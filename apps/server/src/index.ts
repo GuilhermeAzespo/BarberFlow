@@ -32,6 +32,7 @@ import { clubRouter } from './modules/club/club.routes.js';
 import { initMarketingWorker } from './modules/marketing/marketing-worker.js';
 import { whatsAppService } from './modules/whatsapp/whatsapp.service.js';
 import { billingDunningWorker } from './lib/billing-dunning.js';
+import { syncExpiredTenantsAndSubscriptions } from './lib/tenant-access.js';
 
 const app = express();
 
@@ -180,6 +181,7 @@ async function bootstrap() {
   }
 
   // 4. Inicializa Régua Automática de Cobrança da Assinatura (Fase 3)
+  await syncExpiredTenantsAndSubscriptions().catch((err) => logger.warn({ err }, 'Aviso ao sincronizar assinaturas expiradas no boot'));
   billingDunningWorker.start();
 
   // 5. Inicializa Automação de Marketing & Clientes Inativos (Fase 5)

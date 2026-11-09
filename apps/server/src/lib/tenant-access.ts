@@ -10,10 +10,122 @@ export type TenantWithSubscription = Tenant & {
 
 export interface TenantAccess {
   allowed: boolean;
-  code: 'OK' | 'TENANT_SUSPENDED' | 'TENANT_BLOCKED' | 'TENANT_CANCELED' | 'NO_SUBSCRIPTION' | 'SUBSCRIPTION_CANCELED' | 'TRIAL_EXPIRED';
+  code:
+    | 'OK'
+    | 'TENANT_SUSPENDED'
+    | 'TENANT_BLOCKED'
+    | 'TENANT_CANCELED'
+    | 'NO_SUBSCRIPTION'
+    | 'SUBSCRIPTION_CANCELED'
+    | 'TRIAL_EXPIRED';
   message: string;
-  /** PAST_DUE ainda dentro da carência: acesso liberado, mas com aviso */
+  /** Avisos de vencimento próximo */
   warning?: string;
+}
+
+/**
+ * Sincroniza automaticamente o status da assinatura (Subscription.status -> PAST_DUE)
+ * e o status do salão (Tenant.status -> BLOCKED) caso o período de Trial ou o ciclo
+ * de pagamento tenha vencido sem confirmação de pagamento.
+ */
+export async function syncExpiredTenantsAndSubscriptions(targetTenantId?: string): Promise<void> {
+  const now = new Date();
+
+  const tenants = await prisma.tenant.findMany({
+    where: {
+      ...(targetTenantId ? { id: targetTenantId } : {}),
+      status: { notIn: ['CANCELED', 'SUSPENDED'] },
+    },
+    include: {
+      subscription: true,
+    },
+  });
+
+  for (const tenant of tenants) {
+    const sub = tenant.subscription;
+    if (!sub) continue;
+
+    // 1. Verifica expiração do Add-on NFS-e se aplicável
+    if (sub.nfseAddonActive && sub.nfseAddonExpiresAt && sub.nfseAddonExpiresAt <= now) {
+      await prisma.subscription
+        .update({
+          where: { id: sub.id },
+          data: { nfseAddonActive: false },
+        })
+        .catch(() => {});
+    }
+
+    // 2. Trial expirado sem pagamento aprovado
+    if (sub.status === 'TRIALING') {
+      const isTrialExpired = !sub.trialEndsAt || sub.trialEndsAt <= now;
+      if (isTrialExpired) {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'PAST_DUE' },
+        });
+        if (tenant.status !== 'BLOCKED') {
+          await prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              status: 'BLOCKED',
+              statusReason: 'Período de teste (Trial) expirado sem pagamento',
+              statusChangedAt: now,
+            },
+          });
+        }
+        continue;
+      }
+    }
+
+    // 3. Assinatura ativa cujo período de vigência venceu sem renovação/pagamento
+    if (sub.status === 'ACTIVE') {
+      const isPeriodExpired = Boolean(sub.currentPeriodEnd && sub.currentPeriodEnd <= now);
+      const isFallbackTrialExpired = Boolean(!sub.currentPeriodEnd && sub.trialEndsAt && sub.trialEndsAt <= now);
+
+      if (isPeriodExpired || isFallbackTrialExpired) {
+        await prisma.subscription.update({
+          where: { id: sub.id },
+          data: { status: 'PAST_DUE' },
+        });
+        if (tenant.status !== 'BLOCKED') {
+          await prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              status: 'BLOCKED',
+              statusReason: 'Assinatura vencida — aguardando pagamento',
+              statusChangedAt: now,
+            },
+          });
+        }
+        continue;
+      }
+    }
+
+    // 4. Assinatura já marcada como PAST_DUE ou CANCELED, mas o Tenant ainda estava como ACTIVE
+    if (sub.status === 'PAST_DUE' && tenant.status === 'ACTIVE') {
+      const periodStillValid = Boolean(sub.currentPeriodEnd && sub.currentPeriodEnd > now);
+      const trialStillValid = Boolean(sub.trialEndsAt && sub.trialEndsAt > now);
+      if (!periodStillValid && !trialStillValid) {
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            status: 'BLOCKED',
+            statusReason: tenant.statusReason || 'Inadimplência — aguardando pagamento da assinatura',
+            statusChangedAt: now,
+          },
+        });
+      }
+    } else if (sub.status === 'CANCELED' && tenant.status === 'ACTIVE') {
+      await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          status: 'BLOCKED',
+          statusReason: tenant.statusReason || 'Assinatura cancelada',
+          statusChangedAt: now,
+        },
+      });
+    }
+  }
 }
 
 export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAccess {
@@ -24,7 +136,8 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
     return {
       allowed: false,
       code: 'TENANT_BLOCKED',
-      message: tenant.statusReason ?? 'Conta bloqueada por pendência financeira. Regularize sua assinatura.',
+      message:
+        tenant.statusReason ?? 'Conta bloqueada por pendência financeira. Regularize sua assinatura na página de planos.',
     };
   }
   if (tenant.status === 'CANCELED') {
@@ -36,22 +149,12 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
     return { allowed: false, code: 'SUBSCRIPTION_CANCELED', message: 'Assinatura cancelada.' };
   }
   if (sub.status === 'PAST_DUE') {
-    const reference = sub.currentPeriodEnd ?? sub.trialEndsAt;
-    const blockAt = reference ? DateTime.fromJSDate(reference).plus({ days: env.BILLING_GRACE_DAYS }) : null;
-    if (blockAt && DateTime.now() > blockAt) {
-      return {
-        allowed: false,
-        code: 'TENANT_BLOCKED',
-        message: 'Conta bloqueada por pendência financeira. Regularize sua assinatura na tela de planos.',
-      };
-    }
     return {
-      allowed: true,
-      code: 'OK',
-      message: 'OK',
-      warning: blockAt
-        ? `Pagamento pendente. Regularize até ${blockAt.setZone(tenant.timezone).toFormat('dd/LL/yyyy')} para evitar bloqueio.`
-        : 'Pagamento pendente.',
+      allowed: false,
+      code: 'TENANT_BLOCKED',
+      message:
+        tenant.statusReason ??
+        'Sua assinatura está com pagamento pendente. Escolha um plano e regularize para liberar o acesso ao sistema.',
     };
   }
   if (sub.status === 'TRIALING') {
@@ -71,7 +174,8 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
       return {
         allowed: false,
         code: 'TRIAL_EXPIRED',
-        message: 'Seu período de teste gratuito de 14 dias terminou. Escolha um plano e ative sua assinatura para continuar utilizando o BarberFlow.',
+        message:
+          'Seu período de teste gratuito de 14 dias terminou. Escolha um plano e ative sua assinatura para continuar utilizando o BarberFlow.',
       };
     }
 
@@ -97,12 +201,11 @@ export function evaluateTenantAccess(tenant: TenantWithSubscription): TenantAcce
     const daysUntilRenew = Math.ceil(renewDate.diffNow('days').days);
     const formattedRenew = renewDate.toFormat('dd/LL/yyyy');
 
-    if (daysUntilRenew <= 0) {
+    if (daysUntilRenew <= 0 || DateTime.fromJSDate(sub.currentPeriodEnd) <= DateTime.now()) {
       return {
-        allowed: true,
-        code: 'OK',
-        message: 'OK',
-        warning: `Sua assinatura renovou em ${formattedRenew}. Efetue o pagamento via Pix ou Cartão para manter seus serviços ativos.`,
+        allowed: false,
+        code: 'TENANT_BLOCKED',
+        message: `Sua assinatura venceu em ${formattedRenew}. Efetue o pagamento via Pix ou Cartão para liberar o acesso ao sistema.`,
       };
     }
     if (daysUntilRenew <= 3) {
@@ -224,11 +327,15 @@ export function effectiveLimits(subscription: (Subscription & { plan: Plan }) | 
     maxProfessionals: subscription.maxProfessionalsOverride ?? subscription.plan.maxProfessionals,
     maxAppointmentsPerMonth: subscription.maxAppointmentsOverride ?? subscription.plan.maxAppointmentsPerMonth,
     whatsappEnabled: subscription.plan.whatsappEnabled,
-    permissions: { ...extractPlanPermissions(subscription.plan), nfse: Boolean(extractPlanPermissions(subscription.plan).nfse || (subscription as any).nfseAddonActive) },
+    permissions: {
+      ...extractPlanPermissions(subscription.plan),
+      nfse: Boolean(extractPlanPermissions(subscription.plan).nfse || (subscription as any).nfseAddonActive),
+    },
   };
 }
 
 export async function loadTenant(tenantId: string): Promise<TenantWithSubscription> {
+  await syncExpiredTenantsAndSubscriptions(tenantId);
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     include: { subscription: { include: { plan: true } } },

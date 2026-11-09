@@ -6,6 +6,7 @@ import { getActiveMercadoPagoConfig, createMercadoPagoPix, getMercadoPagoWebhook
 import { clubService } from '../modules/club/club.service.js';
 import { whatsAppService } from '../modules/whatsapp/whatsapp.service.js';
 import { normalizePhone } from './utils.js';
+import { syncExpiredTenantsAndSubscriptions } from './tenant-access.js';
 
 export type DunningStage = 'D-3' | 'D0' | 'D+2';
 
@@ -372,10 +373,13 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
 
   logger.info('Iniciando varredura da Régua Automática de Cobrança...');
 
+  // Sincroniza salões cujo Trial ou Assinatura venceram sem pagamento
+  await syncExpiredTenantsAndSubscriptions();
+
   // Busca todos os salões com suas assinaturas, planos e usuários
   const tenants = await prisma.tenant.findMany({
     where: {
-      status: { notIn: ['BLOCKED', 'CANCELED'] },
+      status: { notIn: ['CANCELED', 'SUSPENDED'] },
     },
     include: {
       subscription: {
@@ -589,6 +593,7 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
  * Coleta estatísticas em tempo real para o painel Super Admin.
  */
 export async function getDunningDashboardStats(): Promise<DunningDashboardStats> {
+  await syncExpiredTenantsAndSubscriptions();
   const config = await getBillingDunningConfig();
 
   const tenants = await prisma.tenant.findMany({
