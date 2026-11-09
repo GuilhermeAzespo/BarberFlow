@@ -527,3 +527,25 @@ publicRouter.get('/tenants/:slug/club', async (req, res) => {
   const result = await clubService.getPublicPlans(slug);
   res.json(result);
 });
+
+/** Consulta Pública da Assinatura VIP do Cliente por Telefone na Vitrine */
+publicRouter.get('/tenants/:slug/club/subscription', async (req, res) => {
+  const { slug } = req.params;
+  const phone = req.query.phone ? String(req.query.phone) : '';
+  const result = await clubService.getPublicCustomerSubscription(slug, phone);
+  res.json(result);
+});
+
+/** Ativação / Desativação Pública do Auto-Renew pelo próprio cliente na Vitrine */
+publicRouter.post('/tenants/:slug/club/subscription/auto-renew', async (req, res) => {
+  const { slug } = req.params;
+  const phone = req.body.phone ? String(req.body.phone) : '';
+  const autoRenew = Boolean(req.body.autoRenew);
+  const result = await clubService.togglePublicCustomerAutoRenew(slug, phone, autoRenew);
+  res.json({
+    ...result,
+    message: autoRenew
+      ? 'Renovação Automática (Auto-Renew) ativada com sucesso!'
+      : 'Renovação alterada para Manual com sucesso!',
+  });
+});

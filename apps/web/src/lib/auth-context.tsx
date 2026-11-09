@@ -67,6 +67,7 @@ export interface Subscription {
   lastPaymentAt?: string | null;
   isTrial?: boolean;
   isTrialExpired?: boolean;
+  autoRenew?: boolean;
   trialDaysLeft?: number | null;
   renewDaysLeft?: number | null;
   nfseAddonActive?: boolean;

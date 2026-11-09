@@ -76,6 +76,7 @@ const pixCheckoutSchema = z.object({
   payerEmail: z.string().email('E-mail do pagador inválido').optional(),
   couponCode: z.string().trim().optional(),
   billingCycle: billingCycleSchema,
+  autoRenew: z.boolean().optional(),
 });
 
 const cardCheckoutSchema = z.object({
@@ -91,6 +92,7 @@ const cardCheckoutSchema = z.object({
   paymentMethodId: z.string().optional(),
   couponCode: z.string().trim().optional(),
   billingCycle: billingCycleSchema,
+  autoRenew: z.boolean().optional(),
 });
 
 // Validação de Cupom de Desconto no Checkout (Planos ou Add-ons)
@@ -214,6 +216,7 @@ billingRouter.get('/status', async (req, res) => {
               ? Math.ceil(DateTime.fromJSDate(sub.currentPeriodEnd).diffNow('days').days)
               : null,
           plan: sub.plan,
+          autoRenew: sub.autoRenew ?? true,
           billingCycle: currentBillingCycle,
           billingCycleLabel: CYCLE_LABELS[currentBillingCycle],
           limits: effectiveLimits(sub),
@@ -241,6 +244,39 @@ billingRouter.get('/status', async (req, res) => {
       publicKey: mpConfig.publicKey,
       sandbox: mpConfig.sandbox,
     },
+  });
+});
+
+// Ativar ou Desativar Renovação Automática (Auto-Renew) da assinatura do salão
+billingRouter.patch('/auto-renew', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const autoRenew = Boolean(req.body?.autoRenew);
+
+  const sub = await prisma.subscription.findUnique({
+    where: { tenantId },
+    include: { plan: true },
+  });
+  if (!sub) {
+    throw HttpError.notFound('Assinatura não encontrada para este salão.');
+  }
+
+  const updated = await prisma.subscription.update({
+    where: { tenantId },
+    data: { autoRenew },
+  });
+
+  await systemLog({
+    tenantId,
+    source: 'billing',
+    message: `Renovação Automática (Auto-Renew) ${autoRenew ? 'ATIVADA' : 'DESATIVADA (Modo Manual)'} pelo cliente.`,
+    meta: { autoRenew, planId: sub.planId },
+  });
+
+  res.json({
+    autoRenew: updated.autoRenew,
+    message: autoRenew
+      ? 'Renovação Automática ativada! Você receberá os avisos e códigos de renovação automática no vencimento.'
+      : 'Renovação alterada para Manual! Você escolherá manualmente quando e como renovar sua assinatura.',
   });
 });
 
@@ -282,8 +318,16 @@ billingRouter.post('/checkout/pix', async (req, res) => {
     cycleDiscountPct: cycle.cycleDiscountPct,
     cycleDiscountCents: cycle.cycleDiscountCents,
     originalAmountCents: cycle.amountCents,
+    ...(typeof data.autoRenew === 'boolean' ? { autoRenew: data.autoRenew } : {}),
     ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
   };
+
+  if (typeof data.autoRenew === 'boolean' && tenant.subscription) {
+    await prisma.subscription.update({
+      where: { tenantId },
+      data: { autoRenew: data.autoRenew },
+    }).catch(() => {});
+  }
   const cycleSuffix = cycle.cycle === 'MONTHLY' ? '' : ` - ${cycle.label} (${cycle.months} meses)`;
 
   const owner = tenant.users[0];
@@ -404,8 +448,16 @@ billingRouter.post('/checkout/card', async (req, res) => {
     cycleDiscountPct: cycle.cycleDiscountPct,
     cycleDiscountCents: cycle.cycleDiscountCents,
     originalAmountCents: cycle.amountCents,
+    ...(typeof data.autoRenew === 'boolean' ? { autoRenew: data.autoRenew } : {}),
     ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
   };
+
+  if (typeof data.autoRenew === 'boolean' && tenant.subscription) {
+    await prisma.subscription.update({
+      where: { tenantId },
+      data: { autoRenew: data.autoRenew },
+    }).catch(() => {});
+  }
   const cycleSuffix = cycle.cycle === 'MONTHLY' ? '' : ` - ${cycle.label} (${cycle.months} meses)`;
 
   const owner = tenant.users[0];
@@ -516,6 +568,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
           tenantId,
           planId: plan.id,
           status: 'ACTIVE',
+          autoRenew: typeof data.autoRenew === 'boolean' ? data.autoRenew : true,
           currentPeriodStart: now,
           currentPeriodEnd,
           lastPaymentAt: now,
@@ -523,6 +576,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
         update: {
           planId: plan.id,
           status: 'ACTIVE',
+          ...(typeof data.autoRenew === 'boolean' ? { autoRenew: data.autoRenew } : {}),
           currentPeriodStart: now,
           currentPeriodEnd,
           lastPaymentAt: now,

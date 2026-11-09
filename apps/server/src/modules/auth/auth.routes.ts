@@ -233,6 +233,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
           currentPeriodEnd: sub.currentPeriodEnd,
           lastPaymentAt: sub.lastPaymentAt,
           isTrial: sub.status === 'TRIALING',
+          autoRenew: sub.autoRenew ?? true,
           isTrialExpired:
             sub.status === 'TRIALING' &&
             Boolean(!sub.trialEndsAt || DateTime.fromJSDate(sub.trialEndsAt) <= DateTime.now()),

@@ -368,6 +368,7 @@ const calcCyclePrice = (monthlyPriceCents: number, cycle: BillingCycle, cfg: Bil
 interface BillingStatusResponse {
   subscription: {
     status: string;
+    autoRenew?: boolean;
     trialEndsAt?: string | null;
     currentPeriodStart?: string | null;
     currentPeriodEnd?: string | null;
@@ -462,9 +463,11 @@ export default function PlanosPage() {
     finalAmountCents: number;
   } | null>(null);
 
-  // Ciclo de Cobrança (Mensal / Semestral / Anual) + Parcelamento
+  // Ciclo de Cobrança (Mensal / Semestral / Anual) + Parcelamento + Auto-Renew
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('MONTHLY');
   const [installments, setInstallments] = useState(1);
+  const [checkoutAutoRenew, setCheckoutAutoRenew] = useState<boolean>(true);
+  const [togglingAutoRenew, setTogglingAutoRenew] = useState<boolean>(false);
   const cyclesCfg: BillingCyclesInfo = billingInfo?.billingCycles || DEFAULT_BILLING_CYCLES;
   const availableCycles: BillingCycle[] = (cyclesCfg.available?.length ? cyclesCfg.available : ['MONTHLY']) as BillingCycle[];
   const checkoutCycle = selectedPlanForCheckout
@@ -497,6 +500,9 @@ export default function PlanosPage() {
     try {
       const res = await api.get<BillingStatusResponse>('/api/billing/status');
       setBillingInfo(res);
+      if (typeof res.subscription?.autoRenew === 'boolean') {
+        setCheckoutAutoRenew(res.subscription.autoRenew);
+      }
       if (res.plans && res.plans.length > 0) {
         setPlans(sortPlansFixed(res.plans));
       }
@@ -584,6 +590,29 @@ export default function PlanosPage() {
       .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
   };
 
+  const handleToggleSaaSAutoRenew = async () => {
+    const currentAutoRenew = billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true;
+    const nextValue = !currentAutoRenew;
+    try {
+      setTogglingAutoRenew(true);
+      const res = await api.patch<{ autoRenew: boolean; message: string }>('/api/billing/auto-renew', {
+        autoRenew: nextValue,
+      });
+      setCheckoutAutoRenew(res.autoRenew);
+      setBillingInfo((prev) =>
+        prev && prev.subscription
+          ? { ...prev, subscription: { ...prev.subscription, autoRenew: res.autoRenew } }
+          : prev,
+      );
+      toast.success(res.message);
+      await refresh();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao atualizar preferência de renovação automática.');
+    } finally {
+      setTogglingAutoRenew(false);
+    }
+  };
+
   const handleOpenCheckout = (plan: PublicPlan) => {
     setSelectedPlanForCheckout(plan);
     setPixResult(null);
@@ -593,6 +622,7 @@ export default function PlanosPage() {
     setCouponInput('');
     setAppliedCoupon(null);
     setInstallments(1);
+    setCheckoutAutoRenew(billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true);
   };
 
   const handleCloseCheckout = () => {
@@ -671,6 +701,7 @@ export default function PlanosPage() {
         payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
         couponCode: appliedCoupon?.code,
         billingCycle,
+        autoRenew: checkoutAutoRenew,
       });
 
       setPixResult(res);
@@ -729,6 +760,7 @@ export default function PlanosPage() {
           installments,
           couponCode: appliedCoupon?.code,
           billingCycle,
+          autoRenew: checkoutAutoRenew,
         },
       );
 
@@ -940,6 +972,44 @@ export default function PlanosPage() {
                     </span>
                   </div>
                 )}
+
+                {/* Botão Toggle Auto-Renew da Assinatura SaaS */}
+                <button
+                  type="button"
+                  disabled={togglingAutoRenew}
+                  onClick={handleToggleSaaSAutoRenew}
+                  title="Clique para alternar entre Renovação Automática (Auto-Renew) e Renovação Manual"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.76rem',
+                    fontWeight: 700,
+                    cursor: togglingAutoRenew ? 'wait' : 'pointer',
+                    background:
+                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                        ? 'rgba(16, 185, 129, 0.14)'
+                        : 'rgba(245, 158, 11, 0.14)',
+                    color:
+                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                        ? '#34D399'
+                        : '#FBBF24',
+                    border:
+                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                        ? '1px solid rgba(16, 185, 129, 0.35)'
+                        : '1px solid rgba(245, 158, 11, 0.35)',
+                  }}
+                >
+                  <RefreshCw size={12} className={togglingAutoRenew ? 'spin' : ''} />
+                  <span>
+                    Auto-Renew:{' '}
+                    {(billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                      ? 'Automático (ON)'
+                      : 'Manual (OFF)'}
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -1919,6 +1989,61 @@ export default function PlanosPage() {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* Seletor de Modo de Renovação (Auto-Renew vs. Manual) no Checkout */}
+            <div
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
+                Preferência de Renovação dos Próximos Ciclos:
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCheckoutAutoRenew(true)}
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: '8px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: checkoutAutoRenew ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                    background: checkoutAutoRenew ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: checkoutAutoRenew ? '#34D399' : 'var(--text-main)' }}>
+                    <RefreshCw size={13} /> Renovação Automática
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    Gera e envia a renovação automaticamente no vencimento.
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCheckoutAutoRenew(false)}
+                  style={{
+                    padding: '9px 12px',
+                    borderRadius: '8px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: !checkoutAutoRenew ? '1.5px solid #F59E0B' : '1px solid var(--border-color)',
+                    background: !checkoutAutoRenew ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: !checkoutAutoRenew ? '#FBBF24' : 'var(--text-main)' }}>
+                    <Calendar size={13} /> Renovação Manual
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    Você recebe os avisos (D-3, D0, D+2) e escolhe quando renovar.
+                  </div>
+                </button>
+              </div>
             </div>
 
             {/* Abas de Método de Pagamento */}

@@ -13,6 +13,7 @@ export interface CreateClubPlanInput {
   maxUsagesPerMonth?: number | null;
   allowedDaysOfWeek?: number[];
   serviceIds: string[];
+  isActive?: boolean;
 }
 
 export interface UpdateClubPlanInput {
@@ -30,7 +31,25 @@ export interface CreateSubscriptionInput {
   planId: string;
   cycleDays?: number;
   paymentMethod?: string;
+  autoRenew?: boolean;
   notes?: string | null;
+}
+
+export type ClubDunningStage = 'D-3' | 'D0' | 'D+2';
+
+export interface ClubBotWarningResult {
+  checkedCount: number;
+  messagesSent: number;
+  autoRenewedCount: number;
+  expiredCount: number;
+  details: Array<{
+    subscriptionId: string;
+    customerName: string;
+    planName: string;
+    stage: ClubDunningStage;
+    autoRenew: boolean;
+    sent: boolean;
+  }>;
 }
 
 export class ClubService {
@@ -77,13 +96,14 @@ export class ClubService {
         priceCents: input.priceCents,
         maxUsagesPerMonth: input.maxUsagesPerMonth !== undefined ? input.maxUsagesPerMonth : null,
         allowedDaysOfWeek: input.allowedDaysOfWeek || [],
+        isActive: input.isActive !== undefined ? input.isActive : true,
         services: {
           create: input.serviceIds.map((serviceId) => ({ serviceId })),
         },
       },
       include: {
         services: {
-          include: { service: { select: { id: true, name: true } } },
+          include: { service: { select: { id: true, name: true, priceCents: true, durationMinutes: true } } },
         },
       },
     });
@@ -120,7 +140,7 @@ export class ClubService {
         },
         include: {
           services: {
-            include: { service: { select: { id: true, name: true } } },
+            include: { service: { select: { id: true, name: true, priceCents: true, durationMinutes: true } } },
           },
         },
       });
@@ -140,7 +160,6 @@ export class ClubService {
     if (!existing) throw HttpError.notFound('Plano não encontrado');
 
     if (existing._count.subscriptions > 0) {
-      // Se houver assinantes vinculados, apenas desativa para preservar histórico
       return prisma.clubPlan.update({
         where: { id: planId },
         data: { isActive: false },
@@ -163,11 +182,12 @@ export class ClubService {
     const in7Days = nowLuxon.plus({ days: 7 }).toJSDate();
     const startOfMonth = nowLuxon.startOf('month').toJSDate();
 
-    const [activeSubs, allPlans, usagesThisMonth, expiringSoonCount] = await Promise.all([
+    const [activeSubs, totalSubsCount, allPlans, usagesThisMonth, expiringSoonCount] = await Promise.all([
       prisma.customerSubscription.findMany({
         where: { tenantId, status: 'ACTIVE' },
         include: { plan: { select: { priceCents: true } } },
       }),
+      prisma.customerSubscription.count({ where: { tenantId } }),
       prisma.clubPlan.count({ where: { tenantId, isActive: true } }),
       prisma.clubUsage.count({
         where: { tenantId, usedAt: { gte: startOfMonth } },
@@ -185,10 +205,15 @@ export class ClubService {
     const mrrCents = activeSubs.reduce((acc, sub) => acc + (sub.plan?.priceCents || 0), 0);
 
     return {
+      activeSubscribers: activeCount,
       activeSubscribersCount: activeCount,
+      totalSubscribers: totalSubsCount,
+      mrrCents,
       monthlyRecurringRevenueCents: mrrCents,
+      totalPlans: allPlans,
       activePlansCount: allPlans,
       usagesThisMonth,
+      expiringIn7Days: expiringSoonCount,
       expiringSoonCount,
     };
   }
@@ -218,7 +243,7 @@ export class ClubService {
         : {}),
     };
 
-    const [total, subscriptions] = await Promise.all([
+    const [total, rawSubscriptions] = await Promise.all([
       prisma.customerSubscription.count({ where }),
       prisma.customerSubscription.findMany({
         where,
@@ -226,17 +251,22 @@ export class ClubService {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          customer: { select: { id: true, name: true, phone: true } },
+          customer: { select: { id: true, name: true, phone: true, whatsappJid: true } },
           plan: {
             include: {
               services: {
-                include: { service: { select: { id: true, name: true } } },
+                include: { service: { select: { id: true, name: true, priceCents: true, durationMinutes: true } } },
               },
             },
           },
         },
       }),
     ]);
+
+    const subscriptions = rawSubscriptions.map((s) => ({
+      ...s,
+      lastPaymentDate: s.lastPaymentAt ? s.lastPaymentAt.toISOString() : null,
+    }));
 
     return {
       subscriptions,
@@ -265,6 +295,7 @@ export class ClubService {
     const cycleDays = input.cycleDays || 30;
     const now = new Date();
     const cycleEndDate = DateTime.fromJSDate(now).plus({ days: cycleDays }).toJSDate();
+    const autoRenew = input.autoRenew !== undefined ? Boolean(input.autoRenew) : true;
 
     const subscription = await prisma.customerSubscription.upsert({
       where: {
@@ -278,6 +309,7 @@ export class ClubService {
         usagesCount: 0,
         paymentMethod: input.paymentMethod || 'MANUAL',
         lastPaymentAt: now,
+        autoRenew,
         notes: input.notes?.trim() || null,
       },
       create: {
@@ -290,6 +322,7 @@ export class ClubService {
         usagesCount: 0,
         paymentMethod: input.paymentMethod || 'MANUAL',
         lastPaymentAt: now,
+        autoRenew,
         notes: input.notes?.trim() || null,
       },
       include: {
@@ -306,8 +339,9 @@ export class ClubService {
         const formattedPrice = (plan.priceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         const endDateFormatted = DateTime.fromJSDate(cycleEndDate).toFormat('dd/MM/yyyy');
         const limitText = plan.maxUsagesPerMonth ? `${plan.maxUsagesPerMonth} cortes/mês` : 'Cortes Ilimitados';
+        const renewModeText = autoRenew ? '🔄 Renovação Automática Ativa' : '📅 Renovação Manual';
 
-        const welcomeMsg = `👑 *PARABÉNS, ${firstName.toUpperCase()}!*\n\nVocê agora é membro VIP do *${plan.name}* na *${tenant.name}*!\n\n✨ *Benefícios liberados:* ${limitText}\n📅 *Ciclo válido até:* ${endDateFormatted}\n💳 *Mensalidade:* ${formattedPrice}\n\nAo agendar seus horários, o sistema reconhecerá automaticamente seu plano VIP. Aproveite! ✂️`;
+        const welcomeMsg = `👑 *PARABÉNS, ${firstName.toUpperCase()}!*\n\nVocê agora é membro VIP do *${plan.name}* na *${tenant.name}*!\n\n✨ *Benefícios liberados:* ${limitText}\n📅 *Ciclo válido até:* ${endDateFormatted}\n💳 *Mensalidade:* ${formattedPrice}\n⚙️ *Modo de Renovação:* ${renewModeText}\n\nVocê pode consultar seu plano e escolher entre renovação automática ou manual a qualquer momento na página da barbearia. Aproveite! ✂️`;
         await whatsAppService.sendMessage(tenantId, targetPhone, welcomeMsg);
       }
     } catch (waErr) {
@@ -315,6 +349,49 @@ export class ClubService {
     }
 
     return subscription;
+  }
+
+  /**
+   * Alterna entre Renovação Automática (Auto-Renew) e Renovação Manual para o assinante.
+   */
+  async toggleAutoRenew(tenantId: string, subscriptionId: string, autoRenew: boolean) {
+    await assertPlanFeature(tenantId, 'club');
+
+    const sub = await prisma.customerSubscription.findFirst({
+      where: { id: subscriptionId, tenantId },
+      include: {
+        customer: true,
+        plan: true,
+        tenant: { select: { name: true, slug: true } },
+      },
+    });
+    if (!sub) throw HttpError.notFound('Assinatura não encontrada');
+
+    const updated = await prisma.customerSubscription.update({
+      where: { id: subscriptionId },
+      data: { autoRenew: Boolean(autoRenew) },
+      include: {
+        customer: true,
+        plan: true,
+      },
+    });
+
+    // Notifica o cliente via Bot do WhatsApp sobre a mudança de modo de renovação
+    try {
+      const targetPhone = sub.customer.whatsappJid || sub.customer.phone;
+      if (targetPhone) {
+        const firstName = sub.customer.name.trim().split(/\s+/)[0] || 'Cliente';
+        const endDateFormatted = DateTime.fromJSDate(sub.cycleEndDate).toFormat('dd/MM/yyyy');
+        const msg = autoRenew
+          ? `🔄 *Renovação Automática Ativada!*\n\nOlá, ${firstName}! Sua assinatura do plano VIP *${sub.plan.name}* na *${sub.tenant.name}* foi configurada para *Renovação Automática*.\n\n📅 *Próxima renovação:* ${endDateFormatted}\nEnviaremos os avisos habituais antes do vencimento!`
+          : `📅 *Renovação Manual Configurada!*\n\nOlá, ${firstName}! Sua assinatura do plano VIP *${sub.plan.name}* na *${sub.tenant.name}* agora está no modo de *Renovação Manual*.\n\n📅 *Ciclo atual válido até:* ${endDateFormatted}\nAvisaremos você próximo ao vencimento para que escolha quando renovar!`;
+        await whatsAppService.sendMessage(tenantId, targetPhone, msg);
+      }
+    } catch (waErr) {
+      logger.warn({ err: waErr, tenantId }, 'Aviso: Notificação WhatsApp de alteração de Auto-Renew não enviada');
+    }
+
+    return updated;
   }
 
   /**
@@ -334,7 +411,6 @@ export class ClubService {
     if (!sub) throw HttpError.notFound('Assinatura não encontrada');
 
     const now = new Date();
-    // Se o ciclo já estava vencido, renova a partir de hoje; se estava ativo, estende a partir da data de término
     const baseDate = sub.cycleEndDate > now ? sub.cycleEndDate : now;
     const newCycleEndDate = DateTime.fromJSDate(baseDate).plus({ days: 30 }).toJSDate();
 
@@ -360,7 +436,8 @@ export class ClubService {
       if (targetPhone) {
         const firstName = sub.customer.name.trim().split(/\s+/)[0] || 'Cliente';
         const formattedDate = DateTime.fromJSDate(newCycleEndDate).toFormat('dd/MM/yyyy');
-        const renewalMsg = `✅ *Assinatura Renovada com Sucesso!*\n\nOlá, ${firstName}! Seu plano VIP *${sub.plan.name}* na *${sub.tenant.name}* foi renovado.\n\n📅 *Novo ciclo até:* ${formattedDate}\n✂️ Seus créditos de corte foram resetados e estão prontos para uso!\n\nTe esperamos para renovar o visual!`;
+        const renewMode = updated.autoRenew ? 'Automática' : 'Manual';
+        const renewalMsg = `✅ *Assinatura Renovada com Sucesso!*\n\nOlá, ${firstName}! Seu plano VIP *${sub.plan.name}* na *${sub.tenant.name}* foi renovado.\n\n📅 *Novo ciclo até:* ${formattedDate}\n🔄 *Modo de renovação:* ${renewMode}\n✂️ Seus créditos de corte foram resetados e estão prontos para uso!\n\nTe esperamos para renovar o visual!`;
         await whatsAppService.sendMessage(tenantId, targetPhone, renewalMsg);
       }
     } catch (waErr) {
@@ -384,6 +461,138 @@ export class ClubService {
         notes: notes ? notes.trim() : undefined,
       },
     });
+  }
+
+  /**
+   * Régua de Avisos do Bot WhatsApp para Assinantes do Clube (D-3, D0, D+2).
+   * Segue o mesmo fluxo de avisos de vencimento, respeitando a escolha de Auto-Renew vs Manual.
+   */
+  async runClubRenewalBotWarnings(targetTenantId?: string): Promise<ClubBotWarningResult> {
+    const subs = await prisma.customerSubscription.findMany({
+      where: {
+        ...(targetTenantId ? { tenantId: targetTenantId } : {}),
+        status: { in: ['ACTIVE', 'PENDING_PAYMENT'] },
+      },
+      include: {
+        customer: true,
+        plan: true,
+        tenant: { select: { id: true, name: true, slug: true, timezone: true } },
+      },
+    });
+
+    let messagesSent = 0;
+    let autoRenewedCount = 0;
+    let expiredCount = 0;
+    const details: ClubBotWarningResult['details'] = [];
+
+    for (const sub of subs) {
+      const zone = sub.tenant.timezone || 'America/Sao_Paulo';
+      const today = DateTime.now().setZone(zone).startOf('day');
+      const expDay = DateTime.fromJSDate(sub.cycleEndDate).setZone(zone).startOf('day');
+      const diffDays = Math.round(expDay.diff(today, 'days').days);
+      const todayIso = today.toISODate() || '';
+
+      let stage: ClubDunningStage | null = null;
+      if (diffDays === 3) stage = 'D-3';
+      else if (diffDays === 0) stage = 'D0';
+      else if (diffDays <= -2) stage = 'D+2';
+
+      if (!stage) continue;
+
+      const dedupeKey = `CLUB_BOT_NOTICE:${sub.id}:${stage}:${todayIso}`;
+      const alreadySent = await prisma.systemLog.findFirst({
+        where: {
+          tenantId: sub.tenantId,
+          source: dedupeKey,
+        },
+        select: { id: true },
+      });
+
+      if (alreadySent) continue;
+
+      const targetPhone = sub.customer.whatsappJid || sub.customer.phone;
+      const firstName = sub.customer.name.trim().split(/\s+/)[0] || 'Cliente';
+      const formattedPrice = (sub.plan.priceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const endDateFormatted = DateTime.fromJSDate(sub.cycleEndDate).setZone(zone).toFormat('dd/MM/yyyy');
+
+      let messageText = '';
+
+      if (stage === 'D-3') {
+        if (sub.autoRenew) {
+          messageText = `👑 *Aviso de Renovação do Clube VIP (3 dias)*\n\nOlá, ${firstName}! Seu plano *${sub.plan.name}* na *${sub.tenant.name}* está programado para *Renovação Automática* em *3 dias* (${endDateFormatted}), no valor de *${formattedPrice}*.\n\nCaso prefira alterar para renovação manual, você pode ajustar a qualquer momento na página da barbearia! ✂️`;
+        } else {
+          messageText = `👑 *Seu Plano VIP vence em 3 dias!*\n\nOlá, ${firstName}! O ciclo atual do seu plano *${sub.plan.name}* na *${sub.tenant.name}* encerra em *${endDateFormatted}*.\n\nComo sua assinatura está configurada para *Renovação Manual*, lembre-se de confirmar sua renovação conosco (*${formattedPrice}*) para continuar aproveitando seus cortes sem interrupção! ✂️`;
+        }
+      } else if (stage === 'D0') {
+        if (sub.autoRenew) {
+          // Renovação Automática ativa: renova o ciclo por +30 dias e avisa o cliente!
+          const now = new Date();
+          const newEndDate = DateTime.fromJSDate(now).plus({ days: 30 }).toJSDate();
+          const newEndFormatted = DateTime.fromJSDate(newEndDate).setZone(zone).toFormat('dd/MM/yyyy');
+
+          await prisma.customerSubscription.update({
+            where: { id: sub.id },
+            data: {
+              cycleStartDate: now,
+              cycleEndDate: newEndDate,
+              usagesCount: 0,
+              status: 'ACTIVE',
+            },
+          });
+          autoRenewedCount++;
+
+          messageText = `🔄 *Renovação Automática Realizada — Clube VIP!*\n\nOlá, ${firstName}! Hoje seu plano *${sub.plan.name}* na *${sub.tenant.name}* iniciou um novo ciclo automático até *${newEndFormatted}* e seus créditos de corte foram renovados!\n\n💳 *Valor da mensalidade:* ${formattedPrice}\nRealize o acerto via PIX ou Cartão na barbearia. Bom corte! ✂️`;
+        } else {
+          messageText = `⏰ *Seu Plano VIP Vence Hoje!*\n\nOlá, ${firstName}! Hoje (${endDateFormatted}) encerra o ciclo do seu plano *${sub.plan.name}* na *${sub.tenant.name}*.\n\nComo sua assinatura está no modo *Manual*, fale conosco ou acesse nossa página caso deseje renovar seu plano (*${formattedPrice}*) para o próximo mês! 👑`;
+        }
+      } else if (stage === 'D+2') {
+        if (sub.status === 'ACTIVE') {
+          await prisma.customerSubscription.update({
+            where: { id: sub.id },
+            data: { status: 'EXPIRED' },
+          });
+          expiredCount++;
+        }
+        messageText = `⚠️ *Aviso de Assinatura VIP Vencida*\n\nOlá, ${firstName}! O ciclo do seu plano *${sub.plan.name}* na *${sub.tenant.name}* venceu em *${endDateFormatted}* e seus benefícios do clube estão temporariamente pausados.\n\nPara reativar sua assinatura por mais 30 dias (*${formattedPrice}*), fale conosco no WhatsApp ou na recepção! 💈`;
+      }
+
+      let sent = false;
+      if (targetPhone && messageText) {
+        try {
+          await whatsAppService.sendMessage(sub.tenantId, targetPhone, messageText);
+          sent = true;
+          messagesSent++;
+        } catch (err) {
+          logger.warn({ err, tenantId: sub.tenantId, subId: sub.id }, 'Falha ao enviar aviso do Bot do Clube no WhatsApp');
+        }
+      }
+
+      await prisma.systemLog.create({
+        data: {
+          tenantId: sub.tenantId,
+          level: 'INFO',
+          source: dedupeKey,
+          message: `Aviso Bot Clube VIP (${stage}) para ${sub.customer.name} [autoRenew=${sub.autoRenew}]`,
+        },
+      });
+
+      details.push({
+        subscriptionId: sub.id,
+        customerName: sub.customer.name,
+        planName: sub.plan.name,
+        stage,
+        autoRenew: sub.autoRenew,
+        sent,
+      });
+    }
+
+    return {
+      checkedCount: subs.length,
+      messagesSent,
+      autoRenewedCount,
+      expiredCount,
+      details,
+    };
   }
 
   /**
@@ -415,12 +624,10 @@ export class ClubService {
       return { covered: false, reason: 'Cliente não possui assinatura ativa no clube.' };
     }
 
-    // 1. Valida data do ciclo
     if (appointmentDate > sub.cycleEndDate) {
       return { covered: false, reason: 'Ciclo do plano expirado. Necessário renovar a assinatura.' };
     }
 
-    // 2. Valida dia da semana se restrito
     const apptWeekday = DateTime.fromJSDate(appointmentDate).weekday === 7 ? 0 : DateTime.fromJSDate(appointmentDate).weekday;
     if (sub.plan.allowedDaysOfWeek && sub.plan.allowedDaysOfWeek.length > 0) {
       if (!sub.plan.allowedDaysOfWeek.includes(apptWeekday)) {
@@ -428,13 +635,11 @@ export class ClubService {
       }
     }
 
-    // 3. Valida se o serviço está incluso
     const isServiceCovered = sub.plan.services.some((s) => s.serviceId === serviceId);
     if (!isServiceCovered) {
       return { covered: false, reason: 'Este serviço não está incluso no plano assinado.' };
     }
 
-    // 4. Valida limite de usos
     if (sub.plan.maxUsagesPerMonth !== null && sub.usagesCount >= sub.plan.maxUsagesPerMonth) {
       return {
         covered: false,
@@ -467,13 +672,11 @@ export class ClubService {
 
       if (!appointment || !appointment.customer) return;
 
-      // Verifica se já registrou uso para este agendamento
       const existingUsage = await prisma.clubUsage.findFirst({
         where: { appointmentId },
       });
       if (existingUsage) return;
 
-      // Checa cobertura
       const coverage = await this.checkCustomerClubCoverage(
         tenantId,
         appointment.customer.id,
@@ -483,7 +686,6 @@ export class ClubService {
 
       if (!coverage.covered || !coverage.subscriptionId) return;
 
-      // Registra uso e incrementa contagem
       await prisma.$transaction(async (tx) => {
         await tx.clubUsage.create({
           data: {
@@ -503,7 +705,6 @@ export class ClubService {
         });
       });
 
-      // Dispara WhatsApp comemorativo
       const targetPhone = appointment.customer.whatsappJid || appointment.customer.phone;
       if (targetPhone) {
         const nextCount = (coverage.usagesCount || 0) + 1;
@@ -527,7 +728,7 @@ export class ClubService {
    * Lista histórico de utilizações do clube.
    */
   async listUsages(tenantId: string, page = 1, pageSize = 20) {
-    const [total, usages] = await Promise.all([
+    const [total, rawUsages] = await Promise.all([
       prisma.clubUsage.count({ where: { tenantId } }),
       prisma.clubUsage.findMany({
         where: { tenantId },
@@ -546,6 +747,12 @@ export class ClubService {
         },
       }),
     ]);
+
+    const usages = rawUsages.map((u) => ({
+      ...u,
+      customerId: u.subscription?.customer?.id || '',
+      customer: u.subscription?.customer || { id: '', name: 'Cliente', phone: null },
+    }));
 
     return {
       usages,
@@ -580,6 +787,7 @@ export class ClubService {
 
     return {
       tenantName: tenant.name,
+      phone: tenant.phone,
       tenantPhone: tenant.phone,
       plans: plans.map((p) => ({
         id: p.id,
@@ -588,8 +796,120 @@ export class ClubService {
         priceCents: p.priceCents,
         maxUsagesPerMonth: p.maxUsagesPerMonth,
         allowedDaysOfWeek: p.allowedDaysOfWeek,
-        services: p.services.map((s) => s.service.name),
+        services: p.services.map((s) => ({
+          service: s.service,
+        })),
       })),
+    };
+  }
+
+  /**
+   * Consulta pública da assinatura VIP do cliente pelo telefone na vitrine.
+   */
+  async getPublicCustomerSubscription(slug: string, rawPhone?: string) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { slug },
+      select: { id: true, name: true, slug: true },
+    });
+    if (!tenant) throw HttpError.notFound('Barbearia não encontrada');
+
+    const cleanDigits = rawPhone ? rawPhone.replace(/\D/g, '') : '';
+    if (!cleanDigits || cleanDigits.length < 8) {
+      throw HttpError.badRequest('Informe um telefone/WhatsApp válido com DDD.');
+    }
+
+    const last8 = cleanDigits.slice(-8);
+    const phoneVariants = [
+      cleanDigits,
+      `55${cleanDigits}`,
+      cleanDigits.startsWith('55') ? cleanDigits.slice(2) : cleanDigits,
+    ];
+
+    const customers = await prisma.customer.findMany({
+      where: {
+        tenantId: tenant.id,
+        OR: [
+          { phone: { in: phoneVariants } },
+          { phone: { endsWith: last8 } },
+          { whatsappJid: { in: phoneVariants.map((p) => `${p}@s.whatsapp.net`) } },
+        ],
+      },
+      select: { id: true, name: true, phone: true },
+    });
+
+    if (customers.length === 0) {
+      return {
+        found: false,
+        message: 'Nenhuma assinatura encontrada para este telefone.',
+      };
+    }
+
+    const customerIds = customers.map((c) => c.id);
+    const sub = await prisma.customerSubscription.findFirst({
+      where: {
+        tenantId: tenant.id,
+        customerId: { in: customerIds },
+      },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        plan: {
+          include: {
+            services: {
+              include: { service: { select: { id: true, name: true } } },
+            },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!sub) {
+      return {
+        found: false,
+        message: 'Você ainda não possui uma assinatura ativa no Clube VIP desta barbearia.',
+      };
+    }
+
+    return {
+      found: true,
+      subscription: {
+        id: sub.id,
+        customerName: sub.customer.name,
+        planName: sub.plan.name,
+        priceCents: sub.plan.priceCents,
+        status: sub.status,
+        cycleStartDate: sub.cycleStartDate,
+        cycleEndDate: sub.cycleEndDate,
+        usagesCount: sub.usagesCount,
+        maxUsagesPerMonth: sub.plan.maxUsagesPerMonth,
+        autoRenew: sub.autoRenew,
+        paymentMethod: sub.paymentMethod,
+        services: sub.plan.services.map((s) => s.service.name),
+      },
+    };
+  }
+
+  /**
+   * Permite que o próprio cliente ative ou desative o Auto-Renew na vitrine pública.
+   */
+  async togglePublicCustomerAutoRenew(slug: string, rawPhone: string, autoRenew: boolean) {
+    const lookup = await this.getPublicCustomerSubscription(slug, rawPhone);
+    if (!lookup.found || !lookup.subscription) {
+      throw HttpError.notFound('Assinatura não encontrada para este número de WhatsApp.');
+    }
+
+    const tenant = await prisma.tenant.findUniqueOrThrow({
+      where: { slug },
+      select: { id: true },
+    });
+
+    const updated = await this.toggleAutoRenew(tenant.id, lookup.subscription.id, autoRenew);
+    return {
+      success: true,
+      autoRenew: updated.autoRenew,
+      message: updated.autoRenew
+        ? 'Renovação automática ativada com sucesso!'
+        : 'Renovação alterada para modo manual com sucesso!',
     };
   }
 }

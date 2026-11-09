@@ -180,6 +180,7 @@ model Subscription {
   // Módulo Add-on de Emissão de NFS-e contratado à parte (ou liberado pelo Super Admin)
   nfseAddonActive          Boolean            @default(false)
   nfseAddonExpiresAt       DateTime?
+  autoRenew                Boolean            @default(true)
   notes                    String?
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt

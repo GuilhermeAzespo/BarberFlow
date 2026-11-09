@@ -3,6 +3,9 @@ import { prisma } from './prisma.js';
 import { logger } from './logger.js';
 import { sendEmail, buildBarberFlowEmailHtml } from './email.js';
 import { getActiveMercadoPagoConfig, createMercadoPagoPix, getMercadoPagoWebhookUrl } from './mercadopago.js';
+import { clubService } from '../modules/club/club.service.js';
+import { whatsAppService } from '../modules/whatsapp/whatsapp.service.js';
+import { normalizePhone } from './utils.js';
 
 export type DunningStage = 'D-3' | 'D0' | 'D+2';
 
@@ -219,9 +222,20 @@ async function getOrGeneratePixPayment(tenant: any, plan: any, amountCents: numb
 /**
  * Constrói o corpo do e-mail de acordo com o estágio da régua.
  */
-function buildDunningEmail(stage: DunningStage, tenantName: string, planName: string, dateFormatted: string, priceStr: string, pixQrCode?: string | null) {
+function buildDunningEmail(
+  stage: DunningStage,
+  tenantName: string,
+  planName: string,
+  dateFormatted: string,
+  priceStr: string,
+  pixQrCode?: string | null,
+  autoRenew: boolean = true,
+) {
   const baseUrl = process.env.PUBLIC_URL || 'https://barberflow.azespo.com.br';
   const plansUrl = `${baseUrl.replace(/\/$/, '')}/planos`;
+  const renewModeBadge = autoRenew
+    ? `<p style="margin: 12px 0; font-size: 13px; color: #10B981;">🔄 <strong>Modo de Renovação:</strong> Automática (Auto-Renew Ativo) — você pode alterar para Manual a qualquer momento no painel.</p>`
+    : `<p style="margin: 12px 0; font-size: 13px; color: #F59E0B;">📅 <strong>Modo de Renovação:</strong> Manual — como o Auto-Renew está desativado, acesse o painel para renovar quando desejar.</p>`;
 
   if (stage === 'D-3') {
     return {
@@ -232,6 +246,7 @@ function buildDunningEmail(stage: DunningStage, tenantName: string, planName: st
         contentHtml: `
           <p>Olá, <strong>${tenantName}</strong>!</p>
           <p>Passando para lembrar que a sua assinatura do <strong>Plano ${planName}</strong> vence em <strong>${dateFormatted}</strong> (restam apenas 3 dias).</p>
+          ${renewModeBadge}
           <p>Para manter sua barbearia operando sem nenhuma interrupção nos agendamentos online, vitrine pública e gestão da equipe, você já pode antecipar sua renovação.</p>
           <div style="margin: 20px 0; padding: 14px 18px; background: rgba(229, 179, 56, 0.08); border-left: 4px solid #E5B338; border-radius: 6px;">
             <p style="margin: 0; font-size: 14px; color: #E2E8F0;">
@@ -240,7 +255,7 @@ function buildDunningEmail(stage: DunningStage, tenantName: string, planName: st
           </div>
         `,
         actionButton: {
-          text: 'Renovar Assinatura Agora →',
+          text: 'Gerenciar / Renovar Assinatura →',
           url: plansUrl,
         },
       }),
@@ -272,6 +287,7 @@ function buildDunningEmail(stage: DunningStage, tenantName: string, planName: st
         contentHtml: `
           <p>Olá, <strong>${tenantName}</strong>!</p>
           <p>Sua assinatura do <strong>Plano ${planName}</strong> vence hoje, <strong>${dateFormatted}</strong>.</p>
+          ${renewModeBadge}
           <div style="margin: 18px 0; padding: 16px; background: rgba(255, 255, 255, 0.04); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
             <div style="display: flex; justify-content: space-between; font-size: 15px; margin-bottom: 6px;">
               <span style="color: #94A3B8;">Plano:</span>
@@ -283,7 +299,7 @@ function buildDunningEmail(stage: DunningStage, tenantName: string, planName: st
             </div>
           </div>
           ${pixBlock}
-          <p style="font-size: 13px; color: #94A3B8;">Você também pode efetuar o pagamento via Cartão de Crédito ou alterar seu plano acessando o painel.</p>
+          <p style="font-size: 13px; color: #94A3B8;">Você também pode efetuar o pagamento via Cartão de Crédito ou alterar sua preferência de Auto-Renew acessando o painel.</p>
         `,
         actionButton: {
           text: 'Pagar no BarberFlow →',
@@ -317,6 +333,7 @@ function buildDunningEmail(stage: DunningStage, tenantName: string, planName: st
         <p style="color: #F87171; font-weight: 600;">
           Identificamos que a assinatura do <strong>Plano ${planName}</strong> da sua barbearia venceu em <strong>${dateFormatted}</strong> (há 2 dias).
         </p>
+        ${renewModeBadge}
         <p>
           Sua conta está no período final de carência. Para evitar a <strong>suspensão dos agendamentos online</strong> e bloqueio do acesso dos seus profissionais, por favor efetue a regularização hoje mesmo.
         </p>
@@ -426,15 +443,46 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
     const dateFormatted = expDate.toFormat('dd/LL/yyyy');
 
     let pixInfo: { paymentId: string; qrCode?: string | null; ticketUrl?: string | null } | null = null;
+    const isAutoRenew = sub.autoRenew ?? true;
 
-    // Em D0 e D+2, gera ou busca o PIX automático
-    if (stage === 'D0' || stage === 'D+2') {
+    // Em D0 e D+2, gera ou busca o PIX automático (se Auto-Renew estiver ativo ou em D+2 de regularização)
+    if ((stage === 'D0' && isAutoRenew) || stage === 'D+2') {
       try {
         pixInfo = await getOrGeneratePixPayment(tenant, sub.plan, priceCents);
         if (pixInfo?.qrCode) pixGeneratedCount++;
       } catch (err) {
         logger.error({ err, tenantId: tenant.id }, 'Falha ao processar PIX da régua');
       }
+    }
+
+    // Disparo via Bot WhatsApp seguindo o mesmo fluxo de avisos (D-3, D0, D+2)
+    try {
+      const conn = whatsAppService.getConnection(tenant.id);
+      const cleanPhone = (tenant.phone ? normalizePhone(tenant.phone) : '') || '';
+      if (conn?.status === 'CONNECTED' && cleanPhone.length >= 10) {
+        const renewStatusTxt = isAutoRenew
+          ? '🔄 *Renovação Automática (Auto-Renew):* ATIVA'
+          : '📅 *Modo de Renovação:* MANUAL (Auto-Renew desativado)';
+        let waMsg = '';
+        if (stage === 'D-3') {
+          waMsg = `⏳ *Aviso de Vencimento — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) vence em *3 dias* (${dateFormatted}).\n\n${renewStatusTxt}\n\n${
+            isAutoRenew
+              ? 'No dia do vencimento enviaremos automaticamente o código de renovação.'
+              : 'Como sua renovação está no modo Manual, acesse /planos quando desejar renovar seu ciclo!'
+          }`;
+        } else if (stage === 'D0') {
+          waMsg = `🔔 *Sua Assinatura Vence Hoje — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) vence *hoje* (${dateFormatted}).\n\n${renewStatusTxt}${
+            pixInfo?.qrCode
+              ? `\n\n⚡ *PIX Copia e Cola gerado automaticamente:*\n\n${pixInfo.qrCode}`
+              : '\n\nAcesse o menu *Assinatura (/planos)* no seu painel para renovar.'
+          }`;
+        } else {
+          waMsg = `⚠️ *Aviso Urgente (Carência D+2) — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) venceu em *${dateFormatted}*.\n\n${renewStatusTxt}\n\nPara evitar o bloqueio do painel e da vitrine online, regularize sua assinatura em */planos*.`;
+        }
+        await whatsAppService.sendMessage(tenant.id, cleanPhone, waMsg);
+      }
+    } catch (waErr) {
+      logger.warn({ err: waErr, tenantId: tenant.id }, 'Aviso: Falha ao enviar mensagem da régua via WhatsApp');
     }
 
     // Envio do e-mail
@@ -446,6 +494,7 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
         dateFormatted,
         priceStr,
         pixInfo?.qrCode,
+        isAutoRenew,
       );
 
       try {
@@ -645,6 +694,7 @@ class BillingDunningWorker {
     this.isRunning = true;
     try {
       await executeBillingDunning();
+      await clubService.runClubRenewalBotWarnings();
     } catch (err) {
       logger.error({ err }, 'Erro inesperado na execução periódica do BillingDunningWorker');
     } finally {

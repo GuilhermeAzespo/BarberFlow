@@ -171,9 +171,12 @@ export default function ClubManagementPage() {
     planId: '',
     paymentMethod: 'PIX',
     cycleDays: 30,
+    autoRenew: true,
     notes: '',
   });
   const [savingSub, setSavingSub] = useState(false);
+  const [togglingSubId, setTogglingSubId] = useState<string | null>(null);
+  const [runningBotWarnings, setRunningBotWarnings] = useState(false);
 
   // Modal Renovar Assinatura
   const [renewModalOpen, setRenewModalOpen] = useState(false);
@@ -384,9 +387,56 @@ export default function ClubManagementPage() {
       planId: plans.find((p) => p.isActive)?.id || '',
       paymentMethod: 'PIX',
       cycleDays: 30,
+      autoRenew: true,
       notes: '',
     });
     setSubModalOpen(true);
+  };
+
+  const handleToggleAutoRenew = async (sub: CustomerSubscriber) => {
+    const nextValue = !sub.autoRenew;
+    try {
+      setTogglingSubId(sub.id);
+      const res = await api.patch<{ subscription: CustomerSubscriber; message: string }>(
+        `/api/club/subscriptions/${sub.id}/auto-renew`,
+        { autoRenew: nextValue },
+      );
+      setSubscribers((prev) =>
+        prev.map((item) => (item.id === sub.id ? { ...item, autoRenew: nextValue } : item)),
+      );
+      toast.success(
+        res.message ||
+          (nextValue
+            ? `Auto-Renew ativado para ${sub.customer?.name}!`
+            : `Renovação alterada para Manual para ${sub.customer?.name}.`),
+      );
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao alterar modo de renovação');
+    } finally {
+      setTogglingSubId(null);
+    }
+  };
+
+  const handleRunBotWarnings = async () => {
+    try {
+      setRunningBotWarnings(true);
+      const res = await api.post<{
+        checkedCount: number;
+        messagesSent: number;
+        autoRenewedCount: number;
+        expiredCount: number;
+        message: string;
+      }>('/api/club/bot-warnings/run', {});
+      toast.success(
+        res.message ||
+          `Verificação concluída: ${res.messagesSent} aviso(s) enviado(s) pelo Bot (${res.autoRenewedCount} auto-renovada(s)).`,
+      );
+      await loadData();
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao executar avisos do Bot');
+    } finally {
+      setRunningBotWarnings(false);
+    }
   };
 
   const handleSaveSub = async (e: React.FormEvent) => {
@@ -612,7 +662,26 @@ export default function ClubManagementPage() {
             </div>
 
             {hasAccess && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  disabled={runningBotWarnings}
+                  onClick={handleRunBotWarnings}
+                  className="btn-secondary"
+                  title="Executa a régua de avisos D-3, D0 e D+2 no WhatsApp conforme a opção Auto-Renew de cada cliente"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '0.85rem',
+                    padding: '8px 14px',
+                    borderColor: 'rgba(16, 185, 129, 0.35)',
+                    color: '#34D399',
+                  }}
+                >
+                  <MessageCircle size={16} />
+                  {runningBotWarnings ? 'Disparando Bot...' : 'Verificar & Avisar via Bot'}
+                </button>
                 <button
                   type="button"
                   onClick={() => handleOpenPlanModal()}
@@ -969,6 +1038,7 @@ export default function ClubManagementPage() {
                         <th style={{ padding: '10px 12px' }}>Cliente</th>
                         <th style={{ padding: '10px 12px' }}>Plano VIP</th>
                         <th style={{ padding: '10px 12px' }}>Ciclo / Validade</th>
+                        <th style={{ padding: '10px 12px' }}>Renovação (Auto-Renew)</th>
                         <th style={{ padding: '10px 12px' }}>Usos no Ciclo</th>
                         <th style={{ padding: '10px 12px' }}>Status</th>
                         <th style={{ padding: '10px 12px', textAlign: 'right' }}>Ações</th>
@@ -1009,6 +1079,44 @@ export default function ClubManagementPage() {
                               </div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                                 Pgto: {sub.paymentMethod || 'Manual'}
+                              </div>
+                            </td>
+
+                            <td style={{ padding: '12px' }}>
+                              <button
+                                type="button"
+                                disabled={togglingSubId === sub.id || sub.status === 'CANCELED'}
+                                onClick={() => handleToggleAutoRenew(sub)}
+                                title="Clique para alternar entre Renovação Automática (Auto-Renew) e Renovação Manual"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '5px 10px',
+                                  borderRadius: '999px',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 700,
+                                  cursor: sub.status === 'CANCELED' ? 'not-allowed' : 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  background: sub.autoRenew
+                                    ? 'rgba(16, 185, 129, 0.14)'
+                                    : 'rgba(245, 158, 11, 0.14)',
+                                  color: sub.autoRenew ? '#34D399' : '#FBBF24',
+                                  border: sub.autoRenew
+                                    ? '1px solid rgba(16, 185, 129, 0.35)'
+                                    : '1px solid rgba(245, 158, 11, 0.35)',
+                                }}
+                              >
+                                <RefreshCw
+                                  size={12}
+                                  style={{
+                                    animation: togglingSubId === sub.id ? 'spin 1s linear infinite' : 'none',
+                                  }}
+                                />
+                                {sub.autoRenew ? 'Automática (ON)' : 'Manual (OFF)'}
+                              </button>
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '3px' }}>
+                                {sub.autoRenew ? 'Renova ciclo no D0 + Bot' : 'Cliente decide renovar'}
                               </div>
                             </td>
 
@@ -1601,6 +1709,62 @@ export default function ClubManagementPage() {
                 <option value={180}>180 Dias (Semestral)</option>
                 <option value={365}>365 Dias (Anual)</option>
               </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Modo de Renovação (Auto-Renew vs. Manual) *</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setNewSubForm({ ...newSubForm, autoRenew: true })}
+                style={{
+                  padding: '12px',
+                  borderRadius: '10px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  border: newSubForm.autoRenew
+                    ? '1.5px solid #10B981'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: newSubForm.autoRenew
+                    ? 'rgba(16, 185, 129, 0.12)'
+                    : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.84rem', color: newSubForm.autoRenew ? '#34D399' : 'var(--text-main)' }}>
+                  <RefreshCw size={14} /> Automática (Auto-Renew)
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
+                  Renova automaticamente no vencimento e envia avisos pelo Bot.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNewSubForm({ ...newSubForm, autoRenew: false })}
+                style={{
+                  padding: '12px',
+                  borderRadius: '10px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  border: !newSubForm.autoRenew
+                    ? '1.5px solid #F59E0B'
+                    : '1px solid rgba(255, 255, 255, 0.1)',
+                  background: !newSubForm.autoRenew
+                    ? 'rgba(245, 158, 11, 0.12)'
+                    : 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.84rem', color: !newSubForm.autoRenew ? '#FBBF24' : 'var(--text-main)' }}>
+                  <Calendar size={14} /> Renovação Manual
+                </div>
+                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
+                  Bot envia os mesmos avisos (D-3, D0, D+2) e o cliente escolhe renovar.
+                </div>
+              </button>
+            </div>
+            <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '6px' }}>
+              💡 O próprio cliente também pode ativar ou desativar o Auto-Renew a qualquer momento na página pública da barbearia.
             </div>
           </div>
 

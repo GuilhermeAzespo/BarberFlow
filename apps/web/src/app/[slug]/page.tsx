@@ -131,6 +131,25 @@ interface PublicClubResponse {
   plans: PublicClubPlan[];
 }
 
+interface PublicCustomerClubSubResponse {
+  found: boolean;
+  message?: string;
+  subscription?: {
+    id: string;
+    customerName: string;
+    planName: string;
+    priceCents: number;
+    status: string;
+    cycleStartDate: string;
+    cycleEndDate: string;
+    usagesCount: number;
+    maxUsagesPerMonth: number | null;
+    autoRenew: boolean;
+    paymentMethod: string | null;
+    services: string[];
+  };
+}
+
 const RESERVED_SLUGS = [
   'login',
   'register',
@@ -185,6 +204,12 @@ export default function TenantHomePage() {
   const [loyaltyResult, setLoyaltyResult] = useState<PublicLoyaltyResponse | null>(null);
   const [loyaltySearched, setLoyaltySearched] = useState(false);
   const [clubPlans, setClubPlans] = useState<PublicClubPlan[]>([]);
+  const [clubSubPhone, setClubSubPhone] = useState('');
+  const [clubSubLoading, setClubSubLoading] = useState(false);
+  const [clubSubSearched, setClubSubSearched] = useState(false);
+  const [clubSubResult, setClubSubResult] = useState<PublicCustomerClubSubResponse | null>(null);
+  const [togglingClubAutoRenew, setTogglingClubAutoRenew] = useState(false);
+  const [clubAutoRenewFeedback, setClubAutoRenewFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -350,6 +375,69 @@ export default function TenantHomePage() {
       formatted = '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 7) + '-' + raw.slice(7);
     }
     setLoyaltyPhone(formatted);
+  };
+
+  const handleClubPhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 11);
+    let formatted = raw;
+    if (raw.length > 2) {
+      formatted = '(' + raw.slice(0, 2) + ') ' + raw.slice(2);
+    }
+    if (raw.length > 7) {
+      formatted = '(' + raw.slice(0, 2) + ') ' + raw.slice(2, 7) + '-' + raw.slice(7);
+    }
+    setClubSubPhone(formatted);
+  };
+
+  const handleSearchClubSubscription = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const clean = clubSubPhone.replace(/\D/g, '');
+    if (!clean || clean.length < 8) return;
+    try {
+      setClubSubLoading(true);
+      setClubSubSearched(true);
+      setClubAutoRenewFeedback(null);
+      const res = await api.get<PublicCustomerClubSubResponse>(
+        '/api/public/tenants/' + encodeURIComponent(slug) + '/club/subscription?phone=' + encodeURIComponent(clean)
+      );
+      setClubSubResult(res);
+    } catch (err: any) {
+      setClubSubResult({
+        found: false,
+        message: err?.message || 'Não foi possível consultar sua assinatura no momento.',
+      });
+    } finally {
+      setClubSubLoading(false);
+    }
+  };
+
+  const handleTogglePublicClubAutoRenew = async (nextAutoRenew: boolean) => {
+    const clean = clubSubPhone.replace(/\D/g, '');
+    if (!clean || !clubSubResult?.subscription) return;
+    try {
+      setTogglingClubAutoRenew(true);
+      setClubAutoRenewFeedback(null);
+      const res = await api.post<{ success: boolean; autoRenew: boolean; message: string }>(
+        '/api/public/tenants/' + encodeURIComponent(slug) + '/club/subscription/auto-renew',
+        { phone: clean, autoRenew: nextAutoRenew }
+      );
+      setClubSubResult((prev) =>
+        prev && prev.subscription
+          ? {
+              ...prev,
+              subscription: {
+                ...prev.subscription,
+                autoRenew: res.autoRenew,
+              },
+            }
+          : prev
+      );
+      setClubAutoRenewFeedback(res.message);
+    } catch (err: any) {
+      setClubAutoRenewFeedback(err?.message || 'Não foi possível atualizar sua preferência de renovação.');
+    } finally {
+      setTogglingClubAutoRenew(false);
+    }
   };
 
   const instagramUrl = useMemo(() => {
@@ -1433,6 +1521,249 @@ export default function TenantHomePage() {
                 </div>
               );
             })}
+          </div>
+
+          {/* ── Autoatendimento do Assinante VIP: Consulta de Plano & Toggle Auto-Renew ── */}
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: '720px',
+              margin: '36px auto 0 auto',
+              padding: '24px 28px',
+              borderRadius: '16px',
+              border: '1px solid rgba(229, 179, 56, 0.3)',
+              background: 'linear-gradient(180deg, rgba(18, 24, 38, 0.9) 0%, rgba(11, 15, 23, 0.95) 100%)',
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <Crown size={20} color="#E5B338" />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FFFFFF', margin: 0 }}>
+                Já é Assinante VIP? Gerencie sua Renovação Automática (Auto-Renew)
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+              Digite seu WhatsApp abaixo para consultar seus usos no mês e escolher se prefere renovar seu plano{' '}
+              <strong>automaticamente</strong> ou <strong>manualmente</strong>.
+            </p>
+
+            <form onSubmit={handleSearchClubSubscription} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+                <Phone
+                  size={17}
+                  style={{
+                    position: 'absolute',
+                    left: '14px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text-dim)',
+                  }}
+                />
+                <input
+                  type="tel"
+                  value={clubSubPhone}
+                  onChange={handleClubPhoneChange}
+                  placeholder="(00) 00000-0000"
+                  style={{
+                    width: '100%',
+                    padding: '11px 14px 11px 40px',
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    borderRadius: '10px',
+                    color: '#FFF',
+                    fontSize: '0.92rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={clubSubLoading || clubSubPhone.replace(/\D/g, '').length < 8}
+                className="gold-gradient-primary"
+                style={{
+                  padding: '11px 20px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: clubSubLoading ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  opacity: clubSubLoading || clubSubPhone.replace(/\D/g, '').length < 8 ? 0.6 : 1,
+                }}
+              >
+                {clubSubLoading ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin" />
+                    <span>Consultando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search size={16} />
+                    <span>Minha Assinatura</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {clubSubSearched && clubSubResult && (
+              <div style={{ marginTop: '18px' }}>
+                {clubSubResult.found && clubSubResult.subscription ? (
+                  <div
+                    style={{
+                      padding: '18px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(229, 179, 56, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 700 }}>
+                          Assinante VIP
+                        </span>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF' }}>
+                          {clubSubResult.subscription.customerName} —{' '}
+                          <span style={{ color: '#E5B338' }}>{clubSubResult.subscription.planName}</span>
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '999px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          background:
+                            clubSubResult.subscription.status === 'ACTIVE'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
+                          color: clubSubResult.subscription.status === 'ACTIVE' ? '#34D399' : '#F87171',
+                        }}
+                      >
+                        {clubSubResult.subscription.status === 'ACTIVE' ? 'Assinatura Ativa' : 'Ciclo Vencido / Pendente'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                      <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.6)' }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>Vencimento do Ciclo</div>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#F8FAFC', marginTop: '2px' }}>
+                          {new Date(clubSubResult.subscription.cycleEndDate).toLocaleDateString('pt-BR')}
+                        </div>
+                      </div>
+                      <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.6)' }}>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)' }}>Cortes / Usos no Ciclo</div>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#E5B338', marginTop: '2px' }}>
+                          {clubSubResult.subscription.usagesCount}{' '}
+                          {clubSubResult.subscription.maxUsagesPerMonth === null
+                            ? '(Ilimitado)'
+                            : `de ${clubSubResult.subscription.maxUsagesPerMonth}`}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Seletor de Auto-Renew pelo próprio cliente */}
+                    <div
+                      style={{
+                        padding: '14px',
+                        borderRadius: '10px',
+                        background: 'rgba(15, 23, 42, 0.85)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#F8FAFC', marginBottom: '8px' }}>
+                        Como você prefere renovar seu plano no vencimento?
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+                        <button
+                          type="button"
+                          disabled={togglingClubAutoRenew}
+                          onClick={() => handleTogglePublicClubAutoRenew(true)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            textAlign: 'left',
+                            cursor: togglingClubAutoRenew ? 'wait' : 'pointer',
+                            border: clubSubResult.subscription.autoRenew
+                              ? '1.5px solid #10B981'
+                              : '1px solid rgba(255, 255, 255, 0.12)',
+                            background: clubSubResult.subscription.autoRenew
+                              ? 'rgba(16, 185, 129, 0.14)'
+                              : 'rgba(255, 255, 255, 0.03)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: clubSubResult.subscription.autoRenew ? '#34D399' : '#E2E8F0' }}>
+                            <RefreshCw size={14} /> Renovação Automática (ON)
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                            Renova automaticamente o ciclo e o Bot confirma no seu WhatsApp.
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={togglingClubAutoRenew}
+                          onClick={() => handleTogglePublicClubAutoRenew(false)}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            textAlign: 'left',
+                            cursor: togglingClubAutoRenew ? 'wait' : 'pointer',
+                            border: !clubSubResult.subscription.autoRenew
+                              ? '1.5px solid #F59E0B'
+                              : '1px solid rgba(255, 255, 255, 0.12)',
+                            background: !clubSubResult.subscription.autoRenew
+                              ? 'rgba(245, 158, 11, 0.14)'
+                              : 'rgba(255, 255, 255, 0.03)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 700, color: !clubSubResult.subscription.autoRenew ? '#FBBF24' : '#E2E8F0' }}>
+                            <CalendarIcon size={14} /> Renovação Manual (OFF)
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                            Você recebe os avisos no WhatsApp e decide manualmente quando renovar.
+                          </div>
+                        </button>
+                      </div>
+
+                      {clubAutoRenewFeedback && (
+                        <div
+                          style={{
+                            marginTop: '10px',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            color: '#34D399',
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {clubAutoRenewFeedback}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: '10px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      color: '#FCA5A5',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    {clubSubResult.message || 'Nenhuma assinatura encontrada para este WhatsApp.'}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
       )}

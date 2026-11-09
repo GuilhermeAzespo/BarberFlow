@@ -22,6 +22,7 @@ const subscriptionSchema = z.object({
   planId: z.string().min(1, 'Selecione o plano'),
   cycleDays: z.coerce.number().int().min(7).max(365).optional().default(30),
   paymentMethod: z.string().optional().default('MANUAL'),
+  autoRenew: z.boolean().optional().default(true),
   notes: z.string().trim().max(500).optional().nullable(),
 });
 
@@ -95,6 +96,25 @@ clubRouter.post('/subscriptions/:id/cancel', async (req, res) => {
   res.json({ subscription, message: 'Assinatura cancelada com sucesso.' });
 });
 
+clubRouter.patch('/subscriptions/:id/auto-renew', async (req, res) => {
+  const autoRenew = Boolean(req.body.autoRenew);
+  const subscription = await clubService.toggleAutoRenew(req.tenantId!, req.params.id, autoRenew);
+  res.json({
+    subscription,
+    message: autoRenew
+      ? 'Renovação Automática (Auto-Renew) ativada com sucesso!'
+      : 'Renovação alterada para Manual. O cliente receberá avisos para renovar.',
+  });
+});
+
+clubRouter.post('/bot-warnings/run', async (req, res) => {
+  const result = await clubService.runClubRenewalBotWarnings(req.tenantId!);
+  res.json({
+    ...result,
+    message: `Verificação concluída! ${result.messagesSent} aviso(s) disparado(s) via Bot WhatsApp.`,
+  });
+});
+
 /**
  * Checagem de Cobertura
  */
@@ -122,3 +142,4 @@ clubRouter.get('/usages', async (req, res) => {
   const result = await clubService.listUsages(req.tenantId!, page, pageSize);
   res.json(result);
 });
+

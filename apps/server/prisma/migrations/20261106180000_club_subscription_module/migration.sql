@@ -135,3 +135,7 @@ BEGIN
         ALTER TABLE "ClubUsage" ADD CONSTRAINT "ClubUsage_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
     END IF;
 END $$;
+
+ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "autoRenew" BOOLEAN NOT NULL DEFAULT true;
+
+
