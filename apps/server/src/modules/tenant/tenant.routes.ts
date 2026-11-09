@@ -7,6 +7,7 @@ import { prisma } from '../../lib/prisma.js';
 import { systemLog } from '../../lib/system-log.js';
 import { TIME_REGEX, normalizePhone, timeToMinutes } from '../../lib/utils.js';
 import { requireRole } from '../../middlewares/auth.js';
+import { assertPlanFeature, hasPlanFeature } from '../../lib/tenant-access.js';
 import {
   provisionCustomHostname,
   deleteCustomHostname,
@@ -471,4 +472,163 @@ tenantRouter.delete('/custom-domain', requireRole('OWNER', 'MANAGER'), async (re
 
   res.json({ success: true, message: 'Domínio próprio desvinculado com sucesso.' });
 });
+
+// ────────────── Integração de Recebimentos Online por Salão (Mercado Pago Direto) ──────────────
+
+function maskToken(token?: string | null): string | null {
+  if (!token) return null;
+  if (token.length <= 12) return '••••••••';
+  return `${token.slice(0, 8)}••••••••${token.slice(-4)}`;
+}
+
+tenantRouter.get('/payment-config', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const [hasAccess, config] = await Promise.all([
+    hasPlanFeature(tenantId, 'onlinePayments').catch(() => false),
+    prisma.tenantPaymentConfig.findUnique({ where: { tenantId } }),
+  ]);
+
+  const rootDomain = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const webhookUrl = `https://${rootDomain}/api/webhooks/tenant-mercadopago/${tenantId}`;
+
+  res.json({
+    hasAccess,
+    webhookUrl,
+    config: {
+      enabled: config?.enabled ?? false,
+      mpPublicKey: config?.mpPublicKey ?? '',
+      hasAccessToken: Boolean(config?.mpAccessToken),
+      maskedAccessToken: maskToken(config?.mpAccessToken),
+      mpWebhookSecret: config?.mpWebhookSecret ?? '',
+      pixEnabled: config?.pixEnabled ?? true,
+      creditCardEnabled: config?.creditCardEnabled ?? true,
+      recurringCardEnabled: config?.recurringCardEnabled ?? true,
+    },
+  });
+});
+
+tenantRouter.put('/payment-config', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  await assertPlanFeature(tenantId, 'onlinePayments', 'Recebimentos Online & Cartão Recorrente');
+
+  const schema = z.object({
+    enabled: z.boolean().optional(),
+    mpPublicKey: z.string().trim().max(200).nullable().optional(),
+    mpAccessToken: z.string().trim().max(300).nullable().optional(),
+    mpWebhookSecret: z.string().trim().max(200).nullable().optional(),
+    pixEnabled: z.boolean().optional(),
+    creditCardEnabled: z.boolean().optional(),
+    recurringCardEnabled: z.boolean().optional(),
+  });
+
+  const body = schema.parse(req.body);
+  const existing = await prisma.tenantPaymentConfig.findUnique({ where: { tenantId } });
+
+  const shouldUpdateAccessToken =
+    body.mpAccessToken !== undefined &&
+    body.mpAccessToken !== null &&
+    !body.mpAccessToken.includes('••••');
+
+  const finalAccessToken = shouldUpdateAccessToken
+    ? body.mpAccessToken?.trim() || null
+    : existing?.mpAccessToken || null;
+
+  const finalPublicKey =
+    body.mpPublicKey !== undefined ? body.mpPublicKey?.trim() || null : existing?.mpPublicKey || null;
+
+  if (body.enabled && (!finalPublicKey || !finalAccessToken)) {
+    throw HttpError.badRequest(
+      'Para ativar os Recebimentos Online, preencha a Public Key e o Access Token do seu Mercado Pago.'
+    );
+  }
+
+  const saved = await prisma.tenantPaymentConfig.upsert({
+    where: { tenantId },
+    create: {
+      tenantId,
+      enabled: body.enabled ?? false,
+      mpPublicKey: finalPublicKey,
+      mpAccessToken: finalAccessToken,
+      mpWebhookSecret: body.mpWebhookSecret?.trim() || null,
+      pixEnabled: body.pixEnabled ?? true,
+      creditCardEnabled: body.creditCardEnabled ?? true,
+      recurringCardEnabled: body.recurringCardEnabled ?? true,
+    },
+    update: {
+      enabled: body.enabled !== undefined ? body.enabled : undefined,
+      mpPublicKey: finalPublicKey,
+      mpAccessToken: finalAccessToken,
+      mpWebhookSecret:
+        body.mpWebhookSecret !== undefined ? body.mpWebhookSecret?.trim() || null : undefined,
+      pixEnabled: body.pixEnabled !== undefined ? body.pixEnabled : undefined,
+      creditCardEnabled: body.creditCardEnabled !== undefined ? body.creditCardEnabled : undefined,
+      recurringCardEnabled:
+        body.recurringCardEnabled !== undefined ? body.recurringCardEnabled : undefined,
+    },
+  });
+
+  await systemLog({
+    tenantId,
+    source: 'tenant_payment_config',
+    message: `Integração de Recebimentos Online (Mercado Pago do Salão) ${saved.enabled ? 'ATIVADA' : 'ATUALIZADA'}.`,
+  });
+
+  res.json({
+    success: true,
+    config: {
+      enabled: saved.enabled,
+      mpPublicKey: saved.mpPublicKey ?? '',
+      hasAccessToken: Boolean(saved.mpAccessToken),
+      maskedAccessToken: maskToken(saved.mpAccessToken),
+      mpWebhookSecret: saved.mpWebhookSecret ?? '',
+      pixEnabled: saved.pixEnabled,
+      creditCardEnabled: saved.creditCardEnabled,
+      recurringCardEnabled: saved.recurringCardEnabled,
+    },
+  });
+});
+
+tenantRouter.post('/payment-config/test', requireRole('OWNER', 'MANAGER'), async (req, res) => {
+  const tenantId = req.tenantId!;
+  await assertPlanFeature(tenantId, 'onlinePayments', 'Recebimentos Online & Cartão Recorrente');
+
+  const rawToken = typeof req.body?.mpAccessToken === 'string' ? req.body.mpAccessToken.trim() : '';
+  const existing = await prisma.tenantPaymentConfig.findUnique({ where: { tenantId } });
+
+  const tokenToTest =
+    rawToken && !rawToken.includes('••••') ? rawToken : existing?.mpAccessToken || '';
+
+  if (!tokenToTest) {
+    throw HttpError.badRequest('Informe o Access Token do Mercado Pago para testar a conexão.');
+  }
+
+  try {
+    const mpRes = await fetch('https://api.mercadopago.com/users/me', {
+      headers: {
+        Authorization: `Bearer ${tokenToTest}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!mpRes.ok) {
+      throw HttpError.badRequest(
+        'Access Token inválido ou expirado no Mercado Pago. Verifique se copiou a credencial de Produção (APP_USR-...).'
+      );
+    }
+
+    const userData = (await mpRes.json()) as any;
+    res.json({
+      valid: true,
+      accountId: userData.id,
+      nickname: userData.nickname || '',
+      firstName: userData.first_name || '',
+      lastName: userData.last_name || '',
+      email: userData.email || '',
+    });
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw HttpError.badRequest('Não foi possível validar o token na API do Mercado Pago.');
+  }
+});
+
 

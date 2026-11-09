@@ -22,6 +22,7 @@ import {
   Layers,
   MessageCircle,
   Zap,
+  CreditCard,
 } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Header } from '../../components/Header';
@@ -746,6 +747,27 @@ export default function ClubManagementPage() {
 
             {hasAccess && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <Link
+                  href="/settings?tab=integracoes"
+                  title="Configurar recebimento online de planos no Cartão Recorrente ou PIX direto na conta do salão"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    padding: '10px 15px',
+                    borderRadius: '10px',
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                    color: '#60A5FA',
+                    textDecoration: 'none',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <CreditCard size={16} />
+                  <span>Recebimento Online (Cartão/PIX)</span>
+                </Link>
                 <button
                   type="button"
                   disabled={runningBotWarnings}

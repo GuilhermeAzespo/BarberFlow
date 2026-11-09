@@ -159,6 +159,7 @@ model Tenant {
   marketingLogs         MarketingMessageLog[]
   clubPlans             ClubPlan[]
   customerSubscriptions CustomerSubscription[]
+  paymentConfig         TenantPaymentConfig?
 
   @@index([status])
   @@index([createdAt])
@@ -894,6 +895,9 @@ model CustomerSubscription {
   paymentMethod  String                 @default("MANUAL")
   lastPaymentAt  DateTime?
   autoRenew      Boolean                @default(true)
+  mpLastPaymentId String?
+  cardLastFour   String?
+  cardBrand      String?
   notes          String?
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
@@ -923,4 +927,22 @@ model ClubUsage {
 
   @@index([subscriptionId, usedAt])
   @@index([tenantId, usedAt])
+}
+
+// ────────────── Integração de Recebimentos Online por Salão (Mercado Pago Direto) ──────────────
+
+model TenantPaymentConfig {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  enabled              Boolean  @default(false)
+  mpPublicKey          String?
+  mpAccessToken        String?
+  mpWebhookSecret      String?
+  pixEnabled           Boolean  @default(true)
+  creditCardEnabled    Boolean  @default(true)
+  recurringCardEnabled Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

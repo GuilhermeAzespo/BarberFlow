@@ -234,6 +234,7 @@ export interface PlanPermissions {
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
   marketing: boolean;            // Recuperação de Clientes Inativos & Aniversariantes WhatsApp
   club: boolean;                 // Clube de Assinatura da Barbearia (Planos VIP para Clientes)
+  onlinePayments: boolean;       // Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão)
 }
 
 export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', PlanPermissions> = {
@@ -250,6 +251,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     loyalty: false,
     marketing: false,
     club: false,
+    onlinePayments: false,
   },
   pro: {
     reports: true,
@@ -264,6 +266,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     loyalty: true,
     marketing: true,
     club: true,
+    onlinePayments: false,
   },
   premium: {
     reports: true,
@@ -278,6 +281,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     loyalty: true,
     marketing: true,
     club: true,
+    onlinePayments: true,
   },
 };
 

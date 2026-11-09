@@ -13,6 +13,16 @@ export interface AddonConfigItem {
 
 export const DEFAULT_ADDONS_CATALOG: AddonConfigItem[] = [
   {
+    key: 'onlinePayments',
+    name: 'Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão)',
+    shortName: 'Recebimentos Online',
+    description:
+      'Integração direta com o Mercado Pago da própria barbearia para cobrar planos mensais do Clube VIP via Cartão de Crédito Recorrente e PIX Instantâneo, com repasse 100% direto para a conta do dono do salão e renovação automática.',
+    category: 'Receita Recorrente & Pagamentos',
+    isAddon: true,
+    priceCents: 2990,
+  },
+  {
     key: 'club',
     name: 'Clube de Assinatura da Barbearia (Planos VIP)',
     shortName: 'Clube VIP de Assinatura',

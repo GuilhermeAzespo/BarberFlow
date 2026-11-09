@@ -24,7 +24,13 @@ import {
   Crown,
   RefreshCw,
   Link as LinkIcon,
+  CreditCard,
+  ShieldCheck,
+  KeyRound,
+  Zap,
+  Lock,
 } from 'lucide-react';
+import Link from 'next/link';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
 import { Sidebar } from '../../components/Sidebar';
@@ -78,7 +84,29 @@ function getHourStats(hour: BusinessHour, slotInterval: number) {
 }
 
 export default function SettingsPage() {
-  const { tenant, subscription, user, refresh } = useAuth();
+  const { tenant, subscription, user, refresh, hasPlanFeature } = useAuth();
+  const [activeTab, setActiveTab] = useState<'general' | 'integrations'>('general');
+
+  // Integração Mercado Pago Direto (Recebimentos Online do Clube VIP)
+  const [mpEnabled, setMpEnabled] = useState(false);
+  const [mpPixEnabled, setMpPixEnabled] = useState(true);
+  const [mpCreditCardEnabled, setMpCreditCardEnabled] = useState(true);
+  const [mpRecurringCardEnabled, setMpRecurringCardEnabled] = useState(true);
+  const [mpPublicKey, setMpPublicKey] = useState('');
+  const [mpAccessToken, setMpAccessToken] = useState('');
+  const [mpWebhookSecret, setMpWebhookSecret] = useState('');
+  const [mpHasAccessToken, setMpHasAccessToken] = useState(false);
+  const [mpAccessTokenPreview, setMpAccessTokenPreview] = useState<string | null>(null);
+  const [mpWebhookUrl, setMpWebhookUrl] = useState('');
+  const [mpHasAddon, setMpHasAddon] = useState(false);
+  const [savingMp, setSavingMp] = useState(false);
+  const [testingMp, setTestingMp] = useState(false);
+  const [mpTestResult, setMpTestResult] = useState<{
+    success: boolean;
+    message: string;
+    account?: { id?: number | string; nickname?: string; email?: string };
+  } | null>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const { toast, confirm } = useToast();
 
   const isPremium =
@@ -144,6 +172,117 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const loadPaymentConfig = async () => {
+    try {
+      const res = await api.get<{
+        hasOnlinePaymentsAddon: boolean;
+        webhookUrl: string;
+        config: {
+          enabled: boolean;
+          pixEnabled: boolean;
+          creditCardEnabled: boolean;
+          recurringCardEnabled: boolean;
+          mpPublicKey: string;
+          hasAccessToken: boolean;
+          mpAccessTokenPreview: string | null;
+          mpWebhookSecret: string;
+        };
+      }>('/api/tenant/payment-config');
+      setMpHasAddon(Boolean(res.hasOnlinePaymentsAddon));
+      setMpWebhookUrl(res.webhookUrl || '');
+      if (res.config) {
+        setMpEnabled(Boolean(res.config.enabled));
+        setMpPixEnabled(res.config.pixEnabled !== false);
+        setMpCreditCardEnabled(res.config.creditCardEnabled !== false);
+        setMpRecurringCardEnabled(res.config.recurringCardEnabled !== false);
+        setMpPublicKey(res.config.mpPublicKey || '');
+        setMpHasAccessToken(Boolean(res.config.hasAccessToken));
+        setMpAccessTokenPreview(res.config.mpAccessTokenPreview || null);
+        setMpWebhookSecret(res.config.mpWebhookSecret || '');
+      }
+    } catch {
+      // Silencioso no load inicial
+    }
+  };
+
+  const handleSavePaymentConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingMp(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      const res = await api.put<{
+        message: string;
+        config: {
+          enabled: boolean;
+          pixEnabled: boolean;
+          creditCardEnabled: boolean;
+          recurringCardEnabled: boolean;
+          mpPublicKey: string;
+          hasAccessToken: boolean;
+          mpAccessTokenPreview: string | null;
+          mpWebhookSecret: string;
+        };
+      }>('/api/tenant/payment-config', {
+        enabled: mpEnabled,
+        pixEnabled: mpPixEnabled,
+        creditCardEnabled: mpCreditCardEnabled,
+        recurringCardEnabled: mpRecurringCardEnabled,
+        mpPublicKey: mpPublicKey.trim(),
+        ...(mpAccessToken.trim() ? { mpAccessToken: mpAccessToken.trim() } : {}),
+        mpWebhookSecret: mpWebhookSecret.trim(),
+      });
+      setMpHasAccessToken(Boolean(res.config.hasAccessToken));
+      setMpAccessTokenPreview(res.config.mpAccessTokenPreview || null);
+      setMpAccessToken('');
+      toast.success(res.message || 'Configurações de recebimento online salvas!');
+      setSuccessMsg(res.message || 'Configurações de recebimento online salvas!');
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'Erro ao salvar configurações do Mercado Pago.';
+      toast.error(msg);
+      setErrorMsg(msg);
+    } finally {
+      setSavingMp(false);
+    }
+  };
+
+  const handleTestPaymentConfig = async () => {
+    setTestingMp(true);
+    setMpTestResult(null);
+    try {
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        account?: { id?: number | string; nickname?: string; email?: string };
+      }>('/api/tenant/payment-config/test', {
+        ...(mpAccessToken.trim() ? { mpAccessToken: mpAccessToken.trim() } : {}),
+      });
+      setMpTestResult(res);
+      toast.success(res.message || 'Conexão validada com sucesso!');
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : 'Falha ao conectar com o Mercado Pago. Verifique seu Access Token.';
+      setMpTestResult({ success: false, message: msg });
+      toast.error(msg);
+    } finally {
+      setTestingMp(false);
+    }
+  };
+
+  const copyWebhookUrl = () => {
+    if (!mpWebhookUrl) return;
+    navigator.clipboard.writeText(mpWebhookUrl);
+    setCopiedWebhook(true);
+    toast.success('URL do Webhook copiada para a área de transferência!');
+    setTimeout(() => setCopiedWebhook(false), 2500);
+  };
 
   const loadCustomDomain = async () => {
     try {
@@ -307,6 +446,17 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
+    loadCustomDomain();
+    loadPaymentConfig();
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin);
+      if (
+        window.location.hash === '#integracoes' ||
+        window.location.search.includes('tab=integracoes')
+      ) {
+        setActiveTab('integrations');
+      }
+    }
     loadCustomDomain();
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin);
@@ -605,7 +755,108 @@ export default function SettingsPage() {
           <div style={{ marginBottom: '28px' }}>
             <h1 style={{ fontSize: '1.85rem', fontWeight: 700, marginBottom: '4px' }}>Configurações do Salão</h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Personalize a identidade visual, página inicial vitrine, horários e fotos da sua barbearia.
+              Personalize a identidade visual, página inicial vitrine, horários, fotos e recebimentos online da sua barbearia.
+            </p>
+          </div>
+
+          {/* Navegação por Abas */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '10px',
+              marginBottom: '26px',
+              padding: '6px',
+              borderRadius: '14px',
+              background: 'rgba(18, 18, 22, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              width: 'fit-content',
+              flexWrap: 'wrap',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab('general')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '9px',
+                padding: '11px 20px',
+                borderRadius: '10px',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                border:
+                  activeTab === 'general'
+                    ? '1px solid rgba(212, 175, 55, 0.5)'
+                    : '1px solid transparent',
+                background:
+                  activeTab === 'general'
+                    ? 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)'
+                    : 'transparent',
+                color: activeTab === 'general' ? '#09090B' : '#D4D4D8',
+                boxShadow:
+                  activeTab === 'general'
+                    ? '0 6px 18px rgba(212, 175, 55, 0.25)'
+                    : 'none',
+              }}
+            >
+              <Building size={17} />
+              <span>Dados, Vitrine & Horários</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('integrations')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '9px',
+                padding: '11px 20px',
+                borderRadius: '10px',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                border:
+                  activeTab === 'integrations'
+                    ? '1px solid rgba(212, 175, 55, 0.5)'
+                    : '1px solid transparent',
+                background:
+                  activeTab === 'integrations'
+                    ? 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)'
+                    : 'transparent',
+                color: activeTab === 'integrations' ? '#09090B' : '#D4D4D8',
+                boxShadow:
+                  activeTab === 'integrations'
+                    ? '0 6px 18px rgba(212, 175, 55, 0.25)'
+                    : 'none',
+              }}
+            >
+              <CreditCard size={17} />
+              <span>Recebimentos Online & Integrações</span>
+              <span
+                style={{
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: '999px',
+                  background:
+                    activeTab === 'integrations'
+                      ? 'rgba(9, 9, 11, 0.2)'
+                      : 'rgba(16, 185, 129, 0.16)',
+                  color: activeTab === 'integrations' ? '#09090B' : '#34D399',
+                  border:
+                    activeTab === 'integrations'
+                      ? '1px solid rgba(9, 9, 11, 0.25)'
+                      : '1px solid rgba(16, 185, 129, 0.35)',
+                }}
+              >
+                Clube VIP
+              </span>
+            </button>
+          </div>
+          <div style={{ display: 'none' }}><p>
             </p>
           </div>
 
@@ -649,6 +900,734 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {activeTab === 'integrations' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              {/* Card Principal / Hero da Integração */}
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '26px 28px',
+                  border: '1px solid rgba(212, 175, 55, 0.35)',
+                  background:
+                    'radial-gradient(ellipse at top left, rgba(212, 175, 55, 0.1) 0%, rgba(18, 18, 22, 0.92) 70%)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '18px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap',
+                    gap: '16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', maxWidth: '760px' }}>
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '14px',
+                        background: 'rgba(212, 175, 55, 0.16)',
+                        border: '1px solid rgba(212, 175, 55, 0.38)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--gold-primary)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <CreditCard size={24} />
+                    </div>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                        <h2 style={{ fontSize: '1.22rem', fontWeight: 800, color: '#FAFAFA', margin: 0 }}>
+                          Recebimentos Online do Clube VIP (Direto na Sua Conta)
+                        </h2>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            padding: '3px 10px',
+                            borderRadius: '999px',
+                            background:
+                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                                ? 'rgba(16, 185, 129, 0.16)'
+                                : 'rgba(245, 158, 11, 0.16)',
+                            color:
+                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                                ? '#34D399'
+                                : '#FBBF24',
+                            border:
+                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                                ? '1px solid rgba(16, 185, 129, 0.35)'
+                                : '1px solid rgba(245, 158, 11, 0.35)',
+                          }}
+                        >
+                          {mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                            ? '✓ Add-on Liberado no Salão'
+                            : '⚡ Add-on Opcional'}
+                        </span>
+                      </div>
+                      <p style={{ color: '#A1A1AA', fontSize: '0.88rem', lineHeight: 1.55, margin: 0 }}>
+                        Conecte a conta do <strong>Mercado Pago da sua barbearia</strong> para permitir que seus clientes contratem e renovem planos mensais do <strong>Clube de Assinatura VIP</strong> diretamente pela sua Vitrine ou pelo Link enviado pelo Bot do WhatsApp.{' '}
+                        <strong style={{ color: '#F5D061' }}>
+                          100% do valor pago cai direto na sua conta Mercado Pago
+                        </strong>
+                        , a assinatura VIP do cliente é liberada na mesma hora e a receita entra sozinha no seu Financeiro.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!(mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN') && (
+                    <Link
+                      href="/planos"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '11px 18px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                        color: '#09090B',
+                        fontWeight: 800,
+                        fontSize: '0.85rem',
+                        textDecoration: 'none',
+                        boxShadow: '0 6px 18px rgba(212, 175, 55, 0.25)',
+                      }}
+                    >
+                      <Zap size={16} />
+                      <span>Ativar Add-on em Planos</span>
+                    </Link>
+                  )}
+                </div>
+
+                {/* Destaques de Funcionamento */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: '12px',
+                    marginTop: '4px',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '13px 15px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#F5D061', marginBottom: '4px' }}>
+                      💳 Cartão Recorrente ou Manual
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#A1A1AA', lineHeight: 1.45 }}>
+                      O cliente escolhe na hora de assinar se quer <strong>Renovação Automática Mensal</strong> no cartão ou renovação manual.
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: '13px 15px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#34D399', marginBottom: '4px' }}>
+                      💠 PIX com Liberação Instantânea
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#A1A1AA', lineHeight: 1.45 }}>
+                      Gera QR Code e Copia e Cola em segundos. Assim que o cliente paga, o plano VIP dele fica ativo sozinho.
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: '13px 15px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.03)',
+                      border: '1px solid rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#60A5FA', marginBottom: '4px' }}>
+                      🤖 Integrado ao Bot WhatsApp
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#A1A1AA', lineHeight: 1.45 }}>
+                      Quando o cliente pede os planos mensais no WhatsApp, o Bot envia o link direto para ele assinar e pagar online.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PASSO A PASSO DE CONFIGURAÇÃO */}
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '26px 28px',
+                  border: '1px solid rgba(255, 255, 255, 0.09)',
+                  background: 'rgba(18, 18, 22, 0.88)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.12rem', fontWeight: 800, color: '#FAFAFA', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Sparkles size={18} style={{ color: 'var(--gold-primary)' }} />
+                      <span>Passo a Passo: Como Configurar seu Mercado Pago (Leva 3 Minutos)</span>
+                    </h3>
+                    <p style={{ fontSize: '0.84rem', color: '#A1A1AA', margin: 0 }}>
+                      Siga as 4 etapas simples abaixo para conectar a conta do Mercado Pago da sua barbearia:
+                    </p>
+                  </div>
+                  <a
+                    href="https://www.mercadopago.com.br/developers/panel/app"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '7px',
+                      padding: '9px 15px',
+                      borderRadius: '10px',
+                      background: 'rgba(59, 130, 246, 0.14)',
+                      border: '1px solid rgba(59, 130, 246, 0.35)',
+                      color: '#60A5FA',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <span>Abrir Painel Mercado Pago Developers</span>
+                    <ExternalLink size={14} />
+                  </a>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                    gap: '16px',
+                  }}
+                >
+                  {/* Passo 1 */}
+                  <div
+                    style={{
+                      padding: '18px',
+                      borderRadius: '14px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                          color: '#09090B',
+                          fontWeight: 900,
+                          fontSize: '0.85rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        1
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#FAFAFA' }}>
+                        Crie sua Aplicação no Mercado Pago
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.81rem', color: '#A1A1AA', lineHeight: 1.55, margin: 0 }}>
+                      Acesse o botão azul acima (<strong>Mercado Pago Developers</strong>) com a conta da sua barbearia. Clique em{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Criar aplicação"</strong>, digite o nome{' '}
+                      <strong style={{ color: '#F5D061' }}>BarberFlow Clube VIP</strong>, selecione{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Pagamentos online"</strong> e marque{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Checkout Transparente"</strong>.
+                    </p>
+                  </div>
+
+                  {/* Passo 2 */}
+                  <div
+                    style={{
+                      padding: '18px',
+                      borderRadius: '14px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                          color: '#09090B',
+                          fontWeight: 900,
+                          fontSize: '0.85rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        2
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#FAFAFA' }}>
+                        Copie as Credenciais de Produção
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.81rem', color: '#A1A1AA', lineHeight: 1.55, margin: 0 }}>
+                      No menu lateral esquerdo do Mercado Pago, clique em{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Credenciais de produção"</strong>. Escolha o setor da sua empresa, ative as credenciais e copie a{' '}
+                      <strong style={{ color: '#F5D061' }}>Public Key</strong> e o{' '}
+                      <strong style={{ color: '#F5D061' }}>Access Token</strong> (ambos começam com <code>APP_USR-...</code>). Cole nos campos abaixo.
+                    </p>
+                  </div>
+
+                  {/* Passo 3 */}
+                  <div
+                    style={{
+                      padding: '18px',
+                      borderRadius: '14px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                          color: '#09090B',
+                          fontWeight: 900,
+                          fontSize: '0.85rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        3
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#FAFAFA' }}>
+                        Configure o Webhook Automático
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.81rem', color: '#A1A1AA', lineHeight: 1.55, margin: 0 }}>
+                      No menu lateral do Mercado Pago, clique em <strong style={{ color: '#E4E4E7' }}>"Webhooks"</strong> →{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Modo de produção"</strong>. Cole a URL exclusiva do seu salão abaixo e marque o evento{' '}
+                      <strong style={{ color: '#34D399' }}>"Pagamentos (Payments)"</strong>:
+                    </p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        background: 'rgba(0,0,0,0.35)',
+                        border: '1px solid rgba(212, 175, 55, 0.28)',
+                      }}
+                    >
+                      <code
+                        style={{
+                          fontSize: '0.72rem',
+                          color: '#F5D061',
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title={mpWebhookUrl}
+                      >
+                        {mpWebhookUrl || 'Carregando URL do salão...'}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={copyWebhookUrl}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(212, 175, 55, 0.4)',
+                          background: 'rgba(212, 175, 55, 0.16)',
+                          color: '#F5D061',
+                          fontSize: '0.73rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {copiedWebhook ? <Check size={13} /> : <Copy size={13} />}
+                        <span>{copiedWebhook ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Passo 4 */}
+                  <div
+                    style={{
+                      padding: '18px',
+                      borderRadius: '14px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                          color: '#09090B',
+                          fontWeight: 900,
+                          fontSize: '0.85rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        4
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#FAFAFA' }}>
+                        Teste a Conexão e Ative!
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.81rem', color: '#A1A1AA', lineHeight: 1.55, margin: 0 }}>
+                      Após colar suas chaves abaixo, clique em{' '}
+                      <strong style={{ color: '#E4E4E7' }}>"Testar Conexão com Mercado Pago"</strong> para confirmar se sua conta foi reconhecida, marque a opção{' '}
+                      <strong style={{ color: '#34D399' }}>"Habilitar Recebimentos Online"</strong> e salve!
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* FORMULÁRIO DE CREDENCIAIS E MÉTODOS DE PAGAMENTO */}
+              <form
+                onSubmit={handleSavePaymentConfig}
+                className="glass-panel"
+                style={{
+                  padding: '26px 28px',
+                  border: '1px solid rgba(255, 255, 255, 0.09)',
+                  background: 'rgba(18, 18, 22, 0.9)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '22px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <KeyRound size={20} style={{ color: 'var(--gold-primary)' }} />
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#FAFAFA', margin: 0 }}>
+                      Credenciais do Mercado Pago & Métodos Aceitos
+                    </h3>
+                  </div>
+                  {mpHasAccessToken && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '0.76rem',
+                        fontWeight: 700,
+                        padding: '4px 12px',
+                        borderRadius: '999px',
+                        background: 'rgba(16, 185, 129, 0.14)',
+                        color: '#34D399',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                      }}
+                    >
+                      <ShieldCheck size={14} />
+                      <span>Access Token Configurado ({mpAccessTokenPreview})</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Chave Geral de Ativação */}
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    padding: '16px 20px',
+                    borderRadius: '12px',
+                    background: mpEnabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                    border: mpEnabled ? '1px solid rgba(16, 185, 129, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#FAFAFA', marginBottom: '3px' }}>
+                      Habilitar Recebimentos Online do Clube VIP na Vitrine e no Bot WhatsApp
+                    </div>
+                    <div style={{ fontSize: '0.81rem', color: '#A1A1AA' }}>
+                      Quando ativado, o botão <strong>"Assinar Online (Cartão ou PIX)"</strong> aparecerá nos planos do Clube VIP da sua vitrine pública.
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={mpEnabled}
+                    onChange={(e) => setMpEnabled(e.target.checked)}
+                    style={{ width: '20px', height: '20px', accentColor: '#10B981', cursor: 'pointer' }}
+                  />
+                </label>
+
+                {/* Opções de Métodos */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    gap: '14px',
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: mpCreditCardEnabled ? '1px solid rgba(212, 175, 55, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mpCreditCardEnabled}
+                      onChange={(e) => setMpCreditCardEnabled(e.target.checked)}
+                      style={{ marginTop: '3px', width: '17px', height: '17px', accentColor: '#D4AF37' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FAFAFA' }}>
+                        💳 Aceitar Cartão de Crédito
+                      </div>
+                      <div style={{ fontSize: '0.77rem', color: '#A1A1AA', marginTop: '2px' }}>
+                        Pagamento transparente com aprovação na hora.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: mpRecurringCardEnabled ? '1px solid rgba(212, 175, 55, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mpRecurringCardEnabled}
+                      onChange={(e) => setMpRecurringCardEnabled(e.target.checked)}
+                      style={{ marginTop: '3px', width: '17px', height: '17px', accentColor: '#D4AF37' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FAFAFA' }}>
+                        🔄 Permitir Assinatura Recorrente (Auto-Renew)
+                      </div>
+                      <div style={{ fontSize: '0.77rem', color: '#A1A1AA', marginTop: '2px' }}>
+                        Cliente escolhe entre renovação automática mensal no cartão ou manual.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: mpPixEnabled ? '1px solid rgba(212, 175, 55, 0.35)' : '1px solid rgba(255, 255, 255, 0.08)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mpPixEnabled}
+                      onChange={(e) => setMpPixEnabled(e.target.checked)}
+                      style={{ marginTop: '3px', width: '17px', height: '17px', accentColor: '#D4AF37' }}
+                    />
+                    <div>
+                      <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#FAFAFA' }}>
+                        💠 Aceitar PIX Instantâneo
+                      </div>
+                      <div style={{ fontSize: '0.77rem', color: '#A1A1AA', marginTop: '2px' }}>
+                        QR Code e Copia e Cola com ativação automática via Webhook.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Inputs das Chaves */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                    gap: '16px',
+                  }}
+                >
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#E4E4E7', marginBottom: '6px' }}>
+                      Public Key de Produção (Mercado Pago) *
+                    </label>
+                    <input
+                      type="text"
+                      value={mpPublicKey}
+                      onChange={(e) => setMpPublicKey(e.target.value)}
+                      placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      style={{
+                        width: '100%',
+                        padding: '11px 14px',
+                        borderRadius: '10px',
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        border: '1px solid rgba(255, 255, 255, 0.14)',
+                        color: '#FAFAFA',
+                        fontSize: '0.88rem',
+                      }}
+                    />
+                    <span style={{ display: 'block', fontSize: '0.74rem', color: '#71717A', marginTop: '4px' }}>
+                      Usada para criptografar os dados do cartão do cliente na sua vitrine.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#E4E4E7', marginBottom: '6px' }}>
+                      Access Token de Produção (Mercado Pago) {mpHasAccessToken ? '(Já salvo — preencha apenas para trocar)' : '*'}
+                    </label>
+                    <input
+                      type="password"
+                      value={mpAccessToken}
+                      onChange={(e) => setMpAccessToken(e.target.value)}
+                      placeholder={
+                        mpHasAccessToken
+                          ? `Token atual salvo (${mpAccessTokenPreview}) — digite para substituir`
+                          : 'APP_USR-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000'
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '11px 14px',
+                        borderRadius: '10px',
+                        background: 'rgba(0, 0, 0, 0.35)',
+                        border: '1px solid rgba(255, 255, 255, 0.14)',
+                        color: '#FAFAFA',
+                        fontSize: '0.88rem',
+                      }}
+                    />
+                    <span style={{ display: 'block', fontSize: '0.74rem', color: '#71717A', marginTop: '4px' }}>
+                      Chave privada que processa as cobranças diretamente para a sua conta.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Resultado do Teste de Conexão */}
+                {mpTestResult && (
+                  <div
+                    style={{
+                      padding: '14px 18px',
+                      borderRadius: '10px',
+                      background: mpTestResult.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)',
+                      border: mpTestResult.success
+                        ? '1px solid rgba(16, 185, 129, 0.35)'
+                        : '1px solid rgba(244, 63, 94, 0.35)',
+                      color: mpTestResult.success ? '#34D399' : '#FB7185',
+                      fontSize: '0.86rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                    }}
+                  >
+                    {mpTestResult.success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{mpTestResult.message}</div>
+                      {mpTestResult.account && (
+                        <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '2px' }}>
+                          Conta Mercado Pago ID: <strong>{mpTestResult.account.id}</strong> • Usuário:{' '}
+                          <strong>{mpTestResult.account.nickname}</strong> ({mpTestResult.account.email})
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Botões de Ação */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', paddingTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={handleTestPaymentConfig}
+                    disabled={testingMp}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '11px 20px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(212, 175, 55, 0.45)',
+                      background: 'rgba(212, 175, 55, 0.12)',
+                      color: '#F5D061',
+                      fontWeight: 700,
+                      fontSize: '0.88rem',
+                      cursor: testingMp ? 'wait' : 'pointer',
+                    }}
+                  >
+                    <RefreshCw size={16} />
+                    <span>{testingMp ? 'Testando Conexão...' : 'Testar Conexão com Mercado Pago'}</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={savingMp}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 26px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                      color: '#09090B',
+                      fontWeight: 800,
+                      fontSize: '0.92rem',
+                      cursor: savingMp ? 'wait' : 'pointer',
+                      boxShadow: '0 6px 18px rgba(212, 175, 55, 0.25)',
+                    }}
+                  >
+                    <Save size={17} />
+                    <span>{savingMp ? 'Salvando Integração...' : 'Salvar Configurações de Recebimento'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {activeTab === 'general' && (
+            <>
           {/* Links Públicos da Barbearia (Home e Agendamento) */}
           <div
             className="glass-panel"
@@ -2360,6 +3339,8 @@ export default function SettingsPage() {
               </button>
             </div>
           </form>
+            </>
+          )}
         </main>
       </div>
     </div>

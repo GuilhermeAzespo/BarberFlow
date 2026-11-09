@@ -1800,6 +1800,38 @@ export async function handleIncomingMessage(params: {
       }
 
       const chosenPlan = plansList[selectedIdx]!;
+      const paymentConfig = await prisma.tenantPaymentConfig
+        .findUnique({ where: { tenantId } })
+        .catch(() => null);
+      const hasOnlinePayment = Boolean(
+        paymentConfig?.enabled && paymentConfig?.mpAccessToken
+      );
+
+      if (hasOnlinePayment) {
+        const rootDomain =
+          process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+        const fullSalonDoc = await prisma.tenant
+          .findUnique({
+            where: { id: tenantId },
+            select: { slug: true, customDomain: true },
+          })
+          .catch(() => null);
+        const showcaseUrl = fullSalonDoc?.customDomain
+          ? `https://${fullSalonDoc.customDomain}#clube`
+          : `https://${rootDomain}/${fullSalonDoc?.slug || ''}#clube`;
+
+        await updateConversation(tenantId, senderJid, 'MENU', {}, false);
+        await reply(
+          `👑 *Excelente escolha, ${customerFirstName}!*\n\n` +
+            `Você selecionou o plano mensal *${chosenPlan.name}* (*${formatCurrency(chosenPlan.priceCents)}/mês*).\n\n` +
+            `💳 *Assine Online Agora Mesmo (Cartão ou PIX):*\n` +
+            `👉 ${showcaseUrl}\n\n` +
+            `✨ Na página acima você pode pagar com *Cartão de Crédito* (escolhendo entre *Renovação Automática* ou *Renovação Manual*) ou via *PIX Instantâneo*, e seu benefício VIP é liberado na mesma hora!\n\n` +
+            `_Caso prefira acertar direto na recepção, envie *5* para falar com um atendente._ 💈`
+        );
+        break;
+      }
+
       await updateConversation(tenantId, senderJid, 'HUMAN_ATTENDANT', {}, true);
 
       await prisma.whatsAppMessage.create({

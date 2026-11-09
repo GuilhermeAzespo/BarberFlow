@@ -57,6 +57,7 @@ export interface PlanPermissions {
   loyalty: boolean;              // Cartão Fidelidade Digital Automático
   marketing: boolean;            // Recuperação de Clientes Sumidos & Aniversariantes WhatsApp
   club: boolean;                 // Clube de Assinatura da Barbearia
+  onlinePayments: boolean;       // Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão)
 }
 
 export interface Subscription {

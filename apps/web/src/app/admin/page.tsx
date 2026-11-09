@@ -164,8 +164,14 @@ const PERMISSION_METADATA: Array<{
     category: 'Receita Recorrente',
     icon: Crown,
   },
-
-
+  {
+    key: 'onlinePayments',
+    label: 'Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão)',
+    shortLabel: 'Recebimentos Online',
+    description: 'Checkout Transparente com Cartão de Crédito Recorrente e PIX direto na conta Mercado Pago do salão',
+    category: 'Receita Recorrente',
+    icon: CreditCard,
+  },
 ];
 
 const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
@@ -182,6 +188,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     loyalty: false,
     marketing: false,
     club: false,
+    onlinePayments: false,
   },
   pro: {
     reports: true,
@@ -196,6 +203,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     loyalty: true,
     marketing: true,
     club: true,
+    onlinePayments: false,
   },
   premium: {
     reports: true,
@@ -210,6 +218,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     loyalty: true,
     marketing: true,
     club: true,
+    onlinePayments: true,
   },
 };
 

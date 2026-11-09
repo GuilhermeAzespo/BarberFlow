@@ -47,6 +47,27 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v4-1',
+    version: 'v4.1',
+    date: '09 de Novembro de 2026',
+    title: 'Add-on Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão) + Guia de Integrações',
+    category: 'NEW',
+    categoryLabel: 'Novo Add-on & Pagamentos',
+    badgeColor: '#34D399',
+    badgeBg: 'rgba(16, 185, 129, 0.16)',
+    summary:
+      'Agora cada barbearia pode conectar sua própria conta do Mercado Pago para vender planos mensais do Clube de Assinatura VIP diretamente na Vitrine Pública e pelo Bot do WhatsApp! O cliente assina com Cartão de Crédito (podendo escolher entre Renovação Automática Mensal ou Manual) ou PIX Instantâneo, 100% do valor vai direto para a conta do dono do salão e a assinatura VIP é liberada na mesma hora.',
+    highlights: [
+      'Novo Add-on "Recebimentos Online & Cartão Recorrente" (onlinePayments): Disponível no Super Admin e no catálogo de Módulos Extras (/planos) para ativação sob demanda ou inclusão nos planos.',
+      'Nova Aba "Recebimentos Online & Integrações" em Configurações (/settings): Inclui um Passo a Passo completo e ilustrado em 4 etapas ensinando como criar a aplicação no Mercado Pago Developers, copiar a Public Key e Access Token de Produção, configurar o Webhook com 1 clique e testar a conexão em tempo real.',
+      'Checkout Transparente do Clube VIP na Vitrine (/[slug]): Clientes podem clicar em "Assinar Online (Cartão ou PIX)", escolher entre Renovação Automática (Auto-Renew) ou Manual no cartão de crédito, ou pagar via QR Code PIX com confirmação automática na tela.',
+      'Ativação Automática + Financeiro + WhatsApp: Assim que o pagamento é aprovado na conta do salão, o BarberFlow ativa/renova os +30 dias do assinante no Clube VIP, lança a receita automaticamente no Financeiro (/finance) e envia confirmação pelo WhatsApp.',
+      'Sugestão Inteligente de Planos Mensais no Bot WhatsApp: O Bot agora apresenta a Opção 6 (Planos Mensais Clube VIP), sugere planos durante o agendamento com cálculo de economia e envia o link direto para assinatura online.',
+      'Redesign do Painel Clube VIP (/clube): Novos botões de alto contraste, templates rápidos de planos em 1 clique e modais responsivos que se ajustam perfeitamente a qualquer tamanho de tela.',
+    ],
+    impact: 'Automatiza 100% da venda e cobrança dos planos mensais do Clube VIP com o dinheiro caindo direto na conta bancária do dono da barbearia.',
+  },
+  {
     id: 'v4-0',
     version: 'v4.0',
     date: '06 de Novembro de 2026',

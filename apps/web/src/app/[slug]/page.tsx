@@ -34,6 +34,9 @@ import {
   RefreshCw,
   Trophy,
   Crown,
+  CreditCard,
+  Lock,
+  Copy,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 
@@ -125,10 +128,19 @@ interface PublicClubPlan {
   }[];
 }
 
+interface PublicClubOnlinePaymentConfig {
+  enabled: boolean;
+  pixEnabled: boolean;
+  creditCardEnabled: boolean;
+  recurringCardEnabled: boolean;
+  mpPublicKey: string | null;
+}
+
 interface PublicClubResponse {
   tenantName: string;
   phone?: string | null;
   plans: PublicClubPlan[];
+  onlinePaymentConfig?: PublicClubOnlinePaymentConfig;
 }
 
 interface PublicCustomerClubSubResponse {
@@ -210,6 +222,31 @@ export default function TenantHomePage() {
   const [clubSubResult, setClubSubResult] = useState<PublicCustomerClubSubResponse | null>(null);
   const [togglingClubAutoRenew, setTogglingClubAutoRenew] = useState(false);
   const [clubAutoRenewFeedback, setClubAutoRenewFeedback] = useState<string | null>(null);
+  const [onlinePaymentConfig, setOnlinePaymentConfig] = useState<PublicClubOnlinePaymentConfig | null>(null);
+
+  // Modal de Checkout Online do Clube VIP (Mercado Pago Direto na Conta do Salão)
+  const [checkoutModalPlan, setCheckoutModalPlan] = useState<PublicClubPlan | null>(null);
+  const [coName, setCoName] = useState('');
+  const [coPhone, setCoPhone] = useState('');
+  const [coEmail, setCoEmail] = useState('');
+  const [coDoc, setCoDoc] = useState('');
+  const [coMethod, setCoMethod] = useState<'CREDIT_CARD' | 'PIX'>('CREDIT_CARD');
+  const [coAutoRenew, setCoAutoRenew] = useState(true);
+  const [coCardNumber, setCoCardNumber] = useState('');
+  const [coCardHolder, setCoCardHolder] = useState('');
+  const [coCardExp, setCoCardExp] = useState('');
+  const [coCardCvv, setCoCardCvv] = useState('');
+  const [coProcessing, setCoProcessing] = useState(false);
+  const [coError, setCoError] = useState<string | null>(null);
+  const [coResult, setCoResult] = useState<{
+    status: string;
+    paymentId?: string;
+    paymentMethod: 'PIX' | 'CREDIT_CARD';
+    qrCode?: string | null;
+    qrCodeBase64?: string | null;
+    message?: string;
+  } | null>(null);
+  const [coPixCopied, setCoPixCopied] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -335,6 +372,12 @@ export default function TenantHomePage() {
         if (res && res.plans && res.plans.length > 0) {
           setClubPlans(res.plans);
         }
+        if (res && res.onlinePaymentConfig) {
+          setOnlinePaymentConfig(res.onlinePaymentConfig);
+          if (!res.onlinePaymentConfig.creditCardEnabled && res.onlinePaymentConfig.pixEnabled) {
+            setCoMethod('PIX');
+          }
+        }
       } catch {
         // Silêncio se não houver planos
       }
@@ -437,6 +480,161 @@ export default function TenantHomePage() {
       setClubAutoRenewFeedback(err?.message || 'Não foi possível atualizar sua preferência de renovação.');
     } finally {
       setTogglingClubAutoRenew(false);
+    }
+  };
+
+  // Carrega SDK do Mercado Pago para tokenização do cartão com a Public Key do Salão
+  useEffect(() => {
+    if (!checkoutModalPlan || !onlinePaymentConfig?.mpPublicKey || typeof window === 'undefined') return;
+    if ((window as any).MercadoPago) return;
+    const existing = document.getElementById('mp-sdk-script');
+    if (existing) return;
+    const script = document.createElement('script');
+    script.id = 'mp-sdk-script';
+    script.src = 'https://sdk.mercadopago.com/js/v2';
+    script.async = true;
+    document.body.appendChild(script);
+  }, [checkoutModalPlan, onlinePaymentConfig?.mpPublicKey]);
+
+  // Faz polling automático quando um QR Code PIX está aguardando pagamento
+  useEffect(() => {
+    if (
+      !checkoutModalPlan ||
+      !coResult?.paymentId ||
+      coResult.paymentMethod !== 'PIX' ||
+      coResult.status === 'approved'
+    ) {
+      return;
+    }
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.get<{ status: string }>(
+          `/api/public/tenants/${encodeURIComponent(slug)}/club/checkout/${encodeURIComponent(coResult.paymentId!)}/status`
+        );
+        if (res.status === 'approved') {
+          setCoResult((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: 'approved',
+                  message: 'Pagamento PIX confirmado! Sua assinatura do Clube VIP já está ativa!',
+                }
+              : prev
+          );
+        }
+      } catch {
+        // Silencioso no polling
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [checkoutModalPlan, coResult?.paymentId, coResult?.paymentMethod, coResult?.status, slug]);
+
+  const handleOpenClubCheckout = (plan: PublicClubPlan) => {
+    setCheckoutModalPlan(plan);
+    setCoError(null);
+    setCoResult(null);
+    setCoPixCopied(false);
+    if (onlinePaymentConfig?.creditCardEnabled) {
+      setCoMethod('CREDIT_CARD');
+    } else {
+      setCoMethod('PIX');
+    }
+  };
+
+  const handleSubmitClubCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutModalPlan) return;
+    setCoError(null);
+
+    const cleanCustomerPhone = coPhone.replace(/\D/g, '');
+    const cleanDoc = coDoc.replace(/\D/g, '');
+
+    if (!coName.trim() || cleanCustomerPhone.length < 10) {
+      setCoError('Informe seu nome completo e WhatsApp com DDD.');
+      return;
+    }
+    if (cleanDoc.length < 11) {
+      setCoError('Informe um CPF válido (11 dígitos).');
+      return;
+    }
+
+    setCoProcessing(true);
+    try {
+      let cardToken: string | undefined;
+      let paymentMethodId: string | undefined;
+      let cardLastFour: string | undefined;
+
+      if (coMethod === 'CREDIT_CARD') {
+        const rawNumber = coCardNumber.replace(/\D/g, '');
+        const [expM, expY] = coCardExp.split('/').map((s) => s.trim());
+        if (rawNumber.length < 13 || !coCardHolder.trim() || !expM || !expY || coCardCvv.length < 3) {
+          setCoError('Preencha todos os dados do cartão de crédito corretamente.');
+          setCoProcessing(false);
+          return;
+        }
+        if (!onlinePaymentConfig?.mpPublicKey || !(window as any).MercadoPago) {
+          setCoError(
+            'A chave pública do Mercado Pago deste salão não foi carregada. Tente usar o PIX ou fale com a recepção.'
+          );
+          setCoProcessing(false);
+          return;
+        }
+
+        const mp = new (window as any).MercadoPago(onlinePaymentConfig.mpPublicKey, { locale: 'pt-BR' });
+        const fullYear = expY.length === 2 ? `20${expY}` : expY;
+
+        const tokenRes = await mp.createCardToken({
+          cardNumber: rawNumber,
+          cardholderName: coCardHolder.trim(),
+          cardExpirationMonth: expM.padStart(2, '0'),
+          cardExpirationYear: fullYear,
+          securityCode: coCardCvv.trim(),
+          identificationType: 'CPF',
+          identificationNumber: cleanDoc,
+        });
+
+        if (!tokenRes || !tokenRes.id) {
+          throw new Error('Não foi possível validar o cartão de crédito. Verifique o número, validade e CVV.');
+        }
+
+        cardToken = tokenRes.id;
+        cardLastFour = rawNumber.slice(-4);
+
+        try {
+          const bin = rawNumber.slice(0, 6);
+          const pmRes = await mp.getPaymentMethods({ bin });
+          paymentMethodId = pmRes?.results?.[0]?.id || undefined;
+        } catch {
+          // O backend também detecta/processa
+        }
+      }
+
+      const res = await api.post<{
+        status: string;
+        paymentId?: string;
+        paymentMethod: 'PIX' | 'CREDIT_CARD';
+        qrCode?: string | null;
+        qrCodeBase64?: string | null;
+        message?: string;
+      }>(`/api/public/tenants/${encodeURIComponent(slug)}/club/checkout`, {
+        planId: checkoutModalPlan.id,
+        customerName: coName.trim(),
+        customerPhone: cleanCustomerPhone,
+        customerEmail: coEmail.trim() || undefined,
+        payerDocNumber: cleanDoc,
+        paymentMethod: coMethod,
+        autoRenew: coMethod === 'CREDIT_CARD' ? coAutoRenew : false,
+        cardToken,
+        paymentMethodId,
+        cardLastFour,
+        cardBrand: paymentMethodId,
+      });
+
+      setCoResult(res);
+    } catch (err: any) {
+      setCoError(err?.message || 'Não foi possível concluir o pagamento. Verifique os dados e tente novamente.');
+    } finally {
+      setCoProcessing(false);
     }
   };
 
@@ -1478,6 +1676,29 @@ export default function TenantHomePage() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '16px', borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    {onlinePaymentConfig?.enabled && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenClubCheckout(plan)}
+                        className="gold-gradient-primary gold-glow"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          padding: '12px 16px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          fontSize: '0.9rem',
+                          fontWeight: 800,
+                          color: '#09090B',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <CreditCard size={17} />
+                        <span>Assinar Online (Cartão ou PIX)</span>
+                      </button>
+                    )}
                     {whatsappPlanUrl ? (
                       <a
                         href={whatsappPlanUrl}
@@ -2619,6 +2840,543 @@ export default function TenantHomePage() {
           <span>Agendar Horário Online</span>
         </Link>
       </div>
+
+      {/* ────────────────── Modal Checkout Online Clube VIP ────────────────── */}
+      {checkoutModalPlan && (
+        <div
+          onClick={() => !coProcessing && setCheckoutModalPlan(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '540px',
+              maxHeight: '92dvh',
+              overflowY: 'auto',
+              borderRadius: '18px',
+              background: '#0F131D',
+              border: '1px solid rgba(229, 179, 56, 0.38)',
+              boxShadow: '0 24px 60px rgba(0, 0, 0, 0.85)',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '18px',
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.75rem', fontWeight: 800, color: '#E5B338', textTransform: 'uppercase' }}>
+                  <Crown size={15} />
+                  <span>Assinatura Online Clube VIP • {tenant.name}</span>
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FAFAFA', margin: '4px 0 2px 0' }}>
+                  {checkoutModalPlan.name} — {formatBRL(checkoutModalPlan.priceCents)}/mês
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: 0 }}>
+                  Pagamento 100% seguro processado direto para a conta oficial da barbearia.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCheckoutModalPlan(null)}
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  width: '34px',
+                  height: '34px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#CBD5E1',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {coError && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.14)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#FCA5A5',
+                  fontSize: '0.83rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <AlertCircle size={17} />
+                <span>{coError}</span>
+              </div>
+            )}
+
+            {/* Caso já tenha resultado (Aprovado ou QR Code PIX) */}
+            {coResult ? (
+              coResult.status === 'approved' ? (
+                <div
+                  style={{
+                    padding: '24px 18px',
+                    borderRadius: '14px',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '12px',
+                  }}
+                >
+                  <CheckCircle2 size={46} color="#34D399" />
+                  <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#34D399', margin: 0 }}>
+                    🎉 Assinatura VIP Ativada com Sucesso!
+                  </h4>
+                  <p style={{ fontSize: '0.88rem', color: '#E2E8F0', lineHeight: 1.5, margin: 0 }}>
+                    {coResult.message ||
+                      'Seu pagamento foi aprovado e seu plano mensal do Clube VIP já está liberado! Você já pode agendar seus horários sem custo adicional.'}
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <Link
+                      href={bookingBaseHref}
+                      className="gold-gradient-primary"
+                      style={{
+                        padding: '11px 20px',
+                        borderRadius: '10px',
+                        color: '#09090B',
+                        fontWeight: 800,
+                        fontSize: '0.88rem',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      Agendar Meu Corte VIP Agora
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setCheckoutModalPlan(null)}
+                      style={{
+                        padding: '11px 18px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        color: '#FAFAFA',
+                        fontWeight: 700,
+                        fontSize: '0.88rem',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              ) : coResult.paymentMethod === 'PIX' && coResult.qrCode ? (
+                <div
+                  style={{
+                    padding: '20px',
+                    borderRadius: '14px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '14px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#F5D061' }}>
+                    💠 Escaneie o QR Code PIX ou use o Copia e Cola
+                  </div>
+                  {coResult.qrCodeBase64 && (
+                    <div style={{ background: '#FFF', padding: '12px', borderRadius: '12px' }}>
+                      <img
+                        src={`data:image/png;base64,${coResult.qrCodeBase64}`}
+                        alt="QR Code PIX"
+                        style={{ width: '190px', height: '190px', display: 'block' }}
+                      />
+                    </div>
+                  )}
+                  <p style={{ fontSize: '0.8rem', color: '#94A3B8', margin: 0 }}>
+                    Assim que você pagar no aplicativo do seu banco, esta tela confirmará e ativará sua assinatura VIP automaticamente!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(coResult.qrCode || '');
+                      setCoPixCopied(true);
+                      setTimeout(() => setCoPixCopied(false), 2500);
+                    }}
+                    className="gold-gradient-primary"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      color: '#09090B',
+                      fontWeight: 800,
+                      fontSize: '0.88rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <Copy size={16} />
+                    <span>{coPixCopied ? '✓ Código PIX Copiado!' : 'Copiar Código PIX (Copia e Cola)'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div style={{ padding: '16px', textAlign: 'center', color: '#E2E8F0', fontSize: '0.9rem' }}>
+                  {coResult.message || 'Pagamento em processamento.'}
+                </div>
+              )
+            ) : (
+              <form onSubmit={handleSubmitClubCheckout} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Seletor Cartão vs PIX */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {onlinePaymentConfig?.creditCardEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setCoMethod('CREDIT_CARD')}
+                      style={{
+                        padding: '11px 12px',
+                        borderRadius: '10px',
+                        border:
+                          coMethod === 'CREDIT_CARD'
+                            ? '1.5px solid #E5B338'
+                            : '1px solid rgba(255, 255, 255, 0.12)',
+                        background:
+                          coMethod === 'CREDIT_CARD'
+                            ? 'rgba(229, 179, 56, 0.16)'
+                            : 'rgba(255, 255, 255, 0.03)',
+                        color: coMethod === 'CREDIT_CARD' ? '#F5D061' : '#E2E8F0',
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                      }}
+                    >
+                      <CreditCard size={16} />
+                      <span>Cartão de Crédito</span>
+                    </button>
+                  )}
+                  {onlinePaymentConfig?.pixEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setCoMethod('PIX')}
+                      style={{
+                        padding: '11px 12px',
+                        borderRadius: '10px',
+                        border:
+                          coMethod === 'PIX'
+                            ? '1.5px solid #10B981'
+                            : '1px solid rgba(255, 255, 255, 0.12)',
+                        background:
+                          coMethod === 'PIX'
+                            ? 'rgba(16, 185, 129, 0.16)'
+                            : 'rgba(255, 255, 255, 0.03)',
+                        color: coMethod === 'PIX' ? '#34D399' : '#E2E8F0',
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '7px',
+                      }}
+                    >
+                      <Sparkles size={16} />
+                      <span>PIX Instantâneo</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Dados do Assinante */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                      Seu Nome Completo *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={coName}
+                      onChange={(e) => setCoName(e.target.value)}
+                      placeholder="Ex: João da Silva"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        color: '#FFF',
+                        fontSize: '0.86rem',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                      Seu WhatsApp (com DDD) *
+                    </label>
+                    <input
+                      type="tel"
+                      required
+                      value={coPhone}
+                      onChange={(e) => setCoPhone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        color: '#FFF',
+                        fontSize: '0.86rem',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                      CPF do Titular *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={coDoc}
+                      onChange={(e) => setCoDoc(e.target.value)}
+                      placeholder="000.000.000-00"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        color: '#FFF',
+                        fontSize: '0.86rem',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                      Seu E-mail (Opcional)
+                    </label>
+                    <input
+                      type="email"
+                      value={coEmail}
+                      onChange={(e) => setCoEmail(e.target.value)}
+                      placeholder="cliente@email.com"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        background: 'rgba(15, 23, 42, 0.9)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        color: '#FFF',
+                        fontSize: '0.86rem',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Campos do Cartão de Crédito */}
+                {coMethod === 'CREDIT_CARD' && (
+                  <div
+                    style={{
+                      padding: '14px',
+                      borderRadius: '12px',
+                      background: 'rgba(255,255,255,0.025)',
+                      border: '1px solid rgba(229, 179, 56, 0.25)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px',
+                    }}
+                  >
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                        Número do Cartão de Crédito *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={coCardNumber}
+                        onChange={(e) => setCoCardNumber(e.target.value)}
+                        placeholder="0000 0000 0000 0000"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(15, 23, 42, 0.9)',
+                          border: '1px solid rgba(255,255,255,0.14)',
+                          color: '#FFF',
+                          fontSize: '0.86rem',
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                        Nome Impresso no Cartão *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={coCardHolder}
+                        onChange={(e) => setCoCardHolder(e.target.value)}
+                        placeholder="COMO ESTÁ NO CARTÃO"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(15, 23, 42, 0.9)',
+                          border: '1px solid rgba(255,255,255,0.14)',
+                          color: '#FFF',
+                          fontSize: '0.86rem',
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                          Validade (MM/AA) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={coCardExp}
+                          onChange={(e) => setCoCardExp(e.target.value)}
+                          placeholder="08/29"
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(15, 23, 42, 0.9)',
+                            border: '1px solid rgba(255,255,255,0.14)',
+                            color: '#FFF',
+                            fontSize: '0.86rem',
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: '#CBD5E1', marginBottom: '4px' }}>
+                          CVV (3 ou 4 dígitos) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={coCardCvv}
+                          onChange={(e) => setCoCardCvv(e.target.value)}
+                          placeholder="123"
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(15, 23, 42, 0.9)',
+                            border: '1px solid rgba(255,255,255,0.14)',
+                            color: '#FFF',
+                            fontSize: '0.86rem',
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Opção Auto-Renew vs Manual */}
+                    {onlinePaymentConfig?.recurringCardEnabled && (
+                      <div
+                        style={{
+                          marginTop: '4px',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          background: coAutoRenew ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                          border: coAutoRenew
+                            ? '1px solid rgba(16, 185, 129, 0.35)'
+                            : '1px solid rgba(255, 255, 255, 0.1)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setCoAutoRenew(!coAutoRenew)}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 800, color: coAutoRenew ? '#34D399' : '#E2E8F0' }}>
+                            🔄 Renovação Automática Mensal ({coAutoRenew ? 'Ativada' : 'Desativada — Manual'})
+                          </div>
+                          <div style={{ fontSize: '0.73rem', color: '#94A3B8', marginTop: '2px' }}>
+                            {coAutoRenew
+                              ? 'Seu plano renova todo mês sem preocupação e você pode cancelar quando quiser.'
+                              : 'Você assina apenas por 30 dias e decide manualmente quando renovar.'}
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={coAutoRenew}
+                          onChange={(e) => setCoAutoRenew(e.target.checked)}
+                          style={{ width: '18px', height: '18px', accentColor: '#10B981' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={coProcessing}
+                  className="gold-gradient-primary gold-glow"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    color: '#09090B',
+                    fontWeight: 800,
+                    fontSize: '0.94rem',
+                    cursor: coProcessing ? 'wait' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginTop: '4px',
+                  }}
+                >
+                  <Lock size={16} />
+                  <span>
+                    {coProcessing
+                      ? 'Processando Pagamento Seguro...'
+                      : coMethod === 'CREDIT_CARD'
+                        ? `Pagar ${formatBRL(checkoutModalPlan.priceCents)} no Cartão e Ativar VIP`
+                        : `Gerar QR Code PIX de ${formatBRL(checkoutModalPlan.priceCents)}`}
+                  </span>
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ────────────────── Lightbox Modal ────────────────── */}
       {activePhoto && (

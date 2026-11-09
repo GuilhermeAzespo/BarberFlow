@@ -556,3 +556,32 @@ publicRouter.post('/tenants/:slug/club/subscription/auto-renew', async (req, res
       : 'Renovação alterada para Manual com sucesso!',
   });
 });
+
+/** Checkout Transparente Público do Clube VIP (Cartão Recorrente ou PIX direto na conta do salão) */
+publicRouter.post('/tenants/:slug/club/checkout', async (req, res) => {
+  const { slug } = req.params;
+  const schema = z.object({
+    planId: z.string().min(1, 'Selecione o plano do Clube VIP'),
+    customerName: z.string().trim().min(2, 'Informe seu nome completo'),
+    customerPhone: z.string().trim().min(8, 'Informe seu WhatsApp com DDD'),
+    customerEmail: z.string().trim().email('Informe um e-mail válido'),
+    customerDoc: z.string().trim().optional(),
+    method: z.enum(['PIX', 'CREDIT_CARD']),
+    autoRenew: z.boolean().optional(),
+    cardToken: z.string().optional(),
+    paymentMethodId: z.string().optional(),
+    issuerId: z.string().optional(),
+    installments: z.number().int().min(1).max(12).optional(),
+  });
+
+  const data = schema.parse(req.body);
+  const result = await clubService.createPublicOnlineCheckout(slug, data);
+  res.json(result);
+});
+
+/** Consulta de status do pagamento PIX / Cartão do Clube VIP na Vitrine */
+publicRouter.get('/tenants/:slug/club/checkout/:paymentId/status', async (req, res) => {
+  const { slug, paymentId } = req.params;
+  const result = await clubService.checkPublicOnlinePaymentStatus(slug, paymentId, false);
+  res.json(result);
+});

@@ -6,6 +6,7 @@ import { systemLog } from '../../lib/system-log.js';
 import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mercadopago.js';
 import { incrementCouponUsage } from '../../lib/coupons.js';
 import { resolvePaymentCycleDays } from '../../lib/billing-cycles.js';
+import { clubService } from '../club/club.service.js';
 
 export const webhooksRouter = Router();
 
@@ -263,5 +264,35 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
     logger.error({ err }, 'Erro ao processar Webhook do Mercado Pago');
     // Retorna 200 para evitar que o Mercado Pago bloqueie a fila de webhooks
     return res.status(200).json({ received: true, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ─────────── Webhook Exclusivo por Salão (Recebimentos Online do Clube VIP) ───────────
+
+webhooksRouter.get('/tenant-mercadopago/:tenantId', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'BarberFlow Tenant Mercado Pago Webhook',
+    tenantId: req.params.tenantId,
+    ready: true,
+  });
+});
+
+webhooksRouter.post('/tenant-mercadopago/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    const body = req.body || {};
+    const query = req.query || {};
+
+    const entityId = body.data?.id || body.id || query['data.id'] || query.id;
+    if (!entityId) {
+      return res.status(200).json({ received: true, ignored: true });
+    }
+
+    await clubService.checkPublicOnlinePaymentStatus(tenantId, String(entityId), true);
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    logger.warn({ err, tenantId: req.params.tenantId }, 'Aviso ao processar webhook Mercado Pago do salão');
+    return res.status(200).json({ received: true });
   }
 });

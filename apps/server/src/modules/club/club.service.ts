@@ -1,8 +1,9 @@
+import crypto from 'node:crypto';
 import { DateTime } from 'luxon';
 import { prisma } from '../../lib/prisma.js';
 import { logger } from '../../lib/logger.js';
 import { HttpError } from '../../lib/http-error.js';
-import { assertPlanFeature } from '../../lib/tenant-access.js';
+import { assertPlanFeature, hasPlanFeature } from '../../lib/tenant-access.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
 import type { ClubSubscriptionStatus } from '@prisma/client';
 
@@ -793,22 +794,40 @@ export class ClubService {
     });
     if (!tenant) throw HttpError.notFound('Barbearia não encontrada');
 
-    const plans = await prisma.clubPlan.findMany({
-      where: { tenantId: tenant.id, isActive: true },
-      include: {
-        services: {
-          include: {
-            service: { select: { id: true, name: true, durationMinutes: true, priceCents: true } },
+    const [plans, hasOnlinePaymentsFeature, paymentConfig] = await Promise.all([
+      prisma.clubPlan.findMany({
+        where: { tenantId: tenant.id, isActive: true },
+        include: {
+          services: {
+            include: {
+              service: { select: { id: true, name: true, durationMinutes: true, priceCents: true } },
+            },
           },
         },
-      },
-      orderBy: { priceCents: 'asc' },
-    });
+        orderBy: { priceCents: 'asc' },
+      }),
+      hasPlanFeature(tenant.id, 'onlinePayments').catch(() => false),
+      prisma.tenantPaymentConfig.findUnique({ where: { tenantId: tenant.id } }),
+    ]);
+
+    const onlinePaymentsEnabled = Boolean(
+      hasOnlinePaymentsFeature &&
+        paymentConfig?.enabled &&
+        paymentConfig?.mpPublicKey &&
+        paymentConfig?.mpAccessToken
+    );
 
     return {
       tenantName: tenant.name,
       phone: tenant.phone,
       tenantPhone: tenant.phone,
+      onlinePaymentConfig: {
+        enabled: onlinePaymentsEnabled,
+        mpPublicKey: onlinePaymentsEnabled ? paymentConfig?.mpPublicKey || null : null,
+        pixEnabled: paymentConfig?.pixEnabled ?? true,
+        creditCardEnabled: paymentConfig?.creditCardEnabled ?? true,
+        recurringCardEnabled: paymentConfig?.recurringCardEnabled ?? true,
+      },
       plans: plans.map((p) => ({
         id: p.id,
         name: p.name,
@@ -931,6 +950,408 @@ export class ClubService {
         ? 'Renovação automática ativada com sucesso!'
         : 'Renovação alterada para modo manual com sucesso!',
     };
+  }
+
+  /**
+   * Processa o checkout online (Cartão de Crédito Recorrente ou PIX) direto na conta Mercado Pago do dono do salão.
+   */
+  async createPublicOnlineCheckout(
+    slug: string,
+    input: {
+      planId: string;
+      customerName: string;
+      customerPhone: string;
+      customerEmail: string;
+      customerDoc?: string;
+      method: 'PIX' | 'CREDIT_CARD';
+      autoRenew?: boolean;
+      cardToken?: string;
+      paymentMethodId?: string;
+      issuerId?: string;
+      installments?: number;
+    }
+  ) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { slug },
+      select: { id: true, name: true, slug: true, timezone: true },
+    });
+    if (!tenant) throw HttpError.notFound('Barbearia não encontrada');
+
+    const [hasFeature, paymentConfig, plan] = await Promise.all([
+      hasPlanFeature(tenant.id, 'onlinePayments').catch(() => false),
+      prisma.tenantPaymentConfig.findUnique({ where: { tenantId: tenant.id } }),
+      prisma.clubPlan.findFirst({
+        where: { id: input.planId, tenantId: tenant.id, isActive: true },
+      }),
+    ]);
+
+    if (!hasFeature || !paymentConfig?.enabled || !paymentConfig?.mpAccessToken) {
+      throw HttpError.badRequest(
+        'Os recebimentos online desta barbearia não estão habilitados no momento. Solicite sua assinatura pelo WhatsApp.'
+      );
+    }
+
+    if (!plan) {
+      throw HttpError.notFound('Plano do Clube VIP não encontrado ou indisponível.');
+    }
+
+    const cleanPhone = input.customerPhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      throw HttpError.badRequest('Informe um WhatsApp válido com DDD.');
+    }
+
+    const normalizedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+    // Localiza ou cria o cliente na base do salão
+    let customer = await prisma.customer.findFirst({
+      where: {
+        tenantId: tenant.id,
+        OR: [{ phone: normalizedPhone }, { phone: cleanPhone }],
+      },
+    });
+
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: {
+          tenantId: tenant.id,
+          name: input.customerName.trim(),
+          phone: normalizedPhone,
+          email: input.customerEmail.trim(),
+        },
+      });
+    } else if (!customer.email && input.customerEmail) {
+      customer = await prisma.customer.update({
+        where: { id: customer.id },
+        data: { email: input.customerEmail.trim() },
+      });
+    }
+
+    const autoRenew = input.autoRenew !== undefined ? Boolean(input.autoRenew) : true;
+    const transactionAmount = Number((plan.priceCents / 100).toFixed(2));
+    const nameParts = input.customerName.trim().split(/\s+/);
+    const firstName = nameParts[0] || 'Cliente';
+    const lastName = nameParts.slice(1).join(' ') || 'VIP';
+    const cleanDoc = (input.customerDoc || '').replace(/\D/g, '');
+    const docType = cleanDoc.length > 11 ? 'CNPJ' : 'CPF';
+
+    const rootDomain = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+    const notificationUrl = `https://${rootDomain}/api/webhooks/tenant-mercadopago/${tenant.id}`;
+
+    const mpPayload: Record<string, any> = {
+      transaction_amount: transactionAmount,
+      description: `Clube VIP ${tenant.name} — ${plan.name}`,
+      payer: {
+        email: input.customerEmail.trim(),
+        first_name: firstName,
+        last_name: lastName,
+        ...(cleanDoc
+          ? {
+              identification: {
+                type: docType,
+                number: cleanDoc,
+              },
+            }
+          : {}),
+      },
+      notification_url: notificationUrl,
+      metadata: {
+        barberflow_club: true,
+        tenant_id: tenant.id,
+        customer_id: customer.id,
+        club_plan_id: plan.id,
+        auto_renew: autoRenew,
+      },
+    };
+
+    if (input.method === 'PIX') {
+      mpPayload.payment_method_id = 'pix';
+    } else {
+      if (!input.cardToken) {
+        throw HttpError.badRequest('Token do cartão de crédito não gerado.');
+      }
+      mpPayload.token = input.cardToken;
+      mpPayload.installments = input.installments && input.installments >= 1 ? Number(input.installments) : 1;
+      if (input.paymentMethodId) mpPayload.payment_method_id = input.paymentMethodId;
+      if (input.issuerId) mpPayload.issuer_id = Number(input.issuerId);
+    }
+
+    const mpResponse = await fetch('https://api.mercadopago.com/v1/payments', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${paymentConfig.mpAccessToken}`,
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': `club-${tenant.id}-${customer.id}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+      },
+      body: JSON.stringify(mpPayload),
+    });
+
+    const mpData = (await mpResponse.json()) as any;
+    if (!mpResponse.ok) {
+      const detail =
+        mpData?.cause?.[0]?.description ||
+        mpData?.message ||
+        'Pagamento recusado pela operadora ou dados inválidos.';
+      throw HttpError.badRequest(`Falha ao processar pagamento: ${detail}`);
+    }
+
+    const mpPaymentId = String(mpData.id);
+    const mpStatus = String(mpData.status || 'pending');
+    const poi = mpData.point_of_interaction?.transaction_data;
+
+    if (mpStatus === 'approved') {
+      await this.activateSubscriptionFromOnlinePayment({
+        tenantId: tenant.id,
+        customerId: customer.id,
+        planId: plan.id,
+        autoRenew,
+        paymentMethod: input.method === 'PIX' ? 'PIX' : 'CARTAO_CREDITO',
+        mpPaymentId,
+        cardLastFour: mpData.card?.last_four_digits || null,
+        cardBrand: mpData.payment_method_id || null,
+      });
+
+      return {
+        approved: true,
+        paymentId: mpPaymentId,
+        status: mpStatus,
+        message: `Parabéns! Sua assinatura no plano ${plan.name} foi aprovada e já está ativa!`,
+      };
+    }
+
+    // Se for PIX (ou pendente), registra ou mantém a assinatura aguardando a confirmação do pagamento
+    const existingSub = await prisma.customerSubscription.findUnique({
+      where: { tenantId_customerId: { tenantId: tenant.id, customerId: customer.id } },
+    });
+
+    if (!existingSub) {
+      const now = new Date();
+      const endDate = DateTime.now().setZone(tenant.timezone).plus({ days: 30 }).toJSDate();
+      await prisma.customerSubscription.create({
+        data: {
+          tenantId: tenant.id,
+          customerId: customer.id,
+          planId: plan.id,
+          status: 'PENDING_PAYMENT',
+          cycleStartDate: now,
+          cycleEndDate: endDate,
+          usagesCount: 0,
+          paymentMethod: input.method === 'PIX' ? 'PIX' : 'CARTAO_CREDITO',
+          autoRenew,
+          mpLastPaymentId: mpPaymentId,
+        },
+      });
+    } else {
+      await prisma.customerSubscription.update({
+        where: { id: existingSub.id },
+        data: {
+          planId: plan.id,
+          autoRenew,
+          mpLastPaymentId: mpPaymentId,
+        },
+      });
+    }
+
+    return {
+      approved: false,
+      paymentId: mpPaymentId,
+      status: mpStatus,
+      qrCode: poi?.qr_code || null,
+      qrCodeBase64: poi?.qr_code_base64 || null,
+      ticketUrl: poi?.ticket_url || null,
+    };
+  }
+
+  /**
+   * Confirma e ativa a assinatura do Clube VIP quando o pagamento no Mercado Pago do salão é aprovado.
+   */
+  async activateSubscriptionFromOnlinePayment(params: {
+    tenantId: string;
+    customerId: string;
+    planId: string;
+    autoRenew: boolean;
+    paymentMethod: string;
+    mpPaymentId: string;
+    cardLastFour?: string | null;
+    cardBrand?: string | null;
+  }) {
+    const { tenantId, customerId, planId, autoRenew, paymentMethod, mpPaymentId, cardLastFour, cardBrand } = params;
+
+    const [tenant, customer, plan, existingSub] = await Promise.all([
+      prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, name: true, timezone: true } }),
+      prisma.customer.findUnique({ where: { id: customerId } }),
+      prisma.clubPlan.findUnique({ where: { id: planId } }),
+      prisma.customerSubscription.findUnique({
+        where: { tenantId_customerId: { tenantId, customerId } },
+      }),
+    ]);
+
+    if (!tenant || !customer || !plan) return null;
+
+    // Idempotência: se este mpPaymentId já ativou a assinatura hoje, não duplica
+    if (
+      existingSub &&
+      existingSub.status === 'ACTIVE' &&
+      existingSub.mpLastPaymentId === mpPaymentId &&
+      existingSub.lastPaymentAt &&
+      Date.now() - existingSub.lastPaymentAt.getTime() < 24 * 60 * 60 * 1000
+    ) {
+      return existingSub;
+    }
+
+    const now = new Date();
+    const zone = tenant.timezone || 'America/Sao_Paulo';
+    const isExtendingActive =
+      existingSub &&
+      existingSub.status === 'ACTIVE' &&
+      existingSub.cycleEndDate > now;
+
+    const baseEnd = isExtendingActive
+      ? DateTime.fromJSDate(existingSub.cycleEndDate).setZone(zone)
+      : DateTime.fromJSDate(now).setZone(zone);
+
+    const nextEndDate = baseEnd.plus({ days: 30 }).toJSDate();
+
+    const sub = await prisma.customerSubscription.upsert({
+      where: { tenantId_customerId: { tenantId, customerId } },
+      create: {
+        tenantId,
+        customerId,
+        planId,
+        status: 'ACTIVE',
+        cycleStartDate: now,
+        cycleEndDate: nextEndDate,
+        usagesCount: 0,
+        paymentMethod,
+        lastPaymentAt: now,
+        autoRenew,
+        mpLastPaymentId: mpPaymentId,
+        cardLastFour: cardLastFour || null,
+        cardBrand: cardBrand || null,
+        notes: `Assinatura paga online via Mercado Pago (#${mpPaymentId})`,
+      },
+      update: {
+        planId,
+        status: 'ACTIVE',
+        cycleStartDate: isExtendingActive ? existingSub.cycleStartDate : now,
+        cycleEndDate: nextEndDate,
+        usagesCount: 0,
+        paymentMethod,
+        lastPaymentAt: now,
+        autoRenew,
+        mpLastPaymentId: mpPaymentId,
+        cardLastFour: cardLastFour || existingSub?.cardLastFour || null,
+        cardBrand: cardBrand || existingSub?.cardBrand || null,
+      },
+    });
+
+    // Registra a entrada financeira no Fluxo de Caixa (/finance) do salão
+    await prisma.transaction
+      .create({
+        data: {
+          tenantId,
+          type: 'INCOME',
+          category: 'Clube VIP',
+          description: `Assinatura Online Clube VIP (${plan.name}) — ${customer.name} [MP #${mpPaymentId}]`,
+          amountCents: plan.priceCents,
+          paymentMethod: paymentMethod === 'PIX' ? 'PIX' : 'CREDIT_CARD',
+          occurredAt: now,
+        },
+      })
+      .catch(() => {});
+
+    // Dispara confirmação de boas-vindas / renovação no WhatsApp do cliente
+    const targetPhone = customer.whatsappJid || customer.phone;
+    if (targetPhone) {
+      const endDateFormatted = DateTime.fromJSDate(nextEndDate).setZone(zone).toFormat('dd/MM/yyyy');
+      const priceStr = (plan.priceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const welcomeVipMsg =
+        `👑 *Pagamento Confirmado — Clube VIP ${tenant.name}!*\n\n` +
+        `Olá, *${customer.name}*! Seu pagamento de *${priceStr}* do plano *${plan.name}* foi aprovado com sucesso!\n\n` +
+        `✅ *Status:* Ativo até *${endDateFormatted}*\n` +
+        `🔄 *Modo de Renovação:* ${autoRenew ? 'Automática (Auto-Renew)' : 'Manual'}\n\n` +
+        `Você já pode agendar seus horários normalmente pelo WhatsApp ou pelo nosso link e seus usos serão cobertos pelo seu plano VIP! ✂️💈`;
+
+      await whatsAppService.sendMessage(tenantId, targetPhone, welcomeVipMsg).catch(() => {});
+    }
+
+    return sub;
+  }
+
+  /**
+   * Consulta o status de um pagamento online do Clube VIP diretamente na conta Mercado Pago do salão.
+   */
+  async checkPublicOnlinePaymentStatus(slugOrTenantId: string, mpPaymentId: string, byTenantId = false) {
+    const tenant = byTenantId
+      ? await prisma.tenant.findUnique({ where: { id: slugOrTenantId }, select: { id: true, name: true } })
+      : await prisma.tenant.findUnique({ where: { slug: slugOrTenantId }, select: { id: true, name: true } });
+
+    if (!tenant) throw HttpError.notFound('Barbearia não encontrada');
+
+    const paymentConfig = await prisma.tenantPaymentConfig.findUnique({
+      where: { tenantId: tenant.id },
+    });
+
+    if (!paymentConfig?.mpAccessToken) {
+      return { approved: false, status: 'pending' };
+    }
+
+    const mpRes = await fetch(
+      `https://api.mercadopago.com/v1/payments/${encodeURIComponent(mpPaymentId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${paymentConfig.mpAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!mpRes.ok) {
+      return { approved: false, status: 'pending' };
+    }
+
+    const mpData = (await mpRes.json()) as any;
+    const status = String(mpData.status || 'pending');
+
+    if (status === 'approved') {
+      const meta = mpData.metadata || {};
+      const customerId = (meta.customer_id || meta.customerId) as string | undefined;
+      const planId = (meta.club_plan_id || meta.clubPlanId) as string | undefined;
+      const autoRenew = meta.auto_renew !== undefined ? Boolean(meta.auto_renew) : true;
+
+      if (customerId && planId) {
+        await this.activateSubscriptionFromOnlinePayment({
+          tenantId: tenant.id,
+          customerId,
+          planId,
+          autoRenew,
+          paymentMethod: mpData.payment_method_id === 'pix' ? 'PIX' : 'CARTAO_CREDITO',
+          mpPaymentId: String(mpData.id),
+          cardLastFour: mpData.card?.last_four_digits || null,
+          cardBrand: mpData.payment_method_id || null,
+        });
+      } else {
+        // Fallback: busca pelo mpLastPaymentId salvo na CustomerSubscription
+        const subByPayment = await prisma.customerSubscription.findFirst({
+          where: { tenantId: tenant.id, mpLastPaymentId: String(mpPaymentId) },
+        });
+        if (subByPayment) {
+          await this.activateSubscriptionFromOnlinePayment({
+            tenantId: tenant.id,
+            customerId: subByPayment.customerId,
+            planId: subByPayment.planId,
+            autoRenew: subByPayment.autoRenew,
+            paymentMethod: mpData.payment_method_id === 'pix' ? 'PIX' : 'CARTAO_CREDITO',
+            mpPaymentId: String(mpData.id),
+            cardLastFour: mpData.card?.last_four_digits || null,
+            cardBrand: mpData.payment_method_id || null,
+          });
+        }
+      }
+
+      return { approved: true, status: 'approved' };
+    }
+
+    return { approved: false, status };
   }
 }
 
