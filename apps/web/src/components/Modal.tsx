@@ -33,13 +33,14 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = '540px' }: 
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        zIndex: 1000,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px',
+        padding: 'clamp(10px, 2.5vh, 24px)',
+        overflowY: 'auto',
       }}
       onClick={onClose}
     >
@@ -50,43 +51,60 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = '540px' }: 
           maxWidth,
           backgroundColor: '#0F172A',
           borderColor: 'rgba(255, 255, 255, 0.12)',
-          boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
-          maxHeight: '90vh',
+          boxShadow: '0 24px 48px rgba(0, 0, 0, 0.65)',
+          maxHeight: 'calc(100dvh - clamp(20px, 5vh, 48px))',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          margin: 'auto',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
         <div
           style={{
-            padding: '18px 24px',
+            padding: '14px 20px',
             borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexShrink: 0,
+            gap: '12px',
           }}
         >
-          <h3 style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-main)' }}>{title}</h3>
+          <h3 style={{ fontSize: '1.08rem', fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>{title}</h3>
           <button
+            type="button"
             onClick={onClose}
             style={{
-              background: 'transparent',
-              border: 'none',
+              background: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
               color: 'var(--text-muted)',
               cursor: 'pointer',
               display: 'flex',
-              padding: '4px',
-              borderRadius: '6px',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '5px',
+              borderRadius: '8px',
+              flexShrink: 0,
             }}
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div style={{ padding: '24px', overflowY: 'auto' }}>{children}</div>
+        <div
+          className="custom-scrollbar"
+          style={{
+            padding: '16px 20px',
+            overflowY: 'auto',
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -26,6 +26,7 @@ interface BotContext {
   availableDates?: string[];
   availableSlots?: { time: string; startAt: string }[];
   cancelableAppointments?: { id: string; summary: string }[];
+  clubPlansList?: { id: string; name: string; priceCents: number }[];
   surveyType?: 'ATTENDANT' | 'SERVICE';
   surveyStartedAt?: number;
   surveyId?: string;
@@ -276,6 +277,187 @@ function isAskingToCancel(clean: string): boolean {
   );
 }
 
+function isAskingForClubPlans(clean: string): boolean {
+  return (
+    clean === 'planos' ||
+    clean === 'plano' ||
+    clean === 'clube' ||
+    clean === 'vip' ||
+    clean === 'clube vip' ||
+    clean === 'assinatura' ||
+    clean.includes('plano mensal') ||
+    clean.includes('planos mensais') ||
+    clean.includes('clube de assinatura') ||
+    clean.includes('clube vip') ||
+    clean.includes('corte ilimitado') ||
+    clean.includes('barba ilimitada') ||
+    clean.includes('quero assinar') ||
+    clean.includes('como assinar') ||
+    clean.includes('pacote mensal') ||
+    clean.includes('pacotes mensais') ||
+    (clean.includes('planos') &&
+      (clean.includes('quais') ||
+        clean.includes('tem') ||
+        clean.includes('ver') ||
+        clean.includes('conhecer') ||
+        clean.includes('valor') ||
+        clean.includes('mensal') ||
+        clean.includes('contratar')))
+  );
+}
+
+async function getClubUpsellBanner(
+  tenantId: string,
+  customerId?: string | null,
+  targetServiceId?: string | null
+): Promise<string> {
+  try {
+    if (customerId) {
+      const activeSub = await prisma.customerSubscription.findFirst({
+        where: {
+          tenantId,
+          customerId,
+          status: 'ACTIVE',
+          cycleEndDate: { gte: new Date() },
+        },
+        include: {
+          plan: {
+            include: {
+              services: { select: { serviceId: true } },
+            },
+          },
+        },
+      });
+
+      if (activeSub) {
+        if (
+          targetServiceId &&
+          activeSub.plan.services.some((ps) => ps.serviceId === targetServiceId)
+        ) {
+          return `\n\n👑 *Assinante Clube VIP:* Este serviço está coberto pelo seu plano *${activeSub.plan.name}*!`;
+        }
+        return '';
+      }
+    }
+
+    const activePlans = await prisma.clubPlan.findMany({
+      where: { tenantId, isActive: true },
+      include: {
+        services: {
+          include: { service: { select: { id: true, name: true } } },
+        },
+      },
+      orderBy: { priceCents: 'asc' },
+    });
+
+    if (activePlans.length === 0) return '';
+
+    const matchingPlan = targetServiceId
+      ? activePlans.find((p) => p.services.some((ps) => ps.serviceId === targetServiceId)) || activePlans[0]
+      : activePlans[0];
+
+    if (!matchingPlan) return '';
+
+    const usageText = matchingPlan.maxUsagesPerMonth
+      ? `até ${matchingPlan.maxUsagesPerMonth} usos/mês`
+      : 'usos ilimitados no mês ♾️';
+
+    return (
+      `\n\n👑 *Sugestão Clube VIP:* Economize com o plano mensal *${matchingPlan.name}* por apenas *${formatCurrency(matchingPlan.priceCents)}/mês* (${usageText})! ` +
+      `Digite *planos* (ou *6* no menu) para conhecer e contratar.`
+    );
+  } catch {
+    return '';
+  }
+}
+
+async function buildClubPlansMenu(
+  tenantId: string,
+  tenantName: string,
+  customerId?: string | null
+): Promise<{
+  hasPlans: boolean;
+  message: string;
+  plansSummary: { id: string; name: string; priceCents: number }[];
+}> {
+  const activePlans = await prisma.clubPlan.findMany({
+    where: { tenantId, isActive: true },
+    include: {
+      services: {
+        include: { service: { select: { id: true, name: true } } },
+      },
+    },
+    orderBy: { priceCents: 'asc' },
+  });
+
+  if (activePlans.length === 0) {
+    return {
+      hasPlans: false,
+      message: `No momento a *${tenantName}* não possui planos mensais de assinatura disponíveis.\n\nDigite *1* para agendar um serviço avulso ou *menu* para voltar.`,
+      plansSummary: [],
+    };
+  }
+
+  let currentSubBanner = '';
+  if (customerId) {
+    const activeSub = await prisma.customerSubscription.findFirst({
+      where: {
+        tenantId,
+        customerId,
+        status: 'ACTIVE',
+        cycleEndDate: { gte: new Date() },
+      },
+      include: { plan: true },
+    });
+
+    if (activeSub) {
+      const limitLabel = activeSub.plan.maxUsagesPerMonth
+        ? `${activeSub.usagesCount}/${activeSub.plan.maxUsagesPerMonth} usos neste ciclo`
+        : `${activeSub.usagesCount} usos (Ilimitado ♾️)`;
+      currentSubBanner =
+        `✅ *Sua Assinatura VIP Ativa:* *${activeSub.plan.name}*\n` +
+        `📊 *Consumo:* ${limitLabel}\n\n`;
+    }
+  }
+
+  const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  let msg =
+    `👑 *Clube de Assinatura VIP — ${tenantName}*\n` +
+    `Garanta seu visual sempre alinhado e economize com nossos planos mensais:\n\n` +
+    currentSubBanner;
+
+  const plansSummary: { id: string; name: string; priceCents: number }[] = [];
+
+  activePlans.forEach((plan, idx) => {
+    plansSummary.push({ id: plan.id, name: plan.name, priceCents: plan.priceCents });
+    const usageLabel = plan.maxUsagesPerMonth
+      ? `Até ${plan.maxUsagesPerMonth} atendimento(s)/mês`
+      : 'Cortes / Usos Ilimitados no mês ♾️';
+    const serviceNames = plan.services.map((ps) => ps.service?.name).filter(Boolean).join(', ') || 'Serviços selecionados';
+    const daysLabel =
+      !plan.allowedDaysOfWeek || plan.allowedDaysOfWeek.length === 0 || plan.allowedDaysOfWeek.length === 7
+        ? 'Todos os dias de funcionamento'
+        : plan.allowedDaysOfWeek.map((d) => weekdayNames[d]).join(', ');
+
+    msg += `*${idx + 1}* - 👑 *${plan.name}* — *${formatCurrency(plan.priceCents)}/mês*\n`;
+    msg += `   • *Frequência:* ${usageLabel}\n`;
+    msg += `   • *Incluso:* ${serviceNames}\n`;
+    msg += `   • *Dias válidos:* ${daysLabel}\n`;
+    if (plan.description) {
+      msg += `   • _${plan.description}_\n`;
+    }
+    msg += `\n`;
+  });
+
+  msg += `_Deseja contratar algum plano mensal agora? Digite o *número do plano* (ex: *1*) ou *menu* para voltar!_`;
+
+  return {
+    hasPlans: true,
+    message: msg,
+    plansSummary,
+  };
+}
+
 function isNaturalLanguageBookingIntent(text: string, hasServiceKeywords: boolean, hasProfKeywords: boolean): boolean {
   const clean = text
     .toLowerCase()
@@ -364,7 +546,9 @@ async function trySmartNaturalLanguageBooking(params: {
     services.forEach((s, idx) => {
       msg += `*${idx + 1}* - ${s.name} (${s.durationMinutes} min) - ${formatCurrency(s.priceCents)}\n`;
     });
-    msg += `\n_Para agendar, digite o número do serviço ou escreva diretamente como preferir (ex: "Gostaria de agendar o ${services[0]?.name || 'Corte'} hoje às 16h30")!_`;
+    const clubBanner = await getClubUpsellBanner(tenantId, customer?.id);
+    msg += clubBanner;
+    msg += `\n\n_Para agendar, digite o número do serviço ou escreva diretamente como preferir (ex: "Gostaria de agendar o ${services[0]?.name || 'Corte'} hoje às 16h30")!_`;
 
     await updateConversation(tenantId, senderJid, 'SELECT_SERVICE', {});
     await reply(msg);
@@ -909,6 +1093,21 @@ export async function handleIncomingMessage(params: {
     return;
   }
 
+  // Consulta rápida aos planos mensais do Clube VIP em qualquer estado (exceto durante pesquisa de satisfação)
+  const cleanNormalized = cleanText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (!state.startsWith('SURVEY_') && (isAskingForClubPlans(cleanNormalized) || (state === 'MENU' && rawInput === '6'))) {
+    const clubMenu = await buildClubPlansMenu(tenantId, tenant.name, customer?.id);
+    if (clubMenu.hasPlans) {
+      await updateConversation(tenantId, senderJid, 'SELECT_CLUB_PLAN', {
+        clubPlansList: clubMenu.plansSummary,
+      });
+    } else {
+      await updateConversation(tenantId, senderJid, 'MENU', {});
+    }
+    await reply(clubMenu.message);
+    return;
+  }
+
   switch (state) {
     case 'MENU': {
       // Tenta fluxo inteligente de agendamento por linguagem natural (ex: "gostaria de agendar um corte degradê com o Lucas hoje às 16h30")
@@ -943,7 +1142,9 @@ export async function handleIncomingMessage(params: {
         services.forEach((s, idx) => {
           msg += `*${idx + 1}* - ${s.name} (${s.durationMinutes} min) - ${formatCurrency(s.priceCents)}\n`;
         });
-        msg += `\n_Digite o número do serviço ou *menu* para voltar._`;
+        const clubBanner = await getClubUpsellBanner(tenantId, customer?.id);
+        msg += clubBanner;
+        msg += `\n\n_Digite o número do serviço ou *menu* para voltar._`;
 
         await updateConversation(tenantId, senderJid, 'SELECT_SERVICE', {});
         await reply(msg);
@@ -1374,7 +1575,8 @@ export async function handleIncomingMessage(params: {
             `Te esperamos lá! Se precisar remarcar ou cancelar, basta digitar *menu*. 😊`;
 
           await updateConversation(tenantId, senderJid, 'MENU', {});
-          await reply(confirmedCard);
+          const clubConfirmBanner = await getClubUpsellBanner(tenantId, customer?.id, appointment.serviceId);
+          await reply(`${confirmedCard}${clubConfirmBanner}`);
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : 'Horário indisponível.';
           logger.warn({ err, tenantId, senderJid }, 'Falha no agendamento via bot');
@@ -1589,6 +1791,38 @@ export async function handleIncomingMessage(params: {
       break;
     }
 
+    case 'SELECT_CLUB_PLAN': {
+      const plansList = context.clubPlansList || [];
+      const selectedIdx = parseInt(rawInput, 10) - 1;
+      if (isNaN(selectedIdx) || selectedIdx < 0 || selectedIdx >= plansList.length) {
+        await reply(`⚠️ Opção inválida. Digite o *número do plano* desejado (de 1 a ${plansList.length}) ou envie *menu* para voltar.`);
+        return;
+      }
+
+      const chosenPlan = plansList[selectedIdx]!;
+      await updateConversation(tenantId, senderJid, 'HUMAN_ATTENDANT', {}, true);
+
+      await prisma.whatsAppMessage.create({
+        data: {
+          tenantId,
+          conversationId: conversation.id,
+          contactJid: senderJid,
+          fromMe: true,
+          senderType: 'SYSTEM',
+          body: `👑 Cliente solicitou contratação do plano mensal Clube VIP: *${chosenPlan.name}* (${formatCurrency(chosenPlan.priceCents)}/mês) em ${DateTime.now().setZone(tenant.timezone).toFormat('dd/MM/yyyy HH:mm')}.`,
+          status: 'SENT',
+        },
+      });
+
+      await reply(
+        `👑 *Excelente escolha, ${customerFirstName}!*\n\n` +
+        `Você selecionou o plano mensal *${chosenPlan.name}* (*${formatCurrency(chosenPlan.priceCents)}/mês*).\n\n` +
+        `🔔 Já notificamos a recepção da *${tenant.name}* para ativar sua assinatura VIP e enviar os dados de pagamento! Um atendente falará com você em instantes.\n\n` +
+        `_Se quiser voltar ao menu automático para agendar um corte agora mesmo, basta digitar *menu*._ 💈`
+      );
+      break;
+    }
+
     default: {
       await updateConversation(tenantId, senderJid, 'MENU', {});
       await sendMenu(reply, tenant, waConfig, finalCustomerName);
@@ -1619,7 +1853,7 @@ async function updateConversation(tenantId: string, contactJid: string, state: s
 
 async function sendMenu(
   reply: (text: string) => Promise<void>,
-  tenant: { name: string },
+  tenant: { id?: string; name: string },
   waConfig: { welcomeMessage: string },
   customerName: string,
 ) {
@@ -1646,7 +1880,20 @@ async function sendMenu(
     nome_saudacao: resolvedCustomerName ? `, ${resolvedCustomerName}` : '',
   });
 
+  const activeClubPlansCount = tenant.id
+    ? await prisma.clubPlan.count({ where: { tenantId: tenant.id, isActive: true } }).catch(() => 0)
+    : 0;
+
   const menuOptions =
+    `*1* - ✂️ Agendar um horário\n` +
+    `*2* - 📅 Meus agendamentos\n` +
+    `*3* - ❌ Cancelar agendamento\n` +
+    `*4* - 💈 Horários e Localização\n` +
+    `*5* - 👤 Falar com um atendente\n` +
+    (activeClubPlansCount > 0 ? `*6* - 👑 Planos Mensais (Clube VIP)\n` : '') +
+    `\n_Responda com o número da opção desejada._`;
+
+  const oldUnusedMenuOptions =
     `*1* - ✂️ Agendar um horário\n` +
     `*2* - 📅 Meus agendamentos\n` +
     `*3* - ❌ Cancelar agendamento\n` +

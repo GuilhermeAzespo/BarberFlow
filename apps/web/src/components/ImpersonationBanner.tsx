@@ -28,7 +28,7 @@ export function ImpersonationBanner() {
         top: 0,
         left: 0,
         right: 0,
-        zIndex: 99999,
+        zIndex: 90,
         background: 'linear-gradient(90deg, #DC2626 0%, #B91C1C 45%, #991B1B 100%)',
         color: '#FFFFFF',
         padding: '10px 24px',

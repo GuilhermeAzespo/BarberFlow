@@ -366,18 +366,6 @@ export default function MarketingPage() {
                 <h1 style={{ fontSize: '1.8rem', fontWeight: 800, margin: 0, letterSpacing: '-0.02em' }}>
                   Campanhas & Retorno de Clientes
                 </h1>
-                <span
-                  style={{
-                    fontSize: '0.74rem',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    color: '#F59E0B',
-                    fontWeight: 700,
-                  }}
-                >
-                  Fase 5 Oficial
-                </span>
               </div>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', marginTop: '6px', maxWidth: '720px' }}>
                 Robôs inteligentes para resgatar automaticamente clientes que estão há semanas sem cortar e parabenizar
@@ -1628,3 +1616,4 @@ export default function MarketingPage() {
     </div>
   );
 }
+

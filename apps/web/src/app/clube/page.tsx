@@ -1858,11 +1858,12 @@ export default function ClubManagementPage() {
         isOpen={planModalOpen}
         onClose={() => setPlanModalOpen(false)}
         title={editingPlan ? 'Editar Plano do Clube VIP' : 'Criar Novo Plano do Clube VIP'}
+        maxWidth="620px"
       >
-        <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '4px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '14px' }}>
+        <form onSubmit={handleSavePlan} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Nome do Plano *
               </label>
               <input
@@ -1871,11 +1872,12 @@ export default function ClubManagementPage() {
                 placeholder="Ex: Corte Ilimitado VIP"
                 value={planForm.name}
                 onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                style={{ padding: '8px 12px', fontSize: '0.9rem' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Valor Mensal (R$) *
               </label>
               <input
@@ -1884,23 +1886,29 @@ export default function ClubManagementPage() {
                 placeholder="99,90"
                 value={planForm.priceStr}
                 onChange={(e) => setPlanForm({ ...planForm, priceStr: e.target.value })}
+                style={{ padding: '8px 12px', fontSize: '0.9rem' }}
               />
             </div>
           </div>
 
           <div
             style={{
-              padding: '12px 14px',
+              padding: '10px 12px',
               borderRadius: '10px',
               background: 'rgba(255, 255, 255, 0.03)',
               border: '1px solid var(--border-color)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px',
             }}
           >
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
-              Limite de Utilizações por Mês
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem' }}>
+            <div>
+              <div style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                Limite de Utilizações por Mês
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem' }}>
                 <input
                   type="checkbox"
                   checked={planForm.isUnlimitedUsages}
@@ -1908,28 +1916,28 @@ export default function ClubManagementPage() {
                 />
                 <span style={{ color: '#E5B338', fontWeight: 700 }}>Cortes / Usos Ilimitados no Mês</span>
               </label>
-
-              {!planForm.isUnlimitedUsages && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100}
-                    style={{ width: '84px', padding: '7px 10px' }}
-                    value={planForm.maxUsagesPerMonth}
-                    onChange={(e) => setPlanForm({ ...planForm, maxUsagesPerMonth: parseInt(e.target.value) || 1 })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>usos/mês</span>
-                </div>
-              )}
             </div>
+
+            {!planForm.isUnlimitedUsages && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  style={{ width: '76px', padding: '6px 10px', fontSize: '0.88rem' }}
+                  value={planForm.maxUsagesPerMonth}
+                  onChange={(e) => setPlanForm({ ...planForm, maxUsagesPerMonth: parseInt(e.target.value) || 1 })}
+                />
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>usos/mês</span>
+              </div>
+            )}
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
               Dias da Semana Permitidos
             </label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {WEEKDAYS.map((w) => {
                 const selected = planForm.allowedDaysOfWeek.includes(w.value);
                 return (
@@ -1950,9 +1958,9 @@ export default function ClubManagementPage() {
                       }
                     }}
                     style={{
-                      padding: '6px 13px',
+                      padding: '5px 12px',
                       borderRadius: '8px',
-                      fontSize: '0.8rem',
+                      fontSize: '0.78rem',
                       fontWeight: 700,
                       border: selected ? '1px solid #E5B338' : '1px solid rgba(255, 255, 255, 0.1)',
                       background: selected ? 'rgba(229, 179, 56, 0.2)' : 'rgba(255, 255, 255, 0.04)',
@@ -1968,20 +1976,20 @@ export default function ClubManagementPage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '5px' }}>
               Serviços Cobertos pelo Plano *
             </label>
             <div
               className="custom-scrollbar"
               style={{
-                maxHeight: '165px',
+                maxHeight: '132px',
                 overflowY: 'auto',
                 border: '1px solid var(--border-color)',
                 background: 'rgba(11, 15, 23, 0.55)',
                 borderRadius: '10px',
-                padding: '8px',
-                display: 'flex',
-                flexDirection: 'column',
+                padding: '6px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(215px, 1fr))',
                 gap: '6px',
               }}
             >
@@ -1999,15 +2007,16 @@ export default function ClubManagementPage() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '8px 10px',
+                        gap: '8px',
+                        padding: '7px 10px',
                         borderRadius: '8px',
                         background: checked ? 'rgba(229, 179, 56, 0.1)' : 'rgba(255, 255, 255, 0.02)',
                         border: checked ? '1px solid rgba(229, 179, 56, 0.3)' : '1px solid transparent',
                         cursor: 'pointer',
-                        fontSize: '0.85rem',
+                        fontSize: '0.82rem',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                         <input
                           type="checkbox"
                           checked={checked}
@@ -2022,9 +2031,19 @@ export default function ClubManagementPage() {
                             }
                           }}
                         />
-                        <span style={{ color: 'var(--text-main)', fontWeight: checked ? 600 : 400 }}>{svc.name}</span>
+                        <span
+                          style={{
+                            color: 'var(--text-main)',
+                            fontWeight: checked ? 600 : 400,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {svc.name}
+                        </span>
                       </div>
-                      <span style={{ fontSize: '0.78rem', color: '#E5B338', fontWeight: 600 }}>
+                      <span style={{ fontSize: '0.75rem', color: '#E5B338', fontWeight: 700, flexShrink: 0 }}>
                         {formatPrice(svc.priceCents)}
                       </span>
                     </label>
@@ -2035,7 +2054,7 @@ export default function ClubManagementPage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
               Descrição ou Regras (Opcional)
             </label>
             <textarea
@@ -2043,59 +2062,67 @@ export default function ClubManagementPage() {
               placeholder="Ex: Não acumulativo para o mês seguinte. Válido para qualquer barbeiro da casa."
               value={planForm.description}
               onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })}
+              style={{ padding: '8px 12px', fontSize: '0.85rem', minHeight: '48px', resize: 'vertical' }}
             />
           </div>
 
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.86rem' }}>
+          <div
+            style={{
+              position: 'sticky',
+              bottom: '-16px',
+              background: '#0F172A',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              marginTop: '2px',
+              paddingTop: '12px',
+              paddingBottom: '4px',
+              borderTop: '1px solid var(--border-color)',
+              zIndex: 5,
+            }}
+          >
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.84rem' }}>
               <input
                 type="checkbox"
                 checked={planForm.isActive}
                 onChange={(e) => setPlanForm({ ...planForm, isActive: e.target.checked })}
               />
-              <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>Plano Ativo para Novas Vendas</span>
+              <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>Plano Ativo para Vendas</span>
             </label>
-          </div>
 
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: '10px',
-              marginTop: '8px',
-              paddingTop: '14px',
-              borderTop: '1px solid var(--border-color)',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setPlanModalOpen(false)}
-              style={{
-                padding: '11px 18px',
-                borderRadius: '10px',
-                fontWeight: 600,
-                fontSize: '0.88rem',
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-main)',
-                cursor: 'pointer',
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={savingPlan}
-              className="gold-gradient-primary gold-glow"
-              style={{
-                padding: '11px 24px',
-                borderRadius: '10px',
-                fontWeight: 700,
-                fontSize: '0.88rem',
-              }}
-            >
-              {savingPlan ? 'Salvando...' : 'Salvar Plano'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={() => setPlanModalOpen(false)}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-main)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={savingPlan}
+                className="gold-gradient-primary gold-glow"
+                style={{
+                  padding: '9px 20px',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                }}
+              >
+                {savingPlan ? 'Salvando...' : 'Salvar Plano'}
+              </button>
+            </div>
           </div>
         </form>
       </Modal>
@@ -2105,19 +2132,20 @@ export default function ClubManagementPage() {
         isOpen={subModalOpen}
         onClose={() => setSubModalOpen(false)}
         title="Cadastrar Assinante no Clube VIP"
+        maxWidth="560px"
       >
-        <form onSubmit={handleSaveSub} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingTop: '4px' }}>
+        <form onSubmit={handleSaveSub} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
               Cliente *
             </label>
-            <div style={{ marginBottom: '8px' }}>
+            <div style={{ marginBottom: '6px' }}>
               <input
                 type="text"
                 placeholder="Filtrar cliente por nome..."
                 value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
-                style={{ fontSize: '0.84rem', padding: '8px 12px' }}
+                style={{ fontSize: '0.84rem', padding: '7px 12px' }}
               />
             </div>
             <Select
@@ -2139,7 +2167,7 @@ export default function ClubManagementPage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
               Plano Escolhido *
             </label>
             <Select
@@ -2156,9 +2184,9 @@ export default function ClubManagementPage() {
             </Select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Forma de Pagamento
               </label>
               <Select
@@ -2174,7 +2202,7 @@ export default function ClubManagementPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
                 Duração do Ciclo
               </label>
               <Select
@@ -2192,15 +2220,15 @@ export default function ClubManagementPage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '5px' }}>
               Modo de Renovação (Auto-Renew vs. Manual) *
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
               <button
                 type="button"
                 onClick={() => setNewSubForm({ ...newSubForm, autoRenew: true })}
                 style={{
-                  padding: '12px',
+                  padding: '10px 12px',
                   borderRadius: '10px',
                   textAlign: 'left',
                   cursor: 'pointer',
@@ -2218,13 +2246,13 @@ export default function ClubManagementPage() {
                     alignItems: 'center',
                     gap: '6px',
                     fontWeight: 700,
-                    fontSize: '0.84rem',
+                    fontSize: '0.82rem',
                     color: newSubForm.autoRenew ? '#34D399' : 'var(--text-main)',
                   }}
                 >
                   <RefreshCw size={14} /> Automática (Auto-Renew)
                 </div>
-                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.3 }}>
                   Renova automaticamente no vencimento e envia avisos pelo Bot.
                 </div>
               </button>
@@ -2233,7 +2261,7 @@ export default function ClubManagementPage() {
                 type="button"
                 onClick={() => setNewSubForm({ ...newSubForm, autoRenew: false })}
                 style={{
-                  padding: '12px',
+                  padding: '10px 12px',
                   borderRadius: '10px',
                   textAlign: 'left',
                   cursor: 'pointer',
@@ -2251,13 +2279,13 @@ export default function ClubManagementPage() {
                     alignItems: 'center',
                     gap: '6px',
                     fontWeight: 700,
-                    fontSize: '0.84rem',
+                    fontSize: '0.82rem',
                     color: !newSubForm.autoRenew ? '#FBBF24' : 'var(--text-main)',
                   }}
                 >
                   <Calendar size={14} /> Renovação Manual
                 </div>
-                <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35 }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.3 }}>
                   Bot envia os mesmos avisos (D-3, D0, D+2) e o cliente escolhe renovar.
                 </div>
               </button>
@@ -2265,7 +2293,7 @@ export default function ClubManagementPage() {
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
               Observações da Matrícula (Opcional)
             </label>
             <textarea
@@ -2273,27 +2301,33 @@ export default function ClubManagementPage() {
               placeholder="Ex: Pagamento via PIX confirmado na recepção."
               value={newSubForm.notes}
               onChange={(e) => setNewSubForm({ ...newSubForm, notes: e.target.value })}
+              style={{ padding: '8px 12px', fontSize: '0.85rem', minHeight: '46px' }}
             />
           </div>
 
           <div
             style={{
+              position: 'sticky',
+              bottom: '-16px',
+              background: '#0F172A',
               display: 'flex',
               justifyContent: 'flex-end',
               gap: '10px',
-              marginTop: '8px',
-              paddingTop: '14px',
+              marginTop: '4px',
+              paddingTop: '12px',
+              paddingBottom: '4px',
               borderTop: '1px solid var(--border-color)',
+              zIndex: 5,
             }}
           >
             <button
               type="button"
               onClick={() => setSubModalOpen(false)}
               style={{
-                padding: '11px 18px',
+                padding: '9px 16px',
                 borderRadius: '10px',
                 fontWeight: 600,
-                fontSize: '0.88rem',
+                fontSize: '0.85rem',
                 background: 'rgba(255, 255, 255, 0.06)',
                 border: '1px solid var(--border-color)',
                 color: 'var(--text-main)',
@@ -2307,10 +2341,10 @@ export default function ClubManagementPage() {
               disabled={savingSub}
               className="gold-gradient-primary gold-glow"
               style={{
-                padding: '11px 24px',
+                padding: '9px 20px',
                 borderRadius: '10px',
                 fontWeight: 700,
-                fontSize: '0.88rem',
+                fontSize: '0.85rem',
               }}
             >
               {savingSub ? 'Cadastrando...' : 'Confirmar Assinatura'}
