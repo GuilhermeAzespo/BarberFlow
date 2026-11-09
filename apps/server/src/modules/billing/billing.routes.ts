@@ -14,8 +14,21 @@ import {
   inferPaymentMethodId,
   translateMpStatusDetail,
 } from '../../lib/mercadopago.js';
-import { effectiveLimits, evaluateTenantAccess, syncExpiredTenantsAndSubscriptions } from '../../lib/tenant-access.js';
-import { getAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
+import {
+  effectiveLimits,
+  evaluateTenantAccess,
+  extractPlanPermissions,
+  syncExpiredTenantsAndSubscriptions,
+  type PlanPermissions,
+} from '../../lib/tenant-access.js';
+import {
+  getAddonsCatalog,
+  getAddonByKey,
+  parseSubscriptionActiveAddons,
+  activateAddonOnSubscription,
+  cancelAddonOnSubscription,
+  type SubscribedAddonEntry,
+} from '../../lib/addons.js';
 import { validateAndCalculateCoupon, incrementCouponUsage } from '../../lib/coupons.js';
 import {
   BILLING_CYCLES,
@@ -32,15 +45,18 @@ export const billingRouter = Router();
 const billingCycleSchema = z.enum(['MONTHLY', 'SEMIANNUAL', 'ANNUAL']).default('MONTHLY');
 
 /**
- * Calcula o valor final de um plano considerando ciclo (Mensal/Semestral/Anual) + cupom.
- * O cupom é aplicado sobre o valor do ciclo já com o desconto progressivo.
+ * Calcula o valor final de um plano considerando ciclo (Mensal/Semestral/Anual) + Add-ons ativos à parte + cupom.
  */
 async function resolvePlanCheckoutAmount(params: {
-  plan: { priceCents: number };
+  plan: { priceCents: number; slug?: string; features?: any };
+  subscription?: any;
   billingCycle: BillingCycle;
   couponCode?: string;
 }) {
-  const cyclesConfig = await getBillingCyclesConfig();
+  const [cyclesConfig, addonsCatalog] = await Promise.all([
+    getBillingCyclesConfig(),
+    getAddonsCatalog(),
+  ]);
   let cycle;
   try {
     cycle = calculateCyclePrice(params.plan.priceCents, params.billingCycle, cyclesConfig);
@@ -48,7 +64,17 @@ async function resolvePlanCheckoutAmount(params: {
     throw HttpError.badRequest(err instanceof Error ? err.message : 'Ciclo de cobrança inválido.');
   }
 
-  let finalAmountCents = cycle.amountCents;
+  // Verifica quais Add-ons contratados à parte na assinatura continuam sendo cobrados à parte neste plano
+  const planPerms = extractPlanPermissions(params.plan);
+  const allContractedAddons = parseSubscriptionActiveAddons(params.subscription, addonsCatalog);
+  const billableAddons: SubscribedAddonEntry[] = allContractedAddons.filter(
+    (addon) => !planPerms[addon.key],
+  );
+  const addonsMonthlyCents = billableAddons.reduce((sum, a) => sum + a.priceCents, 0);
+  const addonsCycleCents = addonsMonthlyCents * cycle.months;
+
+  const baseInvoiceAmountCents = cycle.amountCents + addonsCycleCents;
+  let finalAmountCents = baseInvoiceAmountCents;
   let appliedCouponCode: string | null = null;
   let couponDiscountCents = 0;
 
@@ -56,7 +82,7 @@ async function resolvePlanCheckoutAmount(params: {
     const couponCheck = await validateAndCalculateCoupon({
       code: params.couponCode,
       targetType: 'PLAN',
-      originalAmountCents: cycle.amountCents,
+      originalAmountCents: baseInvoiceAmountCents,
     });
     if (!couponCheck.valid || !couponCheck.coupon) {
       throw HttpError.badRequest(couponCheck.message);
@@ -66,7 +92,16 @@ async function resolvePlanCheckoutAmount(params: {
     appliedCouponCode = couponCheck.coupon.code;
   }
 
-  return { cycle, finalAmountCents, appliedCouponCode, couponDiscountCents };
+  return {
+    cycle,
+    billableAddons,
+    addonsMonthlyCents,
+    addonsCycleCents,
+    baseInvoiceAmountCents,
+    finalAmountCents,
+    appliedCouponCode,
+    couponDiscountCents,
+  };
 }
 
 const pixCheckoutSchema = z.object({
@@ -113,16 +148,19 @@ billingRouter.post('/coupons/validate', async (req, res) => {
     if (!body.planId) {
       throw HttpError.badRequest('Selecione um plano para validar o cupom.');
     }
-    const plan = await prisma.plan.findUnique({ where: { id: body.planId } });
+    const [plan, sub] = await Promise.all([
+      prisma.plan.findUnique({ where: { id: body.planId } }),
+      req.tenantId ? prisma.subscription.findUnique({ where: { tenantId: req.tenantId } }) : Promise.resolve(null),
+    ]);
     if (!plan || !plan.isActive) {
       throw HttpError.badRequest('Plano selecionado inválido.');
     }
-    try {
-      const cyclesConfig = await getBillingCyclesConfig();
-      originalAmountCents = calculateCyclePrice(plan.priceCents, body.billingCycle, cyclesConfig).amountCents;
-    } catch (err) {
-      throw HttpError.badRequest(err instanceof Error ? err.message : 'Ciclo de cobrança inválido.');
-    }
+    const resolved = await resolvePlanCheckoutAmount({
+      plan,
+      subscription: sub,
+      billingCycle: body.billingCycle,
+    });
+    originalAmountCents = resolved.baseInvoiceAmountCents;
   } else {
     const addonCfg = await getAddonByKey((body.addonKey as any) || 'nfse');
     originalAmountCents = addonCfg.priceCents;
@@ -193,6 +231,20 @@ billingRouter.get('/status', async (req, res) => {
   const lastPaymentMeta = (lastPlanPayment?.metadata as Record<string, any> | null) || null;
   const currentBillingCycle = parseBillingCycle(lastPaymentMeta?.billingCycle);
 
+  const currentPlanPerms = extractPlanPermissions(sub?.plan);
+  const allContractedAddons = parseSubscriptionActiveAddons(sub, addonsCatalog);
+  const billableAddons = allContractedAddons.filter((a) => !currentPlanPerms[a.key]);
+  const addonsTotalMonthlyCents = billableAddons.reduce((sum, a) => sum + a.priceCents, 0);
+  const planMonthlyCents = sub?.plan?.priceCents || 0;
+  const contractedMap = new Map(allContractedAddons.map((a) => [a.key, a]));
+
+  const enrichedAddonsCatalog = addonsCatalog.map((item) => ({
+    ...item,
+    includedInPlan: Boolean(currentPlanPerms[item.key]),
+    contracted: contractedMap.has(item.key) && !currentPlanPerms[item.key],
+    expiresAt: contractedMap.get(item.key)?.expiresAt || null,
+  }));
+
   res.json({
     tenant: {
       id: tenant.id,
@@ -224,15 +276,23 @@ billingRouter.get('/status', async (req, res) => {
           limits: effectiveLimits(sub),
           nfseAddonActive: sub.nfseAddonActive,
           nfseAddonExpiresAt: sub.nfseAddonExpiresAt,
+          activeAddons: billableAddons,
         }
       : null,
+    invoiceBreakdown: {
+      planName: sub?.plan?.name || 'Starter',
+      planPriceCents: planMonthlyCents,
+      addons: billableAddons,
+      addonsTotalCents: addonsTotalMonthlyCents,
+      totalMonthlyCents: planMonthlyCents + addonsTotalMonthlyCents,
+    },
     nfseAddon: {
-      active: Boolean(sub?.nfseAddonActive),
-      expiresAt: sub?.nfseAddonExpiresAt ?? null,
+      active: Boolean(sub?.nfseAddonActive || contractedMap.has('nfse')),
+      expiresAt: contractedMap.get('nfse')?.expiresAt ?? sub?.nfseAddonExpiresAt ?? null,
       priceCents: nfseAddonPriceCents,
       isAddon: nfseAddonCfg.isAddon,
     },
-    addons: addonsCatalog,
+    addons: enrichedAddonsCatalog,
     billingCycles: {
       available: BILLING_CYCLES.filter((c) => c === 'MONTHLY' || cyclesConfig[c].enabled),
       MONTHLY: { enabled: true, discountPct: 0, maxInstallments: 1 },
@@ -303,11 +363,16 @@ billingRouter.post('/checkout/pix', async (req, res) => {
 
   const {
     cycle,
+    billableAddons,
+    addonsMonthlyCents,
+    addonsCycleCents,
+    baseInvoiceAmountCents,
     finalAmountCents,
     appliedCouponCode,
     couponDiscountCents: discountCents,
   } = await resolvePlanCheckoutAmount({
     plan,
+    subscription: tenant.subscription,
     billingCycle: data.billingCycle,
     couponCode: data.couponCode,
   });
@@ -316,10 +381,19 @@ billingRouter.post('/checkout/pix', async (req, res) => {
     billingCycle: cycle.cycle,
     cycleDays: cycle.days,
     cycleMonths: cycle.months,
-    grossAmountCents: cycle.grossAmountCents,
+    grossAmountCents: cycle.grossAmountCents + addonsCycleCents,
     cycleDiscountPct: cycle.cycleDiscountPct,
     cycleDiscountCents: cycle.cycleDiscountCents,
-    originalAmountCents: cycle.amountCents,
+    originalAmountCents: baseInvoiceAmountCents,
+    planAmountCents: cycle.amountCents,
+    addonsMonthlyCents,
+    addonsCycleCents,
+    includedAddons: billableAddons.map((a) => ({
+      key: a.key,
+      name: a.name,
+      shortName: a.shortName,
+      priceCents: a.priceCents,
+    })),
     ...(typeof data.autoRenew === 'boolean' ? { autoRenew: data.autoRenew } : {}),
     ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
   };
@@ -354,9 +428,13 @@ billingRouter.post('/checkout/pix', async (req, res) => {
   });
 
   try {
+    const addonsDescSuffix =
+      billableAddons.length > 0
+        ? ` + Add-ons (${billableAddons.map((a) => a.shortName).join(', ')})`
+        : '';
     const pixResult = await createMercadoPagoPix({
       amountCents: finalAmountCents,
-      description: `BarberFlow - Assinatura Plano ${plan.name}${cycleSuffix} (${tenant.name})${
+      description: `BarberFlow - Fatura Plano ${plan.name}${addonsDescSuffix}${cycleSuffix} (${tenant.name})${
         appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
       }`,
       payerEmail,
@@ -433,11 +511,16 @@ billingRouter.post('/checkout/card', async (req, res) => {
 
   const {
     cycle,
+    billableAddons,
+    addonsMonthlyCents,
+    addonsCycleCents,
+    baseInvoiceAmountCents,
     finalAmountCents,
     appliedCouponCode,
     couponDiscountCents: discountCents,
   } = await resolvePlanCheckoutAmount({
     plan,
+    subscription: tenant.subscription,
     billingCycle: data.billingCycle,
     couponCode: data.couponCode,
   });
@@ -446,10 +529,19 @@ billingRouter.post('/checkout/card', async (req, res) => {
     billingCycle: cycle.cycle,
     cycleDays: cycle.days,
     cycleMonths: cycle.months,
-    grossAmountCents: cycle.grossAmountCents,
+    grossAmountCents: cycle.grossAmountCents + addonsCycleCents,
     cycleDiscountPct: cycle.cycleDiscountPct,
     cycleDiscountCents: cycle.cycleDiscountCents,
-    originalAmountCents: cycle.amountCents,
+    originalAmountCents: baseInvoiceAmountCents,
+    planAmountCents: cycle.amountCents,
+    addonsMonthlyCents,
+    addonsCycleCents,
+    includedAddons: billableAddons.map((a) => ({
+      key: a.key,
+      name: a.name,
+      shortName: a.shortName,
+      priceCents: a.priceCents,
+    })),
     ...(typeof data.autoRenew === 'boolean' ? { autoRenew: data.autoRenew } : {}),
     ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
   };
@@ -564,6 +656,13 @@ billingRouter.post('/checkout/card', async (req, res) => {
         : DateTime.fromJSDate(now);
       const currentPeriodEnd = baseDate.plus({ days: cycle.days }).toJSDate();
 
+      // Estende a validade dos Add-ons contratados à parte que foram cobrados nesta fatura
+      const currentAddonsList = parseSubscriptionActiveAddons(existingSub);
+      const renewedAddonsList = currentAddonsList.map((a) => ({
+        ...a,
+        expiresAt: currentPeriodEnd.toISOString(),
+      }));
+
       await prisma.subscription.upsert({
         where: { tenantId },
         create: {
@@ -574,6 +673,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
           currentPeriodStart: now,
           currentPeriodEnd,
           lastPaymentAt: now,
+          activeAddons: renewedAddonsList as any,
         },
         update: {
           planId: plan.id,
@@ -582,6 +682,7 @@ billingRouter.post('/checkout/card', async (req, res) => {
           currentPeriodStart: now,
           currentPeriodEnd,
           lastPaymentAt: now,
+          activeAddons: renewedAddonsList as any,
         },
       });
 
@@ -624,6 +725,20 @@ billingRouter.post('/checkout/card', async (req, res) => {
   }
 });
 
+function extractAddonKeyFromPayment(payment: any, mpMetadata?: any): keyof PlanPermissions | null {
+  if (mpMetadata?.addon_key) return mpMetadata.addon_key as keyof PlanPermissions;
+  if (mpMetadata?.addon_type === 'NFSE') return 'nfse';
+  const detail = String(payment?.mpStatusDetail || '');
+  if (detail.startsWith('ADDON:')) {
+    const parts = detail.split(':');
+    if (parts[1]) return parts[1] as keyof PlanPermissions;
+  }
+  if (detail.startsWith('ADDON_NFSE')) return 'nfse';
+  const meta = (payment?.metadata as Record<string, any> | null) || {};
+  if (meta.addonKey) return meta.addonKey as keyof PlanPermissions;
+  return null;
+}
+
 // Verificação de status de pagamento (Polling Pix ou conferência de fatura)
 billingRouter.get('/payments/:paymentId/status', async (req, res) => {
   const tenantId = req.tenantId!;
@@ -648,9 +763,7 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
       const mpStatus = await getMercadoPagoPayment(payment.mpPaymentId);
       if (mpStatus.status === 'approved') {
         const now = new Date();
-        const isNfseAddon =
-          mpStatus.metadata?.addon_type === 'NFSE' ||
-          payment.mpStatusDetail?.startsWith('ADDON_NFSE');
+        const detectedAddonKey = extractAddonKeyFromPayment(payment, mpStatus.metadata);
 
         // Atualização atômica para impedir ativação duplicada com o Webhook
         const lockUpdate = await prisma.saaSPayment.updateMany({
@@ -661,7 +774,9 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
           data: {
             status: 'APPROVED',
             mpStatus: mpStatus.status,
-            mpStatusDetail: isNfseAddon ? `ADDON_NFSE:${mpStatus.statusDetail || 'accredited'}` : mpStatus.statusDetail,
+            mpStatusDetail: detectedAddonKey
+              ? `ADDON:${detectedAddonKey}:${mpStatus.statusDetail || 'accredited'}`
+              : mpStatus.statusDetail,
             paidAt: mpStatus.dateApproved ? new Date(mpStatus.dateApproved) : now,
           },
         });
@@ -677,28 +792,13 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
 
           const existingSub = payment.tenant?.subscription;
 
-          if (isNfseAddon) {
-            const baseDate =
-              existingSub?.nfseAddonActive &&
-              existingSub?.nfseAddonExpiresAt &&
-              existingSub.nfseAddonExpiresAt > now
-                ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
-                : DateTime.fromJSDate(now);
-            const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
-
-            await prisma.subscription.updateMany({
-              where: { tenantId },
-              data: {
-                nfseAddonActive: true,
-                nfseAddonExpiresAt,
-                lastPaymentAt: now,
-              },
-            });
+          if (detectedAddonKey) {
+            const activated = await activateAddonOnSubscription(tenantId, detectedAddonKey, 30);
 
             await systemLog({
               tenantId,
               source: 'billing',
-              message: `Módulo Add-on NFS-e ativado via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})${
+              message: `Módulo Add-on [${activated.name}] ativado via PIX no Mercado Pago (MP ID: ${payment.mpPaymentId})${
                 usedCouponCode ? ` [Cupom: ${usedCouponCode}]` : ''
               }`,
             });
@@ -715,6 +815,12 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
             const cycleDays = resolvePaymentCycleDays(paymentMeta, mpStatus.metadata);
             const currentPeriodEnd = baseDate.plus({ days: cycleDays }).toJSDate();
 
+            const currentAddonsList = parseSubscriptionActiveAddons(existingSub);
+            const renewedAddonsList = currentAddonsList.map((a) => ({
+              ...a,
+              expiresAt: currentPeriodEnd.toISOString(),
+            }));
+
             await prisma.subscription.upsert({
               where: { tenantId },
               create: {
@@ -724,6 +830,7 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
                 currentPeriodStart: now,
                 currentPeriodEnd,
                 lastPaymentAt: now,
+                activeAddons: renewedAddonsList as any,
               },
               update: {
                 planId: payment.planId,
@@ -731,6 +838,7 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
                 currentPeriodStart: now,
                 currentPeriodEnd,
                 lastPaymentAt: now,
+                activeAddons: renewedAddonsList as any,
               },
             });
 
@@ -749,12 +857,14 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
           }
         }
 
+        const addonCfg = detectedAddonKey ? await getAddonByKey(detectedAddonKey) : null;
         return res.json({
           id: payment.id,
           status: 'APPROVED',
           isPaid: true,
-          isAddon: isNfseAddon,
-          planName: isNfseAddon ? 'Módulo Emissor NFS-e (Add-on)' : payment.plan.name,
+          isAddon: Boolean(detectedAddonKey),
+          addonKey: detectedAddonKey,
+          planName: addonCfg ? `Add-on: ${addonCfg.shortName}` : payment.plan.name,
           amountCents: payment.amountCents,
           paidAt: now,
         });
@@ -764,14 +874,16 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
     }
   }
 
-  const isNfseAddon = payment.mpStatusDetail?.startsWith('ADDON_NFSE') || false;
+  const detectedAddonKey = extractAddonKeyFromPayment(payment);
+  const addonCfg = detectedAddonKey ? await getAddonByKey(detectedAddonKey) : null;
 
   res.json({
     id: payment.id,
     status: payment.status,
     isPaid: payment.status === 'APPROVED',
-    isAddon: isNfseAddon,
-    planName: isNfseAddon ? 'Módulo Emissor NFS-e (Add-on)' : payment.plan.name,
+    isAddon: Boolean(detectedAddonKey),
+    addonKey: detectedAddonKey,
+    planName: addonCfg ? `Add-on: ${addonCfg.shortName}` : payment.plan.name,
     amountCents: payment.amountCents,
     paidAt: payment.paidAt,
   });
@@ -780,31 +892,79 @@ billingRouter.get('/payments/:paymentId/status', async (req, res) => {
 // Histórico de Faturas / Pagamentos do Salão
 billingRouter.get('/history', async (req, res) => {
   const tenantId = req.tenantId!;
-  const rawPayments = await prisma.saaSPayment.findMany({
-    where: { tenantId },
-    orderBy: { createdAt: 'desc' },
-    take: 25,
-    include: {
-      plan: { select: { id: true, name: true, slug: true } },
-    },
-  });
+  const [rawPayments, addonsCatalog] = await Promise.all([
+    prisma.saaSPayment.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+      take: 25,
+      include: {
+        plan: { select: { id: true, name: true, slug: true } },
+      },
+    }),
+    getAddonsCatalog(),
+  ]);
 
   const payments = rawPayments.map((p) => {
-    const isAddon = p.mpStatusDetail?.startsWith('ADDON_NFSE');
-    return {
-      ...p,
-      plan: isAddon
-        ? { id: p.plan.id, name: 'Add-on Emissor NFS-e', slug: 'addon-nfse' }
-        : p.plan,
-    };
+    const addonKey = extractAddonKeyFromPayment(p);
+    if (addonKey) {
+      const cat = addonsCatalog.find((a) => a.key === addonKey);
+      return {
+        ...p,
+        plan: {
+          id: p.plan.id,
+          name: `Add-on: ${cat?.shortName || addonKey}`,
+          slug: `addon-${addonKey}`,
+        },
+      };
+    }
+    const meta = (p.metadata as Record<string, any> | null) || {};
+    const includedAddons = Array.isArray(meta.includedAddons) ? meta.includedAddons : [];
+    if (includedAddons.length > 0) {
+      return {
+        ...p,
+        plan: {
+          id: p.plan.id,
+          name: `Plano ${p.plan.name} + ${includedAddons.map((a: any) => a.shortName || a.name).join(', ')}`,
+          slug: p.plan.slug,
+        },
+      };
+    }
+    return p;
   });
 
   res.json({ payments });
 });
 
-// Checkout Add-on Módulo Emissor Fiscal NFS-e via PIX
-billingRouter.post('/addon/nfse/pix', async (req, res) => {
+// Cancelar apenas um Add-on específico (mantendo o plano do cliente)
+const handleCancelAddon = async (req: any, res: any) => {
   const tenantId = req.tenantId!;
+  const addonKey = String(req.params.addonKey || '') as keyof PlanPermissions;
+  const addonCfg = await getAddonByKey(addonKey);
+
+  const remainingAddons = await cancelAddonOnSubscription(tenantId, addonKey);
+
+  await systemLog({
+    tenantId,
+    source: 'billing',
+    message: `Cliente cancelou o módulo Add-on [${addonCfg.name}] da sua assinatura/fatura.`,
+    meta: { addonKey },
+  });
+
+  res.json({
+    success: true,
+    addonKey,
+    activeAddons: remainingAddons,
+    message: `O Add-on "${addonCfg.shortName}" foi cancelado e removido da sua fatura mensal. Seu plano principal continua ativo normalmente!`,
+  });
+};
+
+billingRouter.delete('/addon/:addonKey', handleCancelAddon);
+billingRouter.post('/addon/:addonKey/cancel', handleCancelAddon);
+
+// Checkout Genérico de Qualquer Add-on do Marketplace via PIX
+billingRouter.post('/addon/:addonKey/pix', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const addonKey = String(req.params.addonKey || 'nfse') as keyof PlanPermissions;
   const body = z
     .object({
       payerCpf: z.string().trim().optional(),
@@ -825,13 +985,13 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
     throw HttpError.notFound('Assinatura do salão não encontrada.');
   }
 
-  const nfseAddonCfg = await getAddonByKey('nfse');
-  if (!nfseAddonCfg.isAddon) {
+  const addonCfg = await getAddonByKey(addonKey);
+  if (!addonCfg || !addonCfg.isAddon) {
     throw HttpError.badRequest(
-      'Este módulo não está disponível para contratação avulsa no momento. Faça upgrade do seu plano para liberá-lo.',
+      'Este módulo não está disponível para contratação avulsa no momento.',
     );
   }
-  const addonPriceCents = nfseAddonCfg.priceCents;
+  const addonPriceCents = addonCfg.priceCents;
 
   let finalAmountCents = addonPriceCents;
   let appliedCouponCode: string | null = null;
@@ -863,24 +1023,23 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
       amountCents: finalAmountCents,
       method: 'PIX',
       status: 'PENDING',
-      mpStatusDetail: 'ADDON_NFSE:pending',
+      mpStatusDetail: `ADDON:${addonKey}:pending`,
       payerEmail,
       payerName,
       payerDoc: body.payerCpf ? body.payerCpf.replace(/\D/g, '') : null,
-      metadata: appliedCouponCode
-        ? {
-            couponCode: appliedCouponCode,
-            discountCents,
-            originalAmountCents: addonPriceCents,
-          }
-        : undefined,
+      metadata: {
+        addonKey,
+        addonName: addonCfg.name,
+        originalAmountCents: addonPriceCents,
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
+      },
     },
   });
 
   try {
     const pixResult = await createMercadoPagoPix({
       amountCents: finalAmountCents,
-      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})${
+      description: `BarberFlow - Add-on ${addonCfg.shortName} (${tenant.name})${
         appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
       }`,
       payerEmail,
@@ -891,7 +1050,8 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
         tenant_id: tenantId,
         plan_id: tenant.subscription.planId,
         saas_payment_id: saasPayment.id,
-        addon_type: 'NFSE',
+        addon_key: addonKey,
+        addon_type: addonKey.toUpperCase(),
         ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
@@ -901,7 +1061,7 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
       data: {
         mpPaymentId: pixResult.paymentId,
         mpStatus: pixResult.status,
-        mpStatusDetail: `ADDON_NFSE:${pixResult.statusDetail || 'pending'}`,
+        mpStatusDetail: `ADDON:${addonKey}:${pixResult.statusDetail || 'pending'}`,
         qrCode: pixResult.qrCode,
         qrCodeBase64: pixResult.qrCodeBase64,
         ticketUrl: pixResult.ticketUrl,
@@ -913,7 +1073,8 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
       paymentId: updatedPayment.id,
       mpPaymentId: pixResult.paymentId,
       status: pixResult.status,
-      planName: 'Módulo Emissor NFS-e (Add-on)',
+      addonKey,
+      planName: `Add-on: ${addonCfg.shortName}`,
       amountCents: finalAmountCents,
       originalAmountCents: addonPriceCents,
       discountCents,
@@ -926,15 +1087,16 @@ billingRouter.post('/addon/nfse/pix', async (req, res) => {
   } catch (err: unknown) {
     await prisma.saaSPayment.update({
       where: { id: saasPayment.id },
-      data: { status: 'REJECTED', mpStatusDetail: `ADDON_NFSE:${err instanceof Error ? err.message : 'Falha Pix'}` },
+      data: { status: 'REJECTED', mpStatusDetail: `ADDON:${addonKey}:${err instanceof Error ? err.message : 'Falha Pix'}` },
     });
-    throw HttpError.badRequest(err instanceof Error ? err.message : 'Falha ao gerar cobrança Pix do módulo NFS-e.');
+    throw HttpError.badRequest(err instanceof Error ? err.message : `Falha ao gerar cobrança Pix do módulo ${addonCfg.shortName}.`);
   }
 });
 
-// Checkout Add-on Módulo Emissor Fiscal NFS-e via Cartão de Crédito
-billingRouter.post('/addon/nfse/card', async (req, res) => {
+// Checkout Genérico de Qualquer Add-on do Marketplace via Cartão de Crédito
+billingRouter.post('/addon/:addonKey/card', async (req, res) => {
   const tenantId = req.tenantId!;
+  const addonKey = String(req.params.addonKey || 'nfse') as keyof PlanPermissions;
   const data = z
     .object({
       token: z.string().optional(),
@@ -961,13 +1123,13 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     throw HttpError.notFound('Assinatura do salão não encontrada.');
   }
 
-  const nfseAddonCfg = await getAddonByKey('nfse');
-  if (!nfseAddonCfg.isAddon) {
+  const addonCfg = await getAddonByKey(addonKey);
+  if (!addonCfg || !addonCfg.isAddon) {
     throw HttpError.badRequest(
-      'Este módulo não está disponível para contratação avulsa no momento. Faça upgrade do seu plano para liberá-lo.',
+      'Este módulo não está disponível para contratação avulsa no momento.',
     );
   }
-  const addonPriceCents = nfseAddonCfg.priceCents;
+  const addonPriceCents = addonCfg.priceCents;
 
   let finalAmountCents = addonPriceCents;
   let appliedCouponCode: string | null = null;
@@ -1015,18 +1177,17 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       amountCents: finalAmountCents,
       method: 'CREDIT_CARD',
       status: 'PENDING',
-      mpStatusDetail: 'ADDON_NFSE:pending',
+      mpStatusDetail: `ADDON:${addonKey}:pending`,
       payerEmail,
       payerName,
       payerDoc: data.cardholderCpf ? data.cardholderCpf.replace(/\D/g, '') : null,
       installments: data.installments,
-      metadata: appliedCouponCode
-        ? {
-            couponCode: appliedCouponCode,
-            discountCents,
-            originalAmountCents: addonPriceCents,
-          }
-        : undefined,
+      metadata: {
+        addonKey,
+        addonName: addonCfg.name,
+        originalAmountCents: addonPriceCents,
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
+      },
     },
   });
 
@@ -1034,7 +1195,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
     const cardResult = await createMercadoPagoCardPayment({
       amountCents: finalAmountCents,
       token: cardToken,
-      description: `BarberFlow - Módulo Emissor NFS-e (${tenant.name})${
+      description: `BarberFlow - Add-on ${addonCfg.shortName} (${tenant.name})${
         appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
       }`,
       installments: data.installments,
@@ -1047,7 +1208,8 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
         tenant_id: tenantId,
         plan_id: tenant.subscription.planId,
         saas_payment_id: saasPayment.id,
-        addon_type: 'NFSE',
+        addon_key: addonKey,
+        addon_type: addonKey.toUpperCase(),
         ...(appliedCouponCode ? { coupon_code: appliedCouponCode } : {}),
       },
     });
@@ -1059,7 +1221,7 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       data: {
         mpPaymentId: cardResult.paymentId,
         mpStatus: cardResult.status,
-        mpStatusDetail: `ADDON_NFSE:${cardResult.statusDetail || ''}`,
+        mpStatusDetail: `ADDON:${addonKey}:${cardResult.statusDetail || ''}`,
         cardBrand: cardResult.cardBrand,
         cardLastFour: cardResult.cardLastFour,
         installments: cardResult.installments,
@@ -1073,29 +1235,12 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
         await incrementCouponUsage(appliedCouponCode);
       }
 
-      const now = new Date();
-      const existingSub = tenant.subscription;
-      const baseDate =
-        existingSub?.nfseAddonActive &&
-        existingSub?.nfseAddonExpiresAt &&
-        existingSub.nfseAddonExpiresAt > now
-          ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
-          : DateTime.fromJSDate(now);
-      const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
-
-      await prisma.subscription.update({
-        where: { tenantId },
-        data: {
-          nfseAddonActive: true,
-          nfseAddonExpiresAt,
-          lastPaymentAt: now,
-        },
-      });
+      const activated = await activateAddonOnSubscription(tenantId, addonKey, 30);
 
       await systemLog({
         tenantId,
         source: 'billing',
-        message: `Módulo Add-on NFS-e ativado via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})${
+        message: `Módulo Add-on [${activated.name}] ativado via Cartão de Crédito no Mercado Pago (MP ID: ${cardResult.paymentId})${
           appliedCouponCode ? ` [Cupom: ${appliedCouponCode}]` : ''
         }`,
       });
@@ -1103,7 +1248,8 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
       return res.json({
         success: true,
         status: 'approved',
-        message: 'Pagamento aprovado! O Módulo Emissor de NFS-e já está liberado para sua barbearia.',
+        addonKey,
+        message: `Pagamento aprovado! O módulo "${addonCfg.shortName}" já está liberado para sua barbearia e foi incluído na sua fatura.`,
         paymentId: saasPayment.id,
       });
     }
@@ -1118,8 +1264,8 @@ billingRouter.post('/addon/nfse/card', async (req, res) => {
   } catch (err: unknown) {
     await prisma.saaSPayment.update({
       where: { id: saasPayment.id },
-      data: { status: 'REJECTED', mpStatusDetail: `ADDON_NFSE:${err instanceof Error ? err.message : 'Falha Cartão'}` },
+      data: { status: 'REJECTED', mpStatusDetail: `ADDON:${addonKey}:${err instanceof Error ? err.message : 'Falha Cartão'}` },
     });
-    throw HttpError.badRequest(err instanceof Error ? err.message : 'Falha ao processar pagamento do módulo NFS-e.');
+    throw HttpError.badRequest(err instanceof Error ? err.message : `Falha ao processar pagamento do módulo ${addonCfg.shortName}.`);
   }
 });

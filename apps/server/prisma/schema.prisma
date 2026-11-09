@@ -181,6 +181,8 @@ model Subscription {
   // Módulo Add-on de Emissão de NFS-e contratado à parte (ou liberado pelo Super Admin)
   nfseAddonActive          Boolean            @default(false)
   nfseAddonExpiresAt       DateTime?
+  // Lista de todos os Add-ons contratados à parte pelo salão (incluídos na fatura mensal)
+  activeAddons             Json?
   autoRenew                Boolean            @default(true)
   notes                    String?
   createdAt                DateTime           @default(now())

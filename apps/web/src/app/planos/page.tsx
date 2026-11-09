@@ -365,6 +365,149 @@ const calcCyclePrice = (monthlyPriceCents: number, cycle: BillingCycle, cfg: Bil
   };
 };
 
+export interface SubscribedAddonItem {
+  key: string;
+  name: string;
+  shortName: string;
+  priceCents: number;
+  activatedAt?: string;
+  expiresAt?: string | null;
+}
+
+export interface AddonCatalogItem {
+  key: string;
+  name: string;
+  shortName: string;
+  description: string;
+  priceCents: number;
+  icon: string;
+  category: string;
+  isAddon: boolean;
+  includedInPlan?: boolean;
+  contracted?: boolean;
+  expiresAt?: string | null;
+}
+
+const DEFAULT_MARKETPLACE_ADDONS: AddonCatalogItem[] = [
+  {
+    key: 'onlinePayments',
+    name: 'Recebimento Online (Mercado Pago API)',
+    shortName: 'Recebimento Online',
+    description:
+      'Receba pagamentos via PIX e Cartão de Crédito dos planos mensais do Clube VIP diretamente na conta Mercado Pago do seu salão, com liberação automática.',
+    priceCents: 990,
+    icon: 'CreditCard',
+    category: 'Pagamentos & Integrações',
+    isAddon: true,
+  },
+  {
+    key: 'club',
+    name: 'Clube de Assinatura VIP (MRR)',
+    shortName: 'Clube VIP',
+    description:
+      'Crie planos recorrentes de corte ou barba ilimitada para seus clientes, controle usos mensais e gere receita recorrente previsível.',
+    priceCents: 3990,
+    icon: 'Crown',
+    category: 'Receita Recorrente',
+    isAddon: true,
+  },
+  {
+    key: 'marketing',
+    name: 'Campanhas & Retorno de Clientes',
+    shortName: 'Automação de Retorno',
+    description:
+      'Resgate automático via WhatsApp de clientes sumidos (15, 30, 45 dias) e mensagens automáticas de feliz aniversário com cupom.',
+    priceCents: 2990,
+    icon: 'Flame',
+    category: 'Automação & Vendas',
+    isAddon: true,
+  },
+  {
+    key: 'loyalty',
+    name: 'Cartão Fidelidade Digital & Cashback',
+    shortName: 'Fidelidade Digital',
+    description:
+      'Programa de selos automáticos (ex: complete 10 cortes e ganhe 1 grátis) integrado ao WhatsApp para fidelizar clientes.',
+    priceCents: 1990,
+    icon: 'Star',
+    category: 'Fidelização',
+    isAddon: true,
+  },
+  {
+    key: 'nfse',
+    name: 'Módulo Fiscal NFS-e Automática',
+    shortName: 'Módulo Fiscal NFS-e',
+    description:
+      'Emissão automática de Nota Fiscal de Serviço Eletrônica (Padrão Nacional / Municipal) a cada atendimento concluído e envio em PDF no WhatsApp.',
+    priceCents: 2990,
+    icon: 'FileText',
+    category: 'Fiscal & Contábil',
+    isAddon: true,
+  },
+];
+
+const isAddonIncludedInPlan = (plan: PublicPlan | null | undefined, addonKey: string): boolean => {
+  if (!plan) return false;
+  const slug = (plan.slug || '').toLowerCase();
+  const defaultIncludedBySlug: Record<string, Record<string, boolean>> = {
+    starter: {
+      customDomain: false,
+      nfse: false,
+      loyalty: false,
+      marketing: false,
+      club: false,
+      onlinePayments: false,
+      exportCsv: false,
+      multiLocation: false,
+    },
+    pro: {
+      customDomain: false,
+      nfse: false,
+      loyalty: true,
+      marketing: false,
+      club: false,
+      onlinePayments: false,
+      exportCsv: false,
+      multiLocation: false,
+    },
+    premium: {
+      customDomain: true,
+      nfse: false,
+      loyalty: true,
+      marketing: true,
+      club: true,
+      onlinePayments: false,
+      exportCsv: true,
+      multiLocation: true,
+    },
+  };
+  let perms: Record<string, boolean> = { ...(defaultIncludedBySlug[slug] || defaultIncludedBySlug.starter) };
+  if (plan.features && typeof plan.features === 'object' && !Array.isArray(plan.features)) {
+    const rawPerms = (plan.features as any).permissions;
+    if (rawPerms && typeof rawPerms === 'object') {
+      perms = { ...perms, ...rawPerms };
+    }
+  }
+  return Boolean(perms[addonKey]);
+};
+
+const getAddonRouteHref = (addonKey: string): string => {
+  switch (addonKey) {
+    case 'onlinePayments':
+      return '/settings';
+    case 'club':
+      return '/clube';
+    case 'marketing':
+      return '/campanhas';
+    case 'loyalty':
+      return '/fidelidade';
+    case 'nfse':
+      return '/fiscal';
+    default:
+      return '/settings';
+  }
+};
+
 interface BillingStatusResponse {
   subscription: {
     status: string;
@@ -379,6 +522,7 @@ interface BillingStatusResponse {
     renewDaysLeft?: number | null;
     billingCycle?: BillingCycle;
     billingCycleLabel?: string;
+    activeAddons?: SubscribedAddonItem[];
     plan: {
       id: string;
       name: string;
@@ -386,6 +530,14 @@ interface BillingStatusResponse {
       priceCents: number;
     };
   } | null;
+  invoiceBreakdown?: {
+    planName: string;
+    planPriceCents: number;
+    addons: SubscribedAddonItem[];
+    addonsTotalCents: number;
+    totalMonthlyCents: number;
+  };
+  addons?: AddonCatalogItem[];
   plans: PublicPlan[];
   billingCycles?: BillingCyclesInfo;
   mercadopago: {
@@ -421,8 +573,10 @@ export default function PlanosPage() {
   const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Modal de Checkout Mercado Pago
+  // Modal de Checkout Mercado Pago (Plano ou Add-on do Marketplace)
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<PublicPlan | null>(null);
+  const [selectedAddonForCheckout, setSelectedAddonForCheckout] = useState<AddonCatalogItem | null>(null);
+  const [cancellingAddonKey, setCancellingAddonKey] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'PIX' | 'CREDIT_CARD'>('PIX');
 
   // PIX State
@@ -474,9 +628,26 @@ export default function PlanosPage() {
   const checkoutCycle = selectedPlanForCheckout
     ? calcCyclePrice(selectedPlanForCheckout.priceCents, billingCycle, cyclesCfg)
     : null;
+
+  // Add-ons contratados à parte que entram na fatura do plano selecionado no checkout
+  const activeContractedAddons: SubscribedAddonItem[] =
+    billingInfo?.invoiceBreakdown?.addons || billingInfo?.subscription?.activeAddons || [];
+  const checkoutBillableAddons: SubscribedAddonItem[] = selectedPlanForCheckout
+    ? activeContractedAddons.filter((a) => !isAddonIncludedInPlan(selectedPlanForCheckout, a.key))
+    : [];
+  const checkoutAddonsMonthlyCents = checkoutBillableAddons.reduce((acc, a) => acc + a.priceCents, 0);
+  const checkoutAddonsCycleCents = checkoutAddonsMonthlyCents * (checkoutCycle?.months || 1);
+  const checkoutBaseInvoiceCents = selectedAddonForCheckout
+    ? selectedAddonForCheckout.priceCents
+    : (checkoutCycle?.amountCents ?? 0) + checkoutAddonsCycleCents;
   const checkoutAmountCents = appliedCoupon
     ? appliedCoupon.finalAmountCents
-    : checkoutCycle?.amountCents ?? 0;
+    : checkoutBaseInvoiceCents;
+
+  // Catálogo do Marketplace de Add-ons
+  const marketplaceAddons: AddonCatalogItem[] = (
+    billingInfo?.addons?.length ? billingInfo.addons : DEFAULT_MARKETPLACE_ADDONS
+  ).filter((item) => item.isAddon !== false);
 
   // Garante que o ciclo selecionado continue disponível caso o Super Admin desative algum
   useEffect(() => {
@@ -535,7 +706,7 @@ export default function PlanosPage() {
       .catch(() => {});
   }, []);
 
-  // Polling automático para verificação de PIX
+  // Polling automático para verificação de PIX (Plano ou Add-on)
   useEffect(() => {
     if (!pixResult?.paymentId || pixPaidSuccess) return;
 
@@ -546,7 +717,11 @@ export default function PlanosPage() {
         );
         if (res.isPaid) {
           setPixPaidSuccess(true);
-          toast.success('🎉 Pagamento PIX aprovado com sucesso! O plano do seu salão foi ativado agora mesmo.');
+          toast.success(
+            selectedAddonForCheckout
+              ? `🎉 Pagamento PIX aprovado! O Add-on "${selectedAddonForCheckout.name}" já está liberado para uso!`
+              : '🎉 Pagamento PIX aprovado com sucesso! O plano do seu salão foi ativado agora mesmo.',
+          );
           await refresh();
           await loadBilling();
         }
@@ -556,7 +731,7 @@ export default function PlanosPage() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [pixResult?.paymentId, pixPaidSuccess]);
+  }, [pixResult?.paymentId, pixPaidSuccess, selectedAddonForCheckout]);
 
   const currentPlanSlug = (subscription?.plan?.slug || 'starter').toLowerCase();
   const isTrial = subscription?.status === 'TRIALING';
@@ -619,6 +794,7 @@ export default function PlanosPage() {
   };
 
   const handleOpenCheckout = (plan: PublicPlan) => {
+    setSelectedAddonForCheckout(null);
     setSelectedPlanForCheckout(plan);
     setPixResult(null);
     setPixPaidSuccess(false);
@@ -630,8 +806,21 @@ export default function PlanosPage() {
     setCheckoutAutoRenew(billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true);
   };
 
+  const handleOpenAddonCheckout = (addon: AddonCatalogItem) => {
+    setSelectedPlanForCheckout(null);
+    setSelectedAddonForCheckout(addon);
+    setPixResult(null);
+    setPixPaidSuccess(false);
+    setCardPaidSuccess(false);
+    setPaymentMethod('PIX');
+    setCouponInput('');
+    setAppliedCoupon(null);
+    setInstallments(1);
+  };
+
   const handleCloseCheckout = () => {
     setSelectedPlanForCheckout(null);
+    setSelectedAddonForCheckout(null);
     setPixResult(null);
     setPixPaidSuccess(false);
     setCardPaidSuccess(false);
@@ -639,11 +828,54 @@ export default function PlanosPage() {
     setAppliedCoupon(null);
   };
 
-  // Validar Cupom de Desconto
+  const handleCancelAddon = async (addonKey: string, addonName: string) => {
+    if (
+      !window.confirm(
+        `Deseja realmente cancelar apenas o Add-on "${addonName}"?\n\n• O seu Plano atual continuará 100% ativo normalmente.\n• O valor deste Add-on será removido da sua fatura imediatamente.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setCancellingAddonKey(addonKey);
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        activeAddons: SubscribedAddonItem[];
+      }>(`/api/billing/addon/${addonKey}/cancel`, {});
+      toast.success(res.message || `Add-on "${addonName}" cancelado e removido da sua fatura.`);
+      if (appliedCoupon) {
+        setAppliedCoupon(null);
+      }
+      setPixResult(null);
+      await refresh();
+      await loadBilling();
+    } catch (err: any) {
+      toast.error(err?.message || 'Não foi possível cancelar o Add-on.');
+    } finally {
+      setCancellingAddonKey(null);
+    }
+  };
+
+  // Validar Cupom de Desconto (Plano ou Add-on)
   const handleValidateCoupon = async () => {
-    if (!couponInput.trim() || !selectedPlanForCheckout) return;
+    if (!couponInput.trim() || (!selectedPlanForCheckout && !selectedAddonForCheckout)) return;
     setValidatingCoupon(true);
     try {
+      const payload = selectedAddonForCheckout
+        ? {
+            code: couponInput.trim(),
+            targetType: 'ADDON' as const,
+            addonKey: selectedAddonForCheckout.key,
+          }
+        : {
+            code: couponInput.trim(),
+            targetType: 'PLAN' as const,
+            planId: selectedPlanForCheckout!.id,
+            billingCycle,
+          };
+
       const res = await api.post<{
         valid: boolean;
         code: string;
@@ -653,12 +885,7 @@ export default function PlanosPage() {
         discountCents: number;
         finalAmountCents: number;
         message: string;
-      }>('/api/billing/coupons/validate', {
-        code: couponInput.trim(),
-        targetType: 'PLAN',
-        planId: selectedPlanForCheckout.id,
-        billingCycle,
-      });
+      }>('/api/billing/coupons/validate', payload);
 
       if (res.valid) {
         setAppliedCoupon({
@@ -685,14 +912,30 @@ export default function PlanosPage() {
     toast.info('Cupom de desconto removido.');
   };
 
-  // Gerar PIX via Mercado Pago
+  // Gerar PIX via Mercado Pago (Plano ou Add-on)
   const handleGeneratePix = async () => {
-    if (!selectedPlanForCheckout) return;
+    if (!selectedPlanForCheckout && !selectedAddonForCheckout) return;
     setGeneratingPix(true);
     setPixResult(null);
     setPixPaidSuccess(false);
 
     try {
+      const endpoint = selectedAddonForCheckout
+        ? `/api/billing/addon/${selectedAddonForCheckout.key}/pix`
+        : '/api/billing/checkout/pix';
+      const payload = selectedAddonForCheckout
+        ? {
+            payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
+            couponCode: appliedCoupon?.code,
+          }
+        : {
+            planId: selectedPlanForCheckout!.id,
+            payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
+            couponCode: appliedCoupon?.code,
+            billingCycle,
+            autoRenew: checkoutAutoRenew,
+          };
+
       const res = await api.post<{
         paymentId: string;
         qrCode?: string;
@@ -701,13 +944,7 @@ export default function PlanosPage() {
         amountCents: number;
         planName: string;
         expiresAt?: string;
-      }>('/api/billing/checkout/pix', {
-        planId: selectedPlanForCheckout.id,
-        payerCpf: pixCpf ? pixCpf.replace(/\D/g, '') : undefined,
-        couponCode: appliedCoupon?.code,
-        billingCycle,
-        autoRenew: checkoutAutoRenew,
-      });
+      }>(endpoint, payload);
 
       setPixResult(res);
       toast.success('Código Pix gerado com sucesso! Efetue o pagamento no aplicativo do seu banco.');
@@ -728,7 +965,11 @@ export default function PlanosPage() {
       );
       if (res.isPaid) {
         setPixPaidSuccess(true);
-        toast.success('🎉 Pagamento PIX aprovado com sucesso!');
+        toast.success(
+          selectedAddonForCheckout
+            ? `🎉 Pagamento PIX aprovado! O Add-on "${selectedAddonForCheckout.name}" já está liberado!`
+            : '🎉 Pagamento PIX aprovado com sucesso!',
+        );
         await refresh();
         await loadBilling();
       } else {
@@ -741,10 +982,10 @@ export default function PlanosPage() {
     }
   };
 
-  // Pagar via Cartão de Crédito
+  // Pagar via Cartão de Crédito (Plano ou Add-on)
   const handlePayCard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlanForCheckout) return;
+    if (!selectedPlanForCheckout && !selectedAddonForCheckout) return;
 
     if (!cardForm.cardNumber || !cardForm.cardholderName || !cardForm.cardholderCpf || !cardForm.cvv || !cardForm.expMonth || !cardForm.expYear) {
       return toast.warning('Preencha todos os campos do cartão de crédito (inclusive validade e CVV).');
@@ -752,26 +993,43 @@ export default function PlanosPage() {
 
     setProcessingCard(true);
     try {
-      const res = await api.post<{ success: boolean; message: string; status: string }>(
-        '/api/billing/checkout/card',
-        {
-          planId: selectedPlanForCheckout.id,
-          cardNumber: cardForm.cardNumber,
-          cardholderName: cardForm.cardholderName,
-          cardholderCpf: cardForm.cardholderCpf,
-          expMonth: cardForm.expMonth,
-          expYear: cardForm.expYear,
-          cvv: cardForm.cvv,
-          installments,
-          couponCode: appliedCoupon?.code,
-          billingCycle,
-          autoRenew: checkoutAutoRenew,
-        },
-      );
+      const endpoint = selectedAddonForCheckout
+        ? `/api/billing/addon/${selectedAddonForCheckout.key}/card`
+        : '/api/billing/checkout/card';
+      const payload = selectedAddonForCheckout
+        ? {
+            cardNumber: cardForm.cardNumber,
+            cardholderName: cardForm.cardholderName,
+            cardholderCpf: cardForm.cardholderCpf,
+            expMonth: cardForm.expMonth,
+            expYear: cardForm.expYear,
+            cvv: cardForm.cvv,
+            installments: 1,
+            couponCode: appliedCoupon?.code,
+          }
+        : {
+            planId: selectedPlanForCheckout!.id,
+            cardNumber: cardForm.cardNumber,
+            cardholderName: cardForm.cardholderName,
+            cardholderCpf: cardForm.cardholderCpf,
+            expMonth: cardForm.expMonth,
+            expYear: cardForm.expYear,
+            cvv: cardForm.cvv,
+            installments,
+            couponCode: appliedCoupon?.code,
+            billingCycle,
+            autoRenew: checkoutAutoRenew,
+          };
+
+      const res = await api.post<{ success: boolean; message: string; status: string }>(endpoint, payload);
 
       if (res.success || res.status === 'approved') {
         setCardPaidSuccess(true);
-        toast.success('🎉 Pagamento aprovado! O plano do seu salão foi ativado agora mesmo.');
+        toast.success(
+          selectedAddonForCheckout
+            ? `🎉 Pagamento aprovado! O Add-on "${selectedAddonForCheckout.name}" foi ativado agora mesmo!`
+            : '🎉 Pagamento aprovado! O plano do seu salão foi ativado agora mesmo.',
+        );
         await refresh();
         await loadBilling();
       } else {
@@ -1106,6 +1364,164 @@ export default function PlanosPage() {
                 <CreditCard size={16} />
                 <span>{isTrial ? 'Pagar / Efetivar Assinatura' : 'Renovar com Mercado Pago'}</span>
               </button>
+            </div>
+
+            {/* Resumo Detalhado da Fatura do Cliente (Plano + Add-ons Contratados à Parte) */}
+            <div
+              style={{
+                width: '100%',
+                marginTop: '6px',
+                paddingTop: '18px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+              }}
+            >
+              <div
+                style={{
+                  flex: '1 1 480px',
+                  padding: '14px 18px',
+                  borderRadius: '12px',
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid rgba(229, 179, 56, 0.25)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '10px',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 800,
+                      color: 'var(--primary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    🧾 Demonstrativo da Sua Fatura Mensal
+                  </span>
+                  <a
+                    href="#marketplace-addons"
+                    style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: '#60A5FA',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>+ Adicionar Módulos no Marketplace</span>
+                    <ArrowRight size={13} />
+                  </a>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.86rem' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      color: 'var(--text-main)',
+                    }}
+                  >
+                    <span>
+                      Plano: <strong>{subscription?.plan?.name || 'Starter'}</strong>
+                    </span>
+                    <strong style={{ color: 'var(--text-main)' }}>
+                      {formatBRL(subscription?.plan?.priceCents || 4990)}
+                    </strong>
+                  </div>
+
+                  {activeContractedAddons.length > 0 ? (
+                    activeContractedAddons.map((addon) => (
+                      <div
+                        key={addon.key}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          background: 'rgba(229, 179, 56, 0.08)',
+                          border: '1px solid rgba(229, 179, 56, 0.2)',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ color: '#F8FAFC' }}>
+                            Addon: <strong>{addon.name}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={cancellingAddonKey === addon.key}
+                            onClick={() => handleCancelAddon(addon.key, addon.name)}
+                            title="Cancelar apenas este Add-on e manter somente a fatura do plano"
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: 'rgba(239, 68, 68, 0.14)',
+                              color: '#F87171',
+                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                              cursor: cancellingAddonKey === addon.key ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {cancellingAddonKey === addon.key ? 'Cancelando...' : '✕ Cancelar apenas este Add-on'}
+                          </button>
+                        </div>
+                        <strong style={{ color: '#FBBF24' }}>{formatBRL(addon.priceCents)}</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        color: 'var(--text-dim)',
+                        fontSize: '0.8rem',
+                      }}
+                    >
+                      <span>Add-ons à parte contratados:</span>
+                      <span>Nenhum no momento (R$ 0,00)</span>
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      paddingTop: '8px',
+                      borderTop: '1px dashed rgba(255, 255, 255, 0.14)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.96rem',
+                    }}
+                  >
+                    <strong style={{ color: '#F8FAFC' }}>Total da Fatura Mensal:</strong>
+                    <strong style={{ fontSize: '1.12rem', color: '#34D399' }}>
+                      {formatBRL(
+                        (subscription?.plan?.priceCents || 4990) +
+                          activeContractedAddons.reduce((sum, a) => sum + a.priceCents, 0),
+                      )}
+                    </strong>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1507,6 +1923,310 @@ export default function PlanosPage() {
             </div>
           </div>
 
+          {/* ───────────────── MARKETPLACE DE ADD-ONS & MÓDULOS EXTRAS ───────────────── */}
+          <div id="marketplace-addons" style={{ marginBottom: '48px', scrollMarginTop: '24px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '4px 14px',
+                  borderRadius: '20px',
+                  background: 'rgba(59, 130, 246, 0.14)',
+                  border: '1px solid rgba(59, 130, 246, 0.35)',
+                  color: '#60A5FA',
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  marginBottom: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                <Sparkles size={14} />
+                <span>Marketplace Oficial BarberFlow</span>
+              </div>
+              <h2 style={{ fontSize: '1.85rem', fontWeight: 800, marginBottom: '8px' }}>
+                Marketplace de Add-ons & Módulos Extras
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.94rem', maxWidth: '720px', margin: '0 auto' }}>
+                Contrate módulos avulsos sob demanda com liberação automática após o pagamento. Os Add-ons contratados à parte são somados à sua fatura mensal e podem ser cancelados individualmente a qualquer momento, mantendo apenas o seu plano.
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '20px',
+                alignItems: 'stretch',
+              }}
+            >
+              {marketplaceAddons.map((addon) => {
+                const currentPlanObj =
+                  plans.find((p) => p.slug.toLowerCase() === currentPlanSlug) || null;
+                const isIncludedInCurrentPlan =
+                  typeof addon.includedInPlan === 'boolean'
+                    ? addon.includedInPlan
+                    : isAddonIncludedInPlan(currentPlanObj, addon.key);
+                const isContracted =
+                  Boolean(addon.contracted) ||
+                  activeContractedAddons.some((a) => a.key === addon.key);
+                const isUnlocked =
+                  isIncludedInCurrentPlan ||
+                  isContracted ||
+                  Boolean((subscription?.limits?.permissions as any)?.[addon.key]);
+                const routeHref = getAddonRouteHref(addon.key);
+
+                return (
+                  <div
+                    key={addon.key}
+                    className="glass-panel"
+                    style={{
+                      padding: '24px',
+                      borderRadius: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '18px',
+                      background: isContracted
+                        ? 'linear-gradient(180deg, rgba(229, 179, 56, 0.1) 0%, rgba(18, 24, 38, 0.95) 100%)'
+                        : isIncludedInCurrentPlan
+                          ? 'linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(18, 24, 38, 0.92) 100%)'
+                          : 'rgba(18, 24, 38, 0.78)',
+                      border: isContracted
+                        ? '1.5px solid rgba(229, 179, 56, 0.45)'
+                        : isIncludedInCurrentPlan
+                          ? '1.5px solid rgba(16, 185, 129, 0.35)'
+                          : '1px solid var(--border-color)',
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          marginBottom: '12px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            padding: '3px 9px',
+                            borderRadius: '8px',
+                            background: 'rgba(255, 255, 255, 0.06)',
+                            color: 'var(--text-muted)',
+                          }}
+                        >
+                          {addon.category}
+                        </span>
+
+                        {isIncludedInCurrentPlan ? (
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '3px 10px',
+                              borderRadius: '999px',
+                              background: 'rgba(16, 185, 129, 0.18)',
+                              color: '#34D399',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                            }}
+                          >
+                            ✓ Incluso no Seu Plano
+                          </span>
+                        ) : isContracted ? (
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '3px 10px',
+                              borderRadius: '999px',
+                              background: 'rgba(229, 179, 56, 0.2)',
+                              color: '#FBBF24',
+                              border: '1px solid rgba(229, 179, 56, 0.4)',
+                            }}
+                          >
+                            ● Ativo na Sua Fatura
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              padding: '3px 10px',
+                              borderRadius: '999px',
+                              background: 'rgba(59, 130, 246, 0.16)',
+                              color: '#60A5FA',
+                              border: '1px solid rgba(59, 130, 246, 0.35)',
+                            }}
+                          >
+                            ⚡ Add-on Disponível
+                          </span>
+                        )}
+                      </div>
+
+                      <h3
+                        style={{
+                          fontSize: '1.18rem',
+                          fontWeight: 800,
+                          color: 'var(--text-main)',
+                          margin: '0 0 8px 0',
+                          lineHeight: 1.3,
+                        }}
+                      >
+                        {addon.name}
+                      </h3>
+
+                      <p
+                        style={{
+                          fontSize: '0.84rem',
+                          color: 'var(--text-muted)',
+                          lineHeight: 1.5,
+                          margin: '0 0 16px 0',
+                        }}
+                      >
+                        {addon.description}
+                      </p>
+                    </div>
+
+                    <div>
+                      <div
+                        style={{
+                          paddingTop: '14px',
+                          marginBottom: '14px',
+                          borderTop: '1px solid rgba(255, 255, 255, 0.07)',
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-dim)', display: 'block' }}>
+                            Valor do Add-on à parte
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                            <strong style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)' }}>
+                              {formatBRL(addon.priceCents)}
+                            </strong>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>/ mês</span>
+                          </div>
+                        </div>
+
+                        {isIncludedInCurrentPlan && (
+                          <span style={{ fontSize: '0.76rem', color: '#34D399', fontWeight: 700 }}>
+                            Grátis no {subscription?.plan?.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {isIncludedInCurrentPlan ? (
+                        <Link
+                          href={routeHref}
+                          style={{
+                            width: '100%',
+                            padding: '11px 14px',
+                            borderRadius: '10px',
+                            background: 'rgba(16, 185, 129, 0.14)',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            color: '#34D399',
+                            fontSize: '0.85rem',
+                            fontWeight: 800,
+                            textDecoration: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                          }}
+                        >
+                          <CheckCircle2 size={16} />
+                          <span>Módulo Liberado • Abrir Agora</span>
+                        </Link>
+                      ) : isContracted ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <Link
+                            href={routeHref}
+                            style={{
+                              width: '100%',
+                              padding: '10px 14px',
+                              borderRadius: '10px',
+                              background: 'rgba(16, 185, 129, 0.14)',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              color: '#34D399',
+                              fontSize: '0.84rem',
+                              fontWeight: 800,
+                              textDecoration: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px',
+                            }}
+                          >
+                            <CheckCircle2 size={15} />
+                            <span>Módulo Ativo • Acessar e Configurar</span>
+                          </Link>
+
+                          <button
+                            type="button"
+                            disabled={cancellingAddonKey === addon.key}
+                            onClick={() => handleCancelAddon(addon.key, addon.name)}
+                            style={{
+                              width: '100%',
+                              padding: '9px 12px',
+                              borderRadius: '8px',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                              color: '#F87171',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              cursor: cancellingAddonKey === addon.key ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {cancellingAddonKey === addon.key
+                              ? 'Cancelando Add-on...'
+                              : '✕ Cancelar apenas este Add-on (manter só o plano)'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddonCheckout(addon)}
+                          className="gold-gradient-primary gold-glow"
+                          style={{
+                            width: '100%',
+                            padding: '12px 16px',
+                            borderRadius: '10px',
+                            border: 'none',
+                            color: '#0B0F17',
+                            fontSize: '0.86rem',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                          }}
+                        >
+                          <Zap size={16} />
+                          <span>
+                            {isUnlocked ? 'Ativar na Fatura' : 'Contratar Agora'} (+ {formatBRL(addon.priceCents)}/mês)
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* ───────────────── MATRIZ COMPARATIVA DETALHADA ───────────────── */}
           <div className="glass-panel" style={{ padding: '32px', borderRadius: '16px', marginBottom: '40px' }}>
             <div style={{ textAlign: 'center', marginBottom: '28px' }}>
@@ -1795,16 +2515,20 @@ export default function PlanosPage() {
         </main>
       </div>
 
-      {/* Modal de Checkout Mercado Pago */}
-      {selectedPlanForCheckout && (
+      {/* Modal de Checkout Mercado Pago (Planos ou Add-ons do Marketplace) */}
+      {(selectedPlanForCheckout || selectedAddonForCheckout) && (
         <Modal
-          isOpen={Boolean(selectedPlanForCheckout)}
+          isOpen={Boolean(selectedPlanForCheckout || selectedAddonForCheckout)}
           onClose={handleCloseCheckout}
-          title={`Assinatura BarberFlow • Plano ${selectedPlanForCheckout.name}`}
+          title={
+            selectedAddonForCheckout
+              ? `Contratar Add-on • ${selectedAddonForCheckout.shortName || selectedAddonForCheckout.name}`
+              : `Assinatura BarberFlow • Plano ${selectedPlanForCheckout?.name}`
+          }
           maxWidth="560px"
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Header / Resumo do Plano */}
+            {/* Header / Resumo do Plano ou Add-on */}
             <div
               style={{
                 padding: '16px 20px',
@@ -1814,26 +2538,31 @@ export default function PlanosPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: '12px',
               }}
             >
               <div>
                 <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Plano Selecionado • Ciclo {CYCLE_META[billingCycle].label}
+                  {selectedAddonForCheckout
+                    ? 'Add-on do Marketplace • Liberação Automática'
+                    : `Plano Selecionado • Ciclo ${CYCLE_META[billingCycle].label}`}
                 </span>
-                <h4 style={{ fontSize: '1.25rem', fontWeight: 800, margin: '2px 0 0 0', color: 'var(--text-main)' }}>
-                  {selectedPlanForCheckout.name}
+                <h4 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '2px 0 0 0', color: 'var(--text-main)' }}>
+                  {selectedAddonForCheckout ? selectedAddonForCheckout.name : selectedPlanForCheckout?.name}
                 </h4>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {billingCycle === 'MONTHLY'
-                    ? '30 dias de acesso com liberação imediata'
-                    : `${checkoutCycle?.days || 30} dias de acesso (${checkoutCycle?.months} meses)`}
+                  {selectedAddonForCheckout
+                    ? 'Liberado imediatamente após confirmação e incluído na sua fatura mensal'
+                    : billingCycle === 'MONTHLY'
+                      ? '30 dias de acesso com liberação imediata'
+                      : `${checkoutCycle?.days || 30} dias de acesso (${checkoutCycle?.months} meses)`}
                 </span>
               </div>
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 {appliedCoupon ? (
                   <>
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
-                      {formatBRL(checkoutCycle?.amountCents || selectedPlanForCheckout.priceCents)}
+                      {formatBRL(checkoutBaseInvoiceCents)}
                     </span>
                     <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34D399' }}>
                       {formatBRL(appliedCoupon.finalAmountCents)}
@@ -1842,77 +2571,224 @@ export default function PlanosPage() {
                 ) : checkoutCycle && checkoutCycle.discountPct > 0 ? (
                   <>
                     <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
-                      {formatBRL(checkoutCycle.grossCents)}
+                      {formatBRL(checkoutCycle.grossCents + checkoutAddonsCycleCents)}
                     </span>
                     <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
-                      {formatBRL(checkoutCycle.amountCents)}
+                      {formatBRL(checkoutAmountCents)}
                     </span>
                   </>
                 ) : (
                   <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
-                    {formatBRL(selectedPlanForCheckout.priceCents)}
+                    {formatBRL(checkoutAmountCents)}
                   </span>
                 )}
                 <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)', display: 'block' }}>
-                  {billingCycle === 'MONTHLY' ? '/ mês' : `total (${CYCLE_META[billingCycle].period})`}
+                  {selectedAddonForCheckout
+                    ? '/ mês'
+                    : billingCycle === 'MONTHLY'
+                      ? '/ mês'
+                      : `total (${CYCLE_META[billingCycle].period})`}
                 </span>
               </div>
             </div>
 
-            {/* Seletor Rápido de Ciclo no Modal */}
-            <div>
-              <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
-                Escolha o Ciclo de Cobrança:
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${availableCycles.length}, 1fr)`, gap: '8px' }}>
-                {availableCycles.map((cycle) => {
-                  const isActive = billingCycle === cycle;
-                  const optPrice = calcCyclePrice(selectedPlanForCheckout.priceCents, cycle, cyclesCfg);
-                  return (
-                    <button
-                      key={cycle}
-                      type="button"
-                      onClick={() => handleChangeCycle(cycle)}
+            {/* Demonstrativo Detalhado da Fatura (Plano + Add-ons) */}
+            {selectedAddonForCheckout ? (
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(15, 23, 42, 0.7)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  fontSize: '0.83rem',
+                }}
+              >
+                <div style={{ fontWeight: 800, color: '#60A5FA', marginBottom: '8px', fontSize: '0.78rem', textTransform: 'uppercase' }}>
+                  🧾 Como ficará sua Fatura Mensal após contratar este Add-on:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                    <span>Plano: {subscription?.plan?.name || 'Starter'}</span>
+                    <span>{formatBRL(subscription?.plan?.priceCents || 4990)}</span>
+                  </div>
+                  {activeContractedAddons
+                    .filter((a) => a.key !== selectedAddonForCheckout.key)
+                    .map((a) => (
+                      <div key={a.key} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                        <span>Addon ativo: {a.name}</span>
+                        <span>{formatBRL(a.priceCents)}</span>
+                      </div>
+                    ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#FBBF24', fontWeight: 700 }}>
+                    <span>+ Addon: {selectedAddonForCheckout.name}</span>
+                    <span>{formatBRL(selectedAddonForCheckout.priceCents)}</span>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      paddingTop: '6px',
+                      borderTop: '1px dashed rgba(255, 255, 255, 0.14)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontWeight: 800,
+                      color: '#F8FAFC',
+                    }}
+                  >
+                    <span>Total nas próximas faturas mensais:</span>
+                    <span style={{ color: '#34D399' }}>
+                      {formatBRL(
+                        (subscription?.plan?.priceCents || 4990) +
+                          activeContractedAddons
+                            .filter((a) => a.key !== selectedAddonForCheckout.key)
+                            .reduce((s, a) => s + a.priceCents, 0) +
+                          selectedAddonForCheckout.priceCents,
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  💡 Hoje você pagará apenas <strong>{formatBRL(checkoutAmountCents)}</strong> para ativar o Add-on imediatamente. Você pode cancelar somente o Add-on quando quiser.
+                </div>
+              </div>
+            ) : (
+              selectedPlanForCheckout &&
+              checkoutBillableAddons.length > 0 && (
+                <div
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: '10px',
+                    background: 'rgba(15, 23, 42, 0.7)',
+                    border: '1px solid rgba(229, 179, 56, 0.3)',
+                    fontSize: '0.84rem',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, color: 'var(--primary)', marginBottom: '8px', fontSize: '0.78rem', textTransform: 'uppercase' }}>
+                    🧾 Composição da Sua Fatura (Plano + Add-ons Contratados)
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)' }}>
+                      <span>
+                        Plano: <strong>{selectedPlanForCheckout.name}</strong>
+                        {checkoutCycle && checkoutCycle.months > 1 ? ` (${checkoutCycle.months} meses)` : ''}
+                      </span>
+                      <strong>{formatBRL(checkoutCycle?.amountCents || selectedPlanForCheckout.priceCents)}</strong>
+                    </div>
+                    {checkoutBillableAddons.map((addon) => (
+                      <div
+                        key={addon.key}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '8px',
+                          flexWrap: 'wrap',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          background: 'rgba(229, 179, 56, 0.08)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ color: '#FBBF24' }}>
+                            Addon: <strong>{addon.name}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={cancellingAddonKey === addon.key}
+                            onClick={() => handleCancelAddon(addon.key, addon.name)}
+                            style={{
+                              padding: '2px 7px',
+                              borderRadius: '5px',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              background: 'rgba(239, 68, 68, 0.16)',
+                              color: '#F87171',
+                              border: '1px solid rgba(239, 68, 68, 0.35)',
+                              cursor: cancellingAddonKey === addon.key ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {cancellingAddonKey === addon.key ? 'Cancelando...' : '✕ Cancelar Add-on'}
+                          </button>
+                        </div>
+                        <strong style={{ color: '#FBBF24' }}>
+                          {formatBRL(addon.priceCents * (checkoutCycle?.months || 1))}
+                        </strong>
+                      </div>
+                    ))}
+                    <div
                       style={{
-                        padding: '10px 8px',
-                        borderRadius: '10px',
-                        border: isActive ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                        background: isActive ? 'rgba(229, 179, 56, 0.14)' : 'rgba(255, 255, 255, 0.03)',
-                        color: isActive ? 'var(--primary)' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        transition: 'all 0.2s ease',
+                        marginTop: '4px',
+                        paddingTop: '6px',
+                        borderTop: '1px dashed rgba(255, 255, 255, 0.14)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontWeight: 800,
+                        fontSize: '0.94rem',
                       }}
                     >
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{CYCLE_META[cycle].label}</div>
-                      <div style={{ fontSize: '0.74rem', marginTop: '2px', color: isActive ? '#F8FAFC' : 'var(--text-dim)' }}>
-                        {formatBRL(optPrice.monthlyEquivalentCents)}/mês
-                      </div>
-                      {optPrice.discountPct > 0 && (
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            marginTop: '4px',
-                            fontSize: '0.66rem',
-                            fontWeight: 800,
-                            padding: '1px 6px',
-                            borderRadius: '4px',
-                            background: isActive ? 'var(--primary)' : 'rgba(16, 185, 129, 0.2)',
-                            color: isActive ? '#0B0F17' : '#34D399',
-                          }}
-                        >
-                          {optPrice.discountPct}% OFF
-                          {(() => {
-                            const free = getCycleFreeMonthsLabel(CYCLE_META[cycle].months, optPrice.discountPct);
-                            return free ? ` • ${free}` : '';
-                          })()}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                      <span style={{ color: '#F8FAFC' }}>Total:</span>
+                      <span style={{ color: '#34D399' }}>{formatBRL(checkoutAmountCents)}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Seletor Rápido de Ciclo no Modal (apenas para Checkout de Plano) */}
+            {selectedPlanForCheckout && (
+              <div>
+                <label style={{ fontSize: '0.76rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                  Escolha o Ciclo de Cobrança:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${availableCycles.length}, 1fr)`, gap: '8px' }}>
+                  {availableCycles.map((cycle) => {
+                    const isActive = billingCycle === cycle;
+                    const optPrice = calcCyclePrice(selectedPlanForCheckout.priceCents, cycle, cyclesCfg);
+                    return (
+                      <button
+                        key={cycle}
+                        type="button"
+                        onClick={() => handleChangeCycle(cycle)}
+                        style={{
+                          padding: '10px 8px',
+                          borderRadius: '10px',
+                          border: isActive ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                          background: isActive ? 'rgba(229, 179, 56, 0.14)' : 'rgba(255, 255, 255, 0.03)',
+                          color: isActive ? 'var(--primary)' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{CYCLE_META[cycle].label}</div>
+                        <div style={{ fontSize: '0.74rem', marginTop: '2px', color: isActive ? '#F8FAFC' : 'var(--text-dim)' }}>
+                          {formatBRL(optPrice.monthlyEquivalentCents)}/mês
+                        </div>
+                        {optPrice.discountPct > 0 && (
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              marginTop: '4px',
+                              fontSize: '0.66rem',
+                              fontWeight: 800,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: isActive ? 'var(--primary)' : 'rgba(16, 185, 129, 0.2)',
+                              color: isActive ? '#0B0F17' : '#34D399',
+                            }}
+                          >
+                            {optPrice.discountPct}% OFF
+                            {(() => {
+                              const free = getCycleFreeMonthsLabel(CYCLE_META[cycle].months, optPrice.discountPct);
+                              return free ? ` • ${free}` : '';
+                            })()}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Bloco de Cupom de Desconto */}
             <div
@@ -2008,60 +2884,62 @@ export default function PlanosPage() {
               )}
             </div>
 
-            {/* Seletor de Modo de Renovação (Auto-Renew vs. Manual) no Checkout */}
-            <div
-              style={{
-                padding: '12px 14px',
-                borderRadius: '10px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--border-color)',
-              }}
-            >
-              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
-                Preferência de Renovação dos Próximos Ciclos:
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setCheckoutAutoRenew(true)}
-                  style={{
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    border: checkoutAutoRenew ? '1.5px solid #10B981' : '1px solid var(--border-color)',
-                    background: checkoutAutoRenew ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: checkoutAutoRenew ? '#34D399' : 'var(--text-main)' }}>
-                    <RefreshCw size={13} /> Renovação Automática
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                    Gera e envia a renovação automaticamente no vencimento.
-                  </div>
-                </button>
+            {/* Seletor de Modo de Renovação (Auto-Renew vs. Manual) no Checkout (apenas Plano) */}
+            {selectedPlanForCheckout && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--border-color)',
+                }}
+              >
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-main)', marginBottom: '8px' }}>
+                  Preferência de Renovação dos Próximos Ciclos:
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutAutoRenew(true)}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      border: checkoutAutoRenew ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                      background: checkoutAutoRenew ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: checkoutAutoRenew ? '#34D399' : 'var(--text-main)' }}>
+                      <RefreshCw size={13} /> Renovação Automática
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                      Gera e envia a renovação automaticamente no vencimento.
+                    </div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => setCheckoutAutoRenew(false)}
-                  style={{
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    border: !checkoutAutoRenew ? '1.5px solid #F59E0B' : '1px solid var(--border-color)',
-                    background: !checkoutAutoRenew ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: !checkoutAutoRenew ? '#FBBF24' : 'var(--text-main)' }}>
-                    <Calendar size={13} /> Renovação Manual
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-                    Você recebe os avisos (D-3, D0, D+2) e escolhe quando renovar.
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutAutoRenew(false)}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      border: !checkoutAutoRenew ? '1.5px solid #F59E0B' : '1px solid var(--border-color)',
+                      background: !checkoutAutoRenew ? 'rgba(245, 158, 11, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 700, color: !checkoutAutoRenew ? '#FBBF24' : 'var(--text-main)' }}>
+                      <Calendar size={13} /> Renovação Manual
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                      Você recebe os avisos (D-3, D0, D+2) e escolhe quando renovar.
+                    </div>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Abas de Método de Pagamento */}
             <div
@@ -2139,7 +3017,15 @@ export default function PlanosPage() {
                       Pagamento Pix Confirmado!
                     </h3>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 20px 0' }}>
-                      O plano <strong>{selectedPlanForCheckout.name}</strong> foi ativado para o seu salão. Todos os recursos já estão disponíveis.
+                      {selectedAddonForCheckout ? (
+                        <>
+                          O Add-on <strong>{selectedAddonForCheckout.name}</strong> foi ativado e já está liberado para o seu salão!
+                        </>
+                      ) : (
+                        <>
+                          O plano <strong>{selectedPlanForCheckout?.name}</strong> foi ativado para o seu salão. Todos os recursos já estão disponíveis.
+                        </>
+                      )}
                     </p>
                     <button
                       type="button"
@@ -2321,7 +3207,7 @@ export default function PlanosPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10B981', fontWeight: 700, marginBottom: '4px' }}>
                         <Zap size={15} /> Liberação Instantânea via Mercado Pago
                       </div>
-                      O QR Code Pix e a chave Copia e Cola serão gerados na hora. Assim que pagar no aplicativo do seu banco, o sistema reconhece e renova o plano automaticamente em segundos.
+                      O QR Code Pix e a chave Copia e Cola serão gerados na hora. Assim que pagar no aplicativo do seu banco, o sistema reconhece e libera o acesso automaticamente em segundos.
                     </div>
 
                     <button
@@ -2381,7 +3267,15 @@ export default function PlanosPage() {
                       Pagamento com Cartão Aprovado!
                     </h3>
                     <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: '0 0 20px 0' }}>
-                      Sua assinatura do plano <strong>{selectedPlanForCheckout.name}</strong> foi ativada com sucesso.
+                      {selectedAddonForCheckout ? (
+                        <>
+                          O Add-on <strong>{selectedAddonForCheckout.name}</strong> foi ativado e já está liberado para uso!
+                        </>
+                      ) : (
+                        <>
+                          Sua assinatura do plano <strong>{selectedPlanForCheckout?.name}</strong> foi ativada com sucesso.
+                        </>
+                      )}
                     </p>
                     <button
                       type="button"
@@ -2534,30 +3428,32 @@ export default function PlanosPage() {
                       </div>
                     </div>
 
-                    {/* Seletor de Parcelamento no Cartão */}
-                    <div>
-                      <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-                        Opções de Parcelamento *
-                      </label>
-                      <Select
-                        value={String(installments)}
-                        onChange={(e) => setInstallments(Number(e.target.value))}
-                      >
-                        {Array.from({ length: checkoutCycle?.maxInstallments || 1 }, (_, i) => i + 1).map((n) => {
-                          const parcelCents = Math.round(checkoutAmountCents / n);
-                          return (
-                            <option key={n} value={n}>
-                              {n}x de {formatBRL(parcelCents)} {n === 1 ? 'à vista' : 'sem juros'}
-                            </option>
-                          );
-                        })}
-                      </Select>
-                      {checkoutCycle && checkoutCycle.maxInstallments > 1 && (
-                        <span style={{ fontSize: '0.73rem', color: '#10B981', display: 'block', marginTop: '4px' }}>
-                          ✓ Parcelamento em até {checkoutCycle.maxInstallments}x sem juros no ciclo {checkoutCycle.label}
-                        </span>
-                      )}
-                    </div>
+                    {/* Seletor de Parcelamento no Cartão (apenas para Planos) */}
+                    {selectedPlanForCheckout && (
+                      <div>
+                        <label style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                          Opções de Parcelamento *
+                        </label>
+                        <Select
+                          value={String(installments)}
+                          onChange={(e) => setInstallments(Number(e.target.value))}
+                        >
+                          {Array.from({ length: checkoutCycle?.maxInstallments || 1 }, (_, i) => i + 1).map((n) => {
+                            const parcelCents = Math.round(checkoutAmountCents / n);
+                            return (
+                              <option key={n} value={n}>
+                                {n}x de {formatBRL(parcelCents)} {n === 1 ? 'à vista' : 'sem juros'}
+                              </option>
+                            );
+                          })}
+                        </Select>
+                        {checkoutCycle && checkoutCycle.maxInstallments > 1 && (
+                          <span style={{ fontSize: '0.73rem', color: '#10B981', display: 'block', marginTop: '4px' }}>
+                            ✓ Parcelamento em até {checkoutCycle.maxInstallments}x sem juros no ciclo {checkoutCycle.label}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
                       <Lock size={14} color="#10B981" />
@@ -2593,7 +3489,7 @@ export default function PlanosPage() {
                           <CreditCard size={18} />
                           <span>
                             Pagar {formatBRL(checkoutAmountCents)}
-                            {installments > 1
+                            {selectedPlanForCheckout && installments > 1
                               ? ` em ${installments}x de ${formatBRL(Math.round(checkoutAmountCents / installments))}`
                               : ''}{' '}
                             com Cartão

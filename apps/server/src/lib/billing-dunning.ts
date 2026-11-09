@@ -6,7 +6,8 @@ import { getActiveMercadoPagoConfig, createMercadoPagoPix, getMercadoPagoWebhook
 import { clubService } from '../modules/club/club.service.js';
 import { whatsAppService } from '../modules/whatsapp/whatsapp.service.js';
 import { normalizePhone } from './utils.js';
-import { syncExpiredTenantsAndSubscriptions } from './tenant-access.js';
+import { extractPlanPermissions, syncExpiredTenantsAndSubscriptions } from './tenant-access.js';
+import { getAddonsCatalog, parseSubscriptionActiveAddons } from './addons.js';
 
 export type DunningStage = 'D-3' | 'D0' | 'D+2';
 
@@ -442,9 +443,22 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
       continue;
     }
 
-    const priceCents = sub.plan.priceCents || 0;
+    const addonsCatalog = await getAddonsCatalog();
+    const planPerms = extractPlanPermissions(sub.plan);
+    const billableAddons = parseSubscriptionActiveAddons(sub, addonsCatalog).filter(
+      (a) => !planPerms[a.key],
+    );
+    const addonsTotalCents = billableAddons.reduce((sum, a) => sum + a.priceCents, 0);
+    const planPriceCents = sub.plan.priceCents || 0;
+    const priceCents = planPriceCents + addonsTotalCents;
     const priceStr = formatBRL(priceCents);
     const dateFormatted = expDate.toFormat('dd/LL/yyyy');
+    const invoiceBreakdownWa =
+      billableAddons.length > 0
+        ? `\n📋 *Resumo da Fatura:*\n• Plano ${sub.plan.name}: ${formatBRL(planPriceCents)}\n` +
+          billableAddons.map((a) => `• Add-on ${a.shortName}: ${formatBRL(a.priceCents)}`).join('\n') +
+          `\n• *Total: ${priceStr}*\n`
+        : '';
 
     let pixInfo: { paymentId: string; qrCode?: string | null; ticketUrl?: string | null } | null = null;
     const isAutoRenew = sub.autoRenew ?? true;
@@ -469,19 +483,19 @@ export async function executeBillingDunning(options?: { force?: boolean }): Prom
           : '📅 *Modo de Renovação:* MANUAL (Auto-Renew desativado)';
         let waMsg = '';
         if (stage === 'D-3') {
-          waMsg = `⏳ *Aviso de Vencimento — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) vence em *3 dias* (${dateFormatted}).\n\n${renewStatusTxt}\n\n${
+          waMsg = `⏳ *Aviso de Vencimento — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua fatura do *Plano ${sub.plan.name}* (${priceStr}) vence em *3 dias* (${dateFormatted}).${invoiceBreakdownWa}\n\n${renewStatusTxt}\n\n${
             isAutoRenew
               ? 'No dia do vencimento enviaremos automaticamente o código de renovação.'
               : 'Como sua renovação está no modo Manual, acesse /planos quando desejar renovar seu ciclo!'
           }`;
         } else if (stage === 'D0') {
-          waMsg = `🔔 *Sua Assinatura Vence Hoje — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) vence *hoje* (${dateFormatted}).\n\n${renewStatusTxt}${
+          waMsg = `🔔 *Sua Assinatura Vence Hoje — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua fatura do *Plano ${sub.plan.name}* (${priceStr}) vence *hoje* (${dateFormatted}).${invoiceBreakdownWa}\n\n${renewStatusTxt}${
             pixInfo?.qrCode
               ? `\n\n⚡ *PIX Copia e Cola gerado automaticamente:*\n\n${pixInfo.qrCode}`
               : '\n\nAcesse o menu *Assinatura (/planos)* no seu painel para renovar.'
           }`;
         } else {
-          waMsg = `⚠️ *Aviso Urgente (Carência D+2) — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua assinatura do *Plano ${sub.plan.name}* (${priceStr}) venceu em *${dateFormatted}*.\n\n${renewStatusTxt}\n\nPara evitar o bloqueio do painel e da vitrine online, regularize sua assinatura em */planos*.`;
+          waMsg = `⚠️ *Aviso Urgente (Carência D+2) — BarberFlow*\n\nOlá, *${tenant.name}*!\nSua fatura do *Plano ${sub.plan.name}* (${priceStr}) venceu em *${dateFormatted}*.${invoiceBreakdownWa}\n\n${renewStatusTxt}\n\nPara evitar o bloqueio do painel e da vitrine online, regularize sua assinatura em */planos*.`;
         }
         await whatsAppService.sendMessage(tenant.id, cleanPhone, waMsg);
       }

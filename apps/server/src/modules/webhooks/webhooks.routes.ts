@@ -6,6 +6,8 @@ import { systemLog } from '../../lib/system-log.js';
 import { getMercadoPagoPayment, getActiveMercadoPagoConfig } from '../../lib/mercadopago.js';
 import { incrementCouponUsage } from '../../lib/coupons.js';
 import { resolvePaymentCycleDays } from '../../lib/billing-cycles.js';
+import { activateAddonOnSubscription, parseSubscriptionActiveAddons } from '../../lib/addons.js';
+import type { PlanPermissions } from '../../lib/tenant-access.js';
 import { clubService } from '../club/club.service.js';
 
 export const webhooksRouter = Router();
@@ -106,9 +108,14 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
 
     if (mpPayment.status === 'approved') {
       if (saasPayment) {
-        const isNfseAddon =
-          metadata.addon_type === 'NFSE' ||
-          saasPayment.mpStatusDetail?.startsWith('ADDON_NFSE');
+        const detail = String(saasPayment.mpStatusDetail || '');
+        const paymentMeta = (saasPayment.metadata as Record<string, any> | null) || {};
+        let detectedAddonKey: keyof PlanPermissions | null = null;
+        if (metadata.addon_key) detectedAddonKey = metadata.addon_key as keyof PlanPermissions;
+        else if (metadata.addon_type === 'NFSE' || detail.startsWith('ADDON_NFSE')) detectedAddonKey = 'nfse';
+        else if (detail.startsWith('ADDON:')) detectedAddonKey = (detail.split(':')[1] || null) as keyof PlanPermissions | null;
+        else if (paymentMeta.addonKey) detectedAddonKey = paymentMeta.addonKey as keyof PlanPermissions;
+
         const now = new Date();
 
         // Atualização atômica para evitar ativação ou logs duplicados entre Polling e Webhook
@@ -121,7 +128,9 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
             status: 'APPROVED',
             mpPaymentId: String(paymentId),
             mpStatus: mpPayment.status,
-            mpStatusDetail: isNfseAddon ? `ADDON_NFSE:${mpPayment.statusDetail || 'accredited'}` : mpPayment.statusDetail,
+            mpStatusDetail: detectedAddonKey
+              ? `ADDON:${detectedAddonKey}:${mpPayment.statusDetail || 'accredited'}`
+              : mpPayment.statusDetail,
             paidAt: mpPayment.dateApproved ? new Date(mpPayment.dateApproved) : now,
           },
         });
@@ -131,7 +140,6 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
           return res.status(200).json({ received: true, already_processed: true });
         }
 
-        const paymentMeta = (saasPayment.metadata as Record<string, any> | null) || {};
         const usedCouponCode =
           (metadata.coupon_code as string | undefined) ||
           (paymentMeta.couponCode as string | undefined);
@@ -141,28 +149,13 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
 
         const existingSub = saasPayment.tenant?.subscription;
 
-        if (isNfseAddon) {
-          const baseDate =
-            existingSub?.nfseAddonActive &&
-            existingSub?.nfseAddonExpiresAt &&
-            existingSub.nfseAddonExpiresAt > now
-              ? DateTime.fromJSDate(existingSub.nfseAddonExpiresAt)
-              : DateTime.fromJSDate(now);
-          const nfseAddonExpiresAt = baseDate.plus({ days: 30 }).toJSDate();
-
-          await prisma.subscription.updateMany({
-            where: { tenantId: saasPayment.tenantId },
-            data: {
-              nfseAddonActive: true,
-              nfseAddonExpiresAt,
-              lastPaymentAt: now,
-            },
-          });
+        if (detectedAddonKey) {
+          const activated = await activateAddonOnSubscription(saasPayment.tenantId, detectedAddonKey, 30);
 
           await systemLog({
             tenantId: saasPayment.tenantId,
             source: 'billing_webhook',
-            message: `Módulo Add-on NFS-e ativado via Webhook Mercado Pago (MP ID: ${paymentId})`,
+            message: `Módulo Add-on [${activated.name}] ativado via Webhook Mercado Pago (MP ID: ${paymentId})`,
           });
         } else {
           const isSamePlanRenewal =
@@ -177,6 +170,12 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
           const cycleDays = resolvePaymentCycleDays(paymentMeta, metadata);
           const currentPeriodEnd = baseDate.plus({ days: cycleDays }).toJSDate();
 
+          const currentAddonsList = parseSubscriptionActiveAddons(existingSub);
+          const renewedAddonsList = currentAddonsList.map((a) => ({
+            ...a,
+            expiresAt: currentPeriodEnd.toISOString(),
+          }));
+
           await prisma.subscription.upsert({
             where: { tenantId: saasPayment.tenantId },
             create: {
@@ -186,6 +185,7 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
               currentPeriodStart: now,
               currentPeriodEnd,
               lastPaymentAt: now,
+              activeAddons: renewedAddonsList as any,
             },
             update: {
               planId: saasPayment.planId,
@@ -193,6 +193,7 @@ webhooksRouter.post('/mercadopago', async (req, res) => {
               currentPeriodStart: now,
               currentPeriodEnd,
               lastPaymentAt: now,
+              activeAddons: renewedAddonsList as any,
             },
           });
 

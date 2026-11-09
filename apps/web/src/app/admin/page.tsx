@@ -218,7 +218,7 @@ const DEFAULT_PERMISSIONS_BY_SLUG: Record<string, PlanPermissions> = {
     loyalty: true,
     marketing: true,
     club: true,
-    onlinePayments: true,
+    onlinePayments: false,
   },
 };
 

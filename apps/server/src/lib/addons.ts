@@ -14,13 +14,13 @@ export interface AddonConfigItem {
 export const DEFAULT_ADDONS_CATALOG: AddonConfigItem[] = [
   {
     key: 'onlinePayments',
-    name: 'Recebimentos Online & Cartão Recorrente (Direto na Conta do Salão)',
-    shortName: 'Recebimentos Online',
+    name: 'Recebimento Online (Mercado Pago API)',
+    shortName: 'Recebimento Online',
     description:
       'Integração direta com o Mercado Pago da própria barbearia para cobrar planos mensais do Clube VIP via Cartão de Crédito Recorrente e PIX Instantâneo, com repasse 100% direto para a conta do dono do salão e renovação automática.',
     category: 'Receita Recorrente & Pagamentos',
     isAddon: true,
-    priceCents: 2990,
+    priceCents: 990,
   },
   {
     key: 'club',
@@ -276,4 +276,155 @@ export async function saveAddonsCatalog(
 
   return nextCatalog;
 }
+
+export interface SubscribedAddonEntry {
+  key: keyof PlanPermissions;
+  name: string;
+  shortName: string;
+  priceCents: number;
+  activatedAt: string;
+  expiresAt?: string | null;
+}
+
+/**
+ * Extrai a lista de Add-ons contratados à parte que estão ativos na Subscription.
+ * Mantém compatibilidade com nfseAddonActive legado.
+ */
+export function parseSubscriptionActiveAddons(
+  subscription: any,
+  catalog: AddonConfigItem[] = DEFAULT_ADDONS_CATALOG,
+): SubscribedAddonEntry[] {
+  if (!subscription) return [];
+  const now = new Date();
+  const map = new Map<keyof PlanPermissions, SubscribedAddonEntry>();
+
+  const raw = subscription.activeAddons;
+  const list = Array.isArray(raw) ? raw : [];
+
+  for (const item of list) {
+    if (!item || typeof item.key !== 'string') continue;
+    const key = item.key as keyof PlanPermissions;
+    if (item.expiresAt && new Date(item.expiresAt) <= now) continue;
+    const catItem =
+      catalog.find((c) => c.key === key) ||
+      DEFAULT_ADDONS_CATALOG.find((c) => c.key === key);
+    if (!catItem) continue;
+    map.set(key, {
+      key,
+      name: catItem.name,
+      shortName: catItem.shortName,
+      priceCents:
+        typeof item.priceCents === 'number' && item.priceCents >= 0
+          ? item.priceCents
+          : catItem.priceCents,
+      activatedAt: item.activatedAt || new Date().toISOString(),
+      expiresAt: item.expiresAt || null,
+    });
+  }
+
+  // Retrocompatibilidade com nfseAddonActive
+  if (subscription.nfseAddonActive && !map.has('nfse')) {
+    const expired =
+      subscription.nfseAddonExpiresAt &&
+      new Date(subscription.nfseAddonExpiresAt) <= now;
+    if (!expired) {
+      const nfseCat =
+        catalog.find((c) => c.key === 'nfse') ||
+        DEFAULT_ADDONS_CATALOG.find((c) => c.key === 'nfse')!;
+      map.set('nfse', {
+        key: 'nfse',
+        name: nfseCat.name,
+        shortName: nfseCat.shortName,
+        priceCents: nfseCat.priceCents,
+        activatedAt: new Date().toISOString(),
+        expiresAt: subscription.nfseAddonExpiresAt
+          ? new Date(subscription.nfseAddonExpiresAt).toISOString()
+          : null,
+      });
+    }
+  }
+
+  return Array.from(map.values());
+}
+
+/**
+ * Ativa (ou renova) um Add-on contratado à parte na assinatura do salão.
+ */
+export async function activateAddonOnSubscription(
+  tenantId: string,
+  addonKey: keyof PlanPermissions,
+  cycleDays: number = 30,
+): Promise<SubscribedAddonEntry> {
+  const catalog = await getAddonsCatalog();
+  const addonCfg =
+    catalog.find((c) => c.key === addonKey) ||
+    DEFAULT_ADDONS_CATALOG.find((c) => c.key === addonKey);
+  if (!addonCfg) {
+    throw new Error(`Módulo Add-on "${String(addonKey)}" não encontrado.`);
+  }
+
+  const sub = await prisma.subscription.findUnique({ where: { tenantId } });
+  const now = new Date();
+  const currentEntries = parseSubscriptionActiveAddons(sub, catalog);
+  const existing = currentEntries.find((e) => e.key === addonKey);
+
+  let baseTime = now.getTime();
+  if (existing?.expiresAt && new Date(existing.expiresAt).getTime() > baseTime) {
+    baseTime = new Date(existing.expiresAt).getTime();
+  }
+  const expiresAtDate = new Date(baseTime + cycleDays * 24 * 60 * 60 * 1000);
+
+  const newEntry: SubscribedAddonEntry = {
+    key: addonKey,
+    name: addonCfg.name,
+    shortName: addonCfg.shortName,
+    priceCents: addonCfg.priceCents,
+    activatedAt: existing?.activatedAt || now.toISOString(),
+    expiresAt: expiresAtDate.toISOString(),
+  };
+
+  const nextEntries = [
+    ...currentEntries.filter((e) => e.key !== addonKey),
+    newEntry,
+  ];
+
+  await prisma.subscription.updateMany({
+    where: { tenantId },
+    data: {
+      activeAddons: nextEntries as any,
+      lastPaymentAt: now,
+      ...(addonKey === 'nfse'
+        ? { nfseAddonActive: true, nfseAddonExpiresAt: expiresAtDate }
+        : {}),
+    },
+  });
+
+  return newEntry;
+}
+
+/**
+ * Cancela apenas um Add-on específico da assinatura do salão, mantendo o plano principal intacto.
+ */
+export async function cancelAddonOnSubscription(
+  tenantId: string,
+  addonKey: keyof PlanPermissions,
+): Promise<SubscribedAddonEntry[]> {
+  const catalog = await getAddonsCatalog();
+  const sub = await prisma.subscription.findUnique({ where: { tenantId } });
+  const currentEntries = parseSubscriptionActiveAddons(sub, catalog);
+  const nextEntries = currentEntries.filter((e) => e.key !== addonKey);
+
+  await prisma.subscription.updateMany({
+    where: { tenantId },
+    data: {
+      activeAddons: nextEntries as any,
+      ...(addonKey === 'nfse'
+        ? { nfseAddonActive: false, nfseAddonExpiresAt: null }
+        : {}),
+    },
+  });
+
+  return nextEntries;
+}
+
 

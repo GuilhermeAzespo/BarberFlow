@@ -983,7 +983,7 @@ export default function SettingsPage() {
 
                   {!(mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN') && (
                     <Link
-                      href="/planos"
+                      href="/planos#marketplace-addons"
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -999,7 +999,7 @@ export default function SettingsPage() {
                       }}
                     >
                       <Zap size={16} />
-                      <span>Ativar Add-on em Planos</span>
+                      <span>Contratar no Marketplace (+ R$ 9,90/mês)</span>
                     </Link>
                   )}
                 </div>

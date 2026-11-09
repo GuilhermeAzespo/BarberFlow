@@ -45,7 +45,7 @@ export async function syncExpiredTenantsAndSubscriptions(targetTenantId?: string
     const sub = tenant.subscription;
     if (!sub) continue;
 
-    // 1. Verifica expiração do Add-on NFS-e se aplicável
+    // 1. Verifica expiração do Add-on NFS-e e dos activeAddons se aplicável
     if (sub.nfseAddonActive && sub.nfseAddonExpiresAt && sub.nfseAddonExpiresAt <= now) {
       await prisma.subscription
         .update({
@@ -53,6 +53,19 @@ export async function syncExpiredTenantsAndSubscriptions(targetTenantId?: string
           data: { nfseAddonActive: false },
         })
         .catch(() => {});
+    }
+    if (Array.isArray((sub as any).activeAddons) && (sub as any).activeAddons.length > 0) {
+      const validAddons = (sub as any).activeAddons.filter(
+        (a: any) => a && typeof a.key === 'string' && (!a.expiresAt || new Date(a.expiresAt) > now),
+      );
+      if (validAddons.length !== (sub as any).activeAddons.length) {
+        await prisma.subscription
+          .update({
+            where: { id: sub.id },
+            data: { activeAddons: validAddons as any },
+          })
+          .catch(() => {});
+      }
     }
 
     // 2. Trial expirado sem pagamento aprovado
@@ -281,7 +294,7 @@ export const DEFAULT_PLAN_PERMISSIONS: Record<'starter' | 'pro' | 'premium', Pla
     loyalty: true,
     marketing: true,
     club: true,
-    onlinePayments: true,
+    onlinePayments: false,
   },
 };
 
@@ -327,14 +340,27 @@ export function effectiveLimits(subscription: (Subscription & { plan: Plan }) | 
       permissions: DEFAULT_PLAN_PERMISSIONS.starter,
     };
   }
+  const basePermissions: PlanPermissions = {
+    ...extractPlanPermissions(subscription.plan),
+    nfse: Boolean(extractPlanPermissions(subscription.plan).nfse || (subscription as any).nfseAddonActive),
+  };
+  const now = new Date();
+  const rawActiveAddons = (subscription as any).activeAddons;
+  if (Array.isArray(rawActiveAddons)) {
+    for (const item of rawActiveAddons) {
+      if (!item || typeof item.key !== 'string') continue;
+      if (item.expiresAt && new Date(item.expiresAt) <= now) continue;
+      const key = item.key as keyof PlanPermissions;
+      if (key in basePermissions) {
+        basePermissions[key] = true;
+      }
+    }
+  }
   return {
     maxProfessionals: subscription.maxProfessionalsOverride ?? subscription.plan.maxProfessionals,
     maxAppointmentsPerMonth: subscription.maxAppointmentsOverride ?? subscription.plan.maxAppointmentsPerMonth,
     whatsappEnabled: subscription.plan.whatsappEnabled,
-    permissions: {
-      ...extractPlanPermissions(subscription.plan),
-      nfse: Boolean(extractPlanPermissions(subscription.plan).nfse || (subscription as any).nfseAddonActive),
-    },
+    permissions: basePermissions,
   };
 }
 
