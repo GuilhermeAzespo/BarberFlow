@@ -105,6 +105,18 @@ app.use(errorHandler);
 async function bootstrap() {
   logger.info('Iniciando inicialização do sistema...');
 
+  // 0. Garante de forma idempotente colunas recentes de banco de dados (proteção contra defasagem de migration)
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "Subscription" ADD COLUMN IF NOT EXISTS "autoRenew" BOOLEAN NOT NULL DEFAULT true;`,
+    );
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "CustomerSubscription" ADD COLUMN IF NOT EXISTS "autoRenew" BOOLEAN NOT NULL DEFAULT true;`,
+    );
+  } catch (schemaErr) {
+    logger.warn({ err: schemaErr }, 'Aviso ao verificar colunas autoRenew na inicialização');
+  }
+
   // 1. Cria ou sincroniza planos padrão se não existirem
   for (const planData of DEFAULT_PLANS) {
     const existing = await prisma.plan.findUnique({ where: { slug: planData.slug } });
