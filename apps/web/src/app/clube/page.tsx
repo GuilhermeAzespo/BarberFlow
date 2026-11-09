@@ -1074,8 +1074,14 @@ export default function ClubManagementPage() {
 
                             <td style={{ padding: '12px' }}>
                               <div style={{ color: 'var(--text-main)' }}>
-                                {DateTime.fromISO(sub.cycleStartDate).toFormat('dd/MM')} até{' '}
-                                <strong>{DateTime.fromISO(sub.cycleEndDate).toFormat('dd/MM/yyyy')}</strong>
+                                {DateTime.fromISO(sub.cycleEndDate).diffNow('years').years > 10 ? (
+                                  <strong style={{ color: '#E5B338' }}>♾️ Vitalícia (Sem expiração)</strong>
+                                ) : (
+                                  <>
+                                    {DateTime.fromISO(sub.cycleStartDate).toFormat('dd/MM')} até{' '}
+                                    <strong>{DateTime.fromISO(sub.cycleEndDate).toFormat('dd/MM/yyyy')}</strong>
+                                  </>
+                                )}
                               </div>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
                                 Pgto: {sub.paymentMethod || 'Manual'}
@@ -1708,6 +1714,7 @@ export default function ClubManagementPage() {
                 <option value={90}>90 Dias (Trimestral)</option>
                 <option value={180}>180 Dias (Semestral)</option>
                 <option value={365}>365 Dias (Anual)</option>
+                <option value={36500}>♾️ Vitalícia (Sem Expiração)</option>
               </select>
             </div>
           </div>

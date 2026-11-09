@@ -48,7 +48,8 @@ const updateTenantStatusSchema = z.object({
 
 const updateSubscriptionSchema = z.object({
   planId: z.string().optional(),
-  status: z.enum(['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED']).optional(),
+  status: z.enum(['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCELED', 'LIFETIME']).optional(),
+  isLifetime: z.boolean().optional(),
   trialEndsAt: z.coerce.date().nullable().optional(),
   currentPeriodEnd: z.coerce.date().nullable().optional(),
   maxProfessionalsOverride: z.number().int().min(1).nullable().optional(),
@@ -429,13 +430,16 @@ superAdminRouter.patch('/tenants/:id/status', async (req, res) => {
 
   if (existingSub) {
     if (data.status === 'ACTIVE') {
-      const isPeriodExpired = !existingSub.currentPeriodEnd || existingSub.currentPeriodEnd <= now;
-      const isTrialExpired = !existingSub.trialEndsAt || existingSub.trialEndsAt <= now;
+      const isLifetime =
+        existingSub.status === 'ACTIVE' && !existingSub.currentPeriodEnd && !existingSub.trialEndsAt;
+      const isPeriodExpired = Boolean(existingSub.currentPeriodEnd && existingSub.currentPeriodEnd <= now);
+      const isTrialExpired = Boolean(!existingSub.trialEndsAt || existingSub.trialEndsAt <= now);
       if (
-        existingSub.status === 'PAST_DUE' ||
-        existingSub.status === 'CANCELED' ||
-        (existingSub.status === 'ACTIVE' && isPeriodExpired) ||
-        (existingSub.status === 'TRIALING' && isTrialExpired)
+        !isLifetime &&
+        (existingSub.status === 'PAST_DUE' ||
+          existingSub.status === 'CANCELED' ||
+          (existingSub.status === 'ACTIVE' && isPeriodExpired) ||
+          (existingSub.status === 'TRIALING' && isTrialExpired))
       ) {
         await prisma.subscription.update({
           where: { id: existingSub.id },
@@ -526,13 +530,36 @@ superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
 
   if (!current) throw HttpError.notFound('Assinatura não encontrada para este salão');
 
-  const subUpdateData: Prisma.SubscriptionUncheckedUpdateInput = { ...data };
+  const isSettingLifetime = data.status === 'LIFETIME' || data.isLifetime === true;
+  const { isLifetime: _ignoreIsLifetime, status: rawStatus, ...restData } = data;
 
-  if (data.status === 'ACTIVE') {
+  const subUpdateData: Prisma.SubscriptionUncheckedUpdateInput = {
+    ...restData,
+    ...(rawStatus ? { status: rawStatus === 'LIFETIME' ? 'ACTIVE' : rawStatus } : {}),
+  };
+
+  if (isSettingLifetime) {
+    subUpdateData.status = 'ACTIVE';
+    subUpdateData.currentPeriodStart = now;
+    subUpdateData.currentPeriodEnd = null;
+    subUpdateData.trialEndsAt = null;
+    subUpdateData.autoRenew = false;
+    subUpdateData.nfseAddonExpiresAt = null;
+    if (data.notes === undefined) {
+      subUpdateData.notes = 'LIFETIME';
+    }
+    await prisma.tenant.update({
+      where: { id: req.params.id },
+      data: { status: 'ACTIVE', statusReason: null, statusChangedAt: now },
+    });
+  } else if (data.status === 'ACTIVE') {
     const effectiveEnd = data.currentPeriodEnd !== undefined ? data.currentPeriodEnd : current.currentPeriodEnd;
     if (!effectiveEnd || effectiveEnd <= now) {
       subUpdateData.currentPeriodStart = now;
       subUpdateData.currentPeriodEnd = DateTime.fromJSDate(now).plus({ days: 30 }).toJSDate();
+    }
+    if (current.notes === 'LIFETIME' && data.notes === undefined) {
+      subUpdateData.notes = null;
     }
     await prisma.tenant.update({
       where: { id: req.params.id },
@@ -542,6 +569,10 @@ superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
     const effectiveTrialEnd = data.trialEndsAt !== undefined ? data.trialEndsAt : current.trialEndsAt;
     if (!effectiveTrialEnd || effectiveTrialEnd <= now) {
       subUpdateData.trialEndsAt = DateTime.fromJSDate(now).plus({ days: 14 }).toJSDate();
+    }
+    subUpdateData.currentPeriodEnd = null;
+    if (current.notes === 'LIFETIME' && data.notes === undefined) {
+      subUpdateData.notes = null;
     }
     await prisma.tenant.update({
       where: { id: req.params.id },
@@ -576,7 +607,7 @@ superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
   await systemLog({
     tenantId: req.params.id,
     source: 'superadmin',
-    message: `Assinatura atualizada: status ${subscription.status}, plano ${subscription.plan.name}`,
+    message: `Assinatura atualizada: status ${isSettingLifetime ? 'VITALÍCIA (LIFETIME)' : subscription.status}, plano ${subscription.plan.name}`,
   });
 
   res.json({ subscription });

@@ -374,6 +374,7 @@ interface BillingStatusResponse {
     currentPeriodEnd?: string | null;
     lastPaymentAt?: string | null;
     isTrial?: boolean;
+    isLifetime?: boolean;
     trialDaysLeft?: number | null;
     renewDaysLeft?: number | null;
     billingCycle?: BillingCycle;
@@ -559,6 +560,10 @@ export default function PlanosPage() {
 
   const currentPlanSlug = (subscription?.plan?.slug || 'starter').toLowerCase();
   const isTrial = subscription?.status === 'TRIALING';
+  const isLifetime = Boolean(
+    subscription?.isLifetime ||
+      (subscription?.status === 'ACTIVE' && !subscription?.currentPeriodEnd && !subscription?.trialEndsAt),
+  );
   const isStarter = currentPlanSlug === 'starter';
   const isPro = currentPlanSlug === 'pro';
   const isPremium = currentPlanSlug === 'premium';
@@ -892,12 +897,22 @@ export default function PlanosPage() {
                     borderRadius: '12px',
                     fontSize: '0.75rem',
                     fontWeight: 700,
-                    background: isTrial ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                    color: isTrial ? '#FBBF24' : '#10B981',
-                    border: `1px solid ${isTrial ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                    background: isLifetime
+                      ? 'rgba(229, 179, 56, 0.2)'
+                      : isTrial
+                        ? 'rgba(245, 158, 11, 0.2)'
+                        : 'rgba(16, 185, 129, 0.2)',
+                    color: isLifetime ? '#E5B338' : isTrial ? '#FBBF24' : '#10B981',
+                    border: `1px solid ${
+                      isLifetime
+                        ? 'rgba(229, 179, 56, 0.45)'
+                        : isTrial
+                          ? 'rgba(245, 158, 11, 0.4)'
+                          : 'rgba(16, 185, 129, 0.4)'
+                    }`,
                   }}
                 >
-                  {isTrial ? 'Período de Testes (Trial)' : 'Plano Ativo'}
+                  {isLifetime ? '♾️ Licença Vitalícia' : isTrial ? 'Período de Testes (Trial)' : 'Plano Ativo'}
                 </span>
               </div>
 
@@ -968,48 +983,50 @@ export default function PlanosPage() {
                     <span>
                       {subscription?.currentPeriodEnd
                         ? `📅 Renova em ${DateTime.fromISO(subscription.currentPeriodEnd).toFormat('dd/LL/yyyy')} (em ${subscription?.renewDaysLeft ?? 30} dias)`
-                        : '✨ Assinatura Ativa'}
+                        : '♾️ Licença Vitalícia Ativa — Sem vencimento'}
                     </span>
                   </div>
                 )}
 
-                {/* Botão Toggle Auto-Renew da Assinatura SaaS */}
-                <button
-                  type="button"
-                  disabled={togglingAutoRenew}
-                  onClick={handleToggleSaaSAutoRenew}
-                  title="Clique para alternar entre Renovação Automática (Auto-Renew) e Renovação Manual"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.76rem',
-                    fontWeight: 700,
-                    cursor: togglingAutoRenew ? 'wait' : 'pointer',
-                    background:
-                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
-                        ? 'rgba(16, 185, 129, 0.14)'
-                        : 'rgba(245, 158, 11, 0.14)',
-                    color:
-                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
-                        ? '#34D399'
-                        : '#FBBF24',
-                    border:
-                      (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
-                        ? '1px solid rgba(16, 185, 129, 0.35)'
-                        : '1px solid rgba(245, 158, 11, 0.35)',
-                  }}
-                >
-                  <RefreshCw size={12} className={togglingAutoRenew ? 'spin' : ''} />
-                  <span>
-                    Auto-Renew:{' '}
-                    {(billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
-                      ? 'Automático (ON)'
-                      : 'Manual (OFF)'}
-                  </span>
-                </button>
+                {/* Botão Toggle Auto-Renew da Assinatura SaaS (oculto em licenças vitalícias) */}
+                {!isLifetime && (
+                  <button
+                    type="button"
+                    disabled={togglingAutoRenew}
+                    onClick={handleToggleSaaSAutoRenew}
+                    title="Clique para alternar entre Renovação Automática (Auto-Renew) e Renovação Manual"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.76rem',
+                      fontWeight: 700,
+                      cursor: togglingAutoRenew ? 'wait' : 'pointer',
+                      background:
+                        (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                          ? 'rgba(16, 185, 129, 0.14)'
+                          : 'rgba(245, 158, 11, 0.14)',
+                      color:
+                        (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                          ? '#34D399'
+                          : '#FBBF24',
+                      border:
+                        (billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                          ? '1px solid rgba(16, 185, 129, 0.35)'
+                          : '1px solid rgba(245, 158, 11, 0.35)',
+                    }}
+                  >
+                    <RefreshCw size={12} className={togglingAutoRenew ? 'spin' : ''} />
+                    <span>
+                      Auto-Renew:{' '}
+                      {(billingInfo?.subscription?.autoRenew ?? subscription?.autoRenew ?? true)
+                        ? 'Automático (ON)'
+                        : 'Manual (OFF)'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 

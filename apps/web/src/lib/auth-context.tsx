@@ -66,6 +66,7 @@ export interface Subscription {
   currentPeriodEnd?: string | null;
   lastPaymentAt?: string | null;
   isTrial?: boolean;
+  isLifetime?: boolean;
   isTrialExpired?: boolean;
   autoRenew?: boolean;
   trialDaysLeft?: number | null;

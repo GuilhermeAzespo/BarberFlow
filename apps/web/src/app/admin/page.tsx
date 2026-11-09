@@ -271,6 +271,9 @@ interface TenantItem {
     id: string;
     planId: string;
     status: string;
+    currentPeriodEnd?: string | null;
+    trialEndsAt?: string | null;
+    notes?: string | null;
     plan: { id: string; name: string; slug: string; priceCents: number };
     maxProfessionalsOverride?: number | null;
     nfseAddonActive?: boolean;
@@ -1797,36 +1800,47 @@ export default function SuperAdminPage() {
                         <td style={{ padding: '14px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                             <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{t.subscription?.plan.name || 'Sem plano'}</span>
-                            {t.subscription && (
-                              <span
-                                style={{
-                                  fontSize: '0.68rem',
-                                  padding: '2px 7px',
-                                  borderRadius: '999px',
-                                  fontWeight: 700,
-                                  background:
-                                    t.subscription.status === 'ACTIVE'
-                                      ? 'rgba(16, 185, 129, 0.14)'
+                            {t.subscription && (() => {
+                              const isLifetimeSub =
+                                t.subscription.status === 'ACTIVE' &&
+                                !t.subscription.currentPeriodEnd &&
+                                !t.subscription.trialEndsAt;
+                              return (
+                                <span
+                                  style={{
+                                    fontSize: '0.68rem',
+                                    padding: '2px 7px',
+                                    borderRadius: '999px',
+                                    fontWeight: 700,
+                                    background: isLifetimeSub
+                                      ? 'rgba(229, 179, 56, 0.2)'
+                                      : t.subscription.status === 'ACTIVE'
+                                        ? 'rgba(16, 185, 129, 0.14)'
+                                        : t.subscription.status === 'TRIALING'
+                                          ? 'rgba(59, 130, 246, 0.16)'
+                                          : 'rgba(239, 68, 68, 0.16)',
+                                    color: isLifetimeSub
+                                      ? '#E5B338'
+                                      : t.subscription.status === 'ACTIVE'
+                                        ? '#10B981'
+                                        : t.subscription.status === 'TRIALING'
+                                          ? '#60A5FA'
+                                          : '#F87171',
+                                    border: isLifetimeSub ? '1px solid rgba(229, 179, 56, 0.4)' : 'none',
+                                  }}
+                                >
+                                  {isLifetimeSub
+                                    ? '♾️ Vitalícia'
+                                    : t.subscription.status === 'ACTIVE'
+                                      ? 'Ativa'
                                       : t.subscription.status === 'TRIALING'
-                                        ? 'rgba(59, 130, 246, 0.16)'
-                                        : 'rgba(239, 68, 68, 0.16)',
-                                  color:
-                                    t.subscription.status === 'ACTIVE'
-                                      ? '#10B981'
-                                      : t.subscription.status === 'TRIALING'
-                                        ? '#60A5FA'
-                                        : '#F87171',
-                                }}
-                              >
-                                {t.subscription.status === 'ACTIVE'
-                                  ? 'Ativa'
-                                  : t.subscription.status === 'TRIALING'
-                                    ? 'Em Trial'
-                                    : t.subscription.status === 'PAST_DUE'
-                                      ? 'Inadimplente'
-                                      : 'Cancelada'}
-                              </span>
-                            )}
+                                        ? 'Em Trial'
+                                        : t.subscription.status === 'PAST_DUE'
+                                          ? 'Inadimplente'
+                                          : 'Cancelada'}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', display: 'block', marginTop: '2px' }}>
                             {t._count.professionals} prof. | {t._count.appointments} agend.
@@ -1900,7 +1914,11 @@ export default function SuperAdminPage() {
                               onClick={() => {
                                 setSelectedTenant(t);
                                 setSelectedPlanId(t.subscription?.planId || t.subscription?.plan?.id || plans[0]?.id || '');
-                                setSelectedSubStatus(t.subscription?.status || 'ACTIVE');
+                                const isLifetimeSub =
+                                  t.subscription?.status === 'ACTIVE' &&
+                                  !t.subscription?.currentPeriodEnd &&
+                                  !t.subscription?.trialEndsAt;
+                                setSelectedSubStatus(isLifetimeSub ? 'LIFETIME' : t.subscription?.status || 'ACTIVE');
                                 setProfOverride(
                                   t.subscription?.maxProfessionalsOverride ? String(t.subscription.maxProfessionalsOverride) : '',
                                 );
@@ -5241,14 +5259,31 @@ export default function SuperAdminPage() {
 
             <div>
               <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                Status da Assinatura *
+                Status / Vigência da Licença *
               </label>
               <Select value={selectedSubStatus} onChange={(e) => setSelectedSubStatus(e.target.value)}>
-                <option value="ACTIVE">ACTIVE (Assinatura Ativa / Em dia)</option>
-                <option value="TRIALING">TRIALING (Período de Teste Gratuito)</option>
-                <option value="PAST_DUE">PAST_DUE (Pagamento Pendente / Em atraso)</option>
+                <option value="LIFETIME">♾️ VITALÍCIA (Licença Permanente — Sem Tempo Correndo)</option>
+                <option value="ACTIVE">ACTIVE (Assinatura Ativa — Ciclo de 30 dias)</option>
+                <option value="TRIALING">TRIALING (Período de Teste Gratuito — 14 dias)</option>
+                <option value="PAST_DUE">PAST_DUE (Pagamento Pendente / Bloqueado)</option>
                 <option value="CANCELED">CANCELED (Assinatura Cancelada)</option>
               </Select>
+              {selectedSubStatus === 'LIFETIME' && (
+                <div
+                  style={{
+                    marginTop: '8px',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    background: 'rgba(229, 179, 56, 0.12)',
+                    border: '1px solid rgba(229, 179, 56, 0.35)',
+                    fontSize: '0.78rem',
+                    color: '#FDE68A',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  ♾️ <strong>Licença Vitalícia Selecionada:</strong> O tempo não correrá para este salão, não haverá data de vencimento nem disparo de cobranças automáticas.
+                </div>
+              )}
             </div>
 
             <div>

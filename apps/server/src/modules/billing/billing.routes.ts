@@ -208,6 +208,7 @@ billingRouter.get('/status', async (req, res) => {
           currentPeriodEnd: sub.currentPeriodEnd,
           lastPaymentAt: sub.lastPaymentAt,
           isTrial: sub.status === 'TRIALING',
+          isLifetime: Boolean(sub.status === 'ACTIVE' && !sub.currentPeriodEnd && !sub.trialEndsAt),
           trialDaysLeft:
             sub.trialEndsAt
               ? Math.max(0, Math.ceil(DateTime.fromJSDate(sub.trialEndsAt).diffNow('days').days))
