@@ -47,6 +47,26 @@ interface ChangelogItem {
 
 const CHANGELOG_DATA: ChangelogItem[] = [
   {
+    id: 'v4-2',
+    version: 'v4.2',
+    date: '10 de Novembro de 2026',
+    title: 'Cobrança PIX Automática e Link de Pagamento Mercado Pago na Conclusão de Agendamentos',
+    category: 'NEW',
+    categoryLabel: 'Caixa & Pagamentos Ágeis',
+    badgeColor: '#D4AF37',
+    badgeBg: 'rgba(212, 175, 55, 0.16)',
+    summary:
+      'Ao finalizar um atendimento e lançar a receita na Agenda (/calendar), a barbearia agora pode acionar cobranças online instantâneas integradas à sua conta Mercado Pago: QR Code PIX dinâmico com confirmação automática na tela e Link de Pagamento seguro para Cartão de Crédito ou Débito, com botão de envio direto no WhatsApp do cliente e opção de conclusão manual no balcão mantida.',
+    highlights: [
+      'Cobrança PIX Dinâmica na Tela: Selecionando "Pix", o barbeiro clica em "⚡ Gerar QR Code Pix" e o sistema gera o QR Code oficial do Mercado Pago na hora, com código Copia e Cola e validação em tempo real.',
+      'Link de Pagamento para Cartão de Crédito e Débito: Selecionando "Cartão de Crédito" ou "Cartão de Débito", o botão "⚡ Gerar Link de Pagamento" gera na hora o link de checkout do Mercado Pago para o cliente pagar no próprio celular.',
+      'Disparo em 1 Clique no WhatsApp: Botão direto para enviar o QR Code PIX ou o link de pagamento pelo Robô do WhatsApp conectado ao salão (com link alternativo wa.me caso o bot esteja offline).',
+      'Confirmação Instantânea sem Fricção: Varredura contínua de status e Webhook automático que detectam a aprovação do pagamento, registram a receita no Financeiro (/finance) e marcam o agendamento como Concluído.',
+      'Conclusão Manual Preservada: Botões "Concluir & Lançar Receita" e "✓ Já Recebido no Balcão" continuam 100% disponíveis para pagamentos físicos na maquininha do salão ou dinheiro vivo.',
+    ],
+    impact: 'Agilidade total no fechamento da comanda, eliminando filas no caixa e permitindo pagamentos remotos seguros via PIX e Cartão.',
+  },
+  {
     id: 'v4-1',
     version: 'v4.1',
     date: '09 de Novembro de 2026',

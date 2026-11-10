@@ -8,7 +8,9 @@ import { incrementCouponUsage } from '../../lib/coupons.js';
 import { resolvePaymentCycleDays } from '../../lib/billing-cycles.js';
 import { activateAddonOnSubscription, parseSubscriptionActiveAddons } from '../../lib/addons.js';
 import type { PlanPermissions } from '../../lib/tenant-access.js';
+import type { PaymentMethod } from '@prisma/client';
 import { clubService } from '../club/club.service.js';
+import { changeAppointmentStatus } from '../appointments/appointments.service.js';
 
 export const webhooksRouter = Router();
 
@@ -290,7 +292,59 @@ webhooksRouter.post('/tenant-mercadopago/:tenantId', async (req, res) => {
       return res.status(200).json({ received: true, ignored: true });
     }
 
-    await clubService.checkPublicOnlinePaymentStatus(tenantId, String(entityId), true);
+    // 1. Processa se for pagamento do Clube VIP
+    await clubService.checkPublicOnlinePaymentStatus(tenantId, String(entityId), true).catch(() => {});
+
+    // 2. Processa se for pagamento de Agendamento (PIX ou Link de Pagamento)
+    try {
+      const config = await prisma.tenantPaymentConfig.findUnique({ where: { tenantId } });
+      if (config?.mpAccessToken) {
+        const mpRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/${encodeURIComponent(String(entityId))}`,
+          {
+            headers: { Authorization: `Bearer ${config.mpAccessToken}` },
+          },
+        );
+        if (mpRes.ok) {
+          const mpData = (await mpRes.json()) as any;
+          const appId =
+            mpData.metadata?.appointment_id ||
+            (typeof mpData.external_reference === 'string' &&
+            mpData.external_reference.startsWith('app_')
+              ? mpData.external_reference.replace('app_', '')
+              : null);
+
+          if (appId && mpData.status === 'approved') {
+            const app = await prisma.appointment.findFirst({
+              where: { id: appId, tenantId },
+            });
+            if (app && app.status !== 'COMPLETED' && app.status !== 'CANCELED') {
+              const paymentType = mpData.payment_type_id;
+              const paymentMethod: PaymentMethod =
+                paymentType === 'credit_card'
+                  ? 'CREDIT_CARD'
+                  : paymentType === 'debit_card'
+                  ? 'DEBIT_CARD'
+                  : 'PIX';
+
+              await changeAppointmentStatus({
+                tenantId,
+                id: appId,
+                status: 'COMPLETED',
+                paymentMethod,
+              });
+              logger.info(
+                { tenantId, appId, mpPaymentId: entityId },
+                'Agendamento concluído automaticamente após aprovação do pagamento no Mercado Pago',
+              );
+            }
+          }
+        }
+      }
+    } catch (appWebhookErr) {
+      logger.warn({ err: appWebhookErr, tenantId }, 'Aviso ao checar pagamento de agendamento via webhook');
+    }
+
     return res.status(200).json({ received: true });
   } catch (err) {
     logger.warn({ err, tenantId: req.params.tenantId }, 'Aviso ao processar webhook Mercado Pago do salão');

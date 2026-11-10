@@ -15,6 +15,8 @@ import {
   syncDelayedAppointments,
 } from './appointments.service.js';
 import { whatsAppService } from '../whatsapp/whatsapp.service.js';
+import { hasPlanFeature } from '../../lib/tenant-access.js';
+import { sanitizePayerEmail } from '../../lib/mercadopago.js';
 
 export const appointmentsRouter = Router();
 
@@ -350,5 +352,355 @@ appointmentsRouter.post('/:id/notify-delay', async (req, res) => {
     message: sentViaBot
       ? 'Notificação enviada ao WhatsApp do cliente com sucesso!'
       : 'Link para notificação via WhatsApp gerado com sucesso.',
+  });
+});
+
+// ─────────── Cobrança Online via Mercado Pago do Salão (PIX e Cartão) ───────────
+
+// 1. Gerar cobrança PIX dinâmica via Mercado Pago do salão
+appointmentsRouter.post('/:id/charge-pix', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const appointmentId = req.params.id as string;
+
+  const [hasAddon, paymentConfig, appointment] = await Promise.all([
+    hasPlanFeature(tenantId, 'onlinePayments').catch(() => false),
+    prisma.tenantPaymentConfig.findUnique({ where: { tenantId } }),
+    prisma.appointment.findFirst({
+      where: { id: appointmentId, tenantId },
+      include: {
+        customer: true,
+        service: true,
+        professional: true,
+        tenant: true,
+      },
+    }),
+  ]);
+
+  if (!appointment) throw HttpError.notFound('Agendamento não encontrado.');
+  if (appointment.status === 'COMPLETED') {
+    throw HttpError.badRequest('Este agendamento já foi concluído anteriormente.');
+  }
+  if (appointment.status === 'CANCELED') {
+    throw HttpError.badRequest('Este agendamento está cancelado.');
+  }
+
+  if (!hasAddon && req.auth?.role !== 'SUPER_ADMIN') {
+    throw HttpError.forbidden(
+      'O módulo de Recebimentos Online não está ativo no plano do salão. Ative o Add-on em /planos para gerar cobranças automáticas.'
+    );
+  }
+
+  if (!paymentConfig?.enabled || !paymentConfig.mpAccessToken) {
+    throw HttpError.badRequest(
+      'As credenciais do Mercado Pago não estão configuradas ou o módulo está desativado. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
+    );
+  }
+
+  const rawAmountCents =
+    typeof req.body?.amountCents === 'number' && req.body.amountCents > 0
+      ? Math.round(req.body.amountCents)
+      : appointment.priceCents;
+  const amount = Number((rawAmountCents / 100).toFixed(2));
+
+  const rootDomain = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const notificationUrl = `https://${rootDomain}/api/webhooks/tenant-mercadopago/${tenantId}`;
+
+  const cleanCustomerName = (appointment.customer.name || 'Cliente').trim();
+  const nameParts = cleanCustomerName.split(' ');
+  const firstName = nameParts[0] || 'Cliente';
+  const lastName = nameParts.slice(1).join(' ') || 'BarberFlow';
+
+  const mpPayload = {
+    transaction_amount: amount,
+    description: `${appointment.service.name} — ${appointment.tenant.name}`,
+    payment_method_id: 'pix',
+    payer: {
+      email: sanitizePayerEmail(appointment.customer.email),
+      first_name: firstName,
+      last_name: lastName,
+    },
+    notification_url: notificationUrl,
+    external_reference: `app_${appointment.id}`,
+    metadata: {
+      type: 'appointment',
+      appointment_id: appointment.id,
+      tenant_id: tenantId,
+    },
+  };
+
+  const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${paymentConfig.mpAccessToken}`,
+      'Content-Type': 'application/json',
+      'X-Idempotency-Key': `pix-app-${tenantId}-${appointment.id}-${Date.now()}`,
+    },
+    body: JSON.stringify(mpPayload),
+  });
+
+  const mpData = (await mpRes.json()) as any;
+  if (!mpRes.ok) {
+    const detail =
+      mpData?.cause?.[0]?.description ||
+      mpData?.message ||
+      'Não foi possível gerar a cobrança PIX no Mercado Pago.';
+    throw HttpError.badRequest(`Erro no Mercado Pago: ${detail}`);
+  }
+
+  const qrCode = mpData.point_of_interaction?.transaction_data?.qr_code || '';
+  const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64 || '';
+  const ticketUrl = mpData.point_of_interaction?.transaction_data?.ticket_url || '';
+
+  const cleanPhone = appointment.customer.phone
+    ? appointment.customer.phone.replace(/\D/g, '')
+    : null;
+  const formattedAmount = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const textMessage = `Olá ${cleanCustomerName}! 👋\n\nSegue a chave Pix para pagamento do seu atendimento de *${appointment.service.name}* na *${appointment.tenant.name}* no valor de *${formattedAmount}*:\n\n${qrCode}\n\nBasta copiar o código acima e colar no seu banco na opção *Pix Copia e Cola*. Assim que você pagar, o sistema reconhece automaticamente! 💈`;
+
+  const whatsappUrl = cleanPhone
+    ? `https://wa.me/55${cleanPhone.replace(/^55/, '')}?text=${encodeURIComponent(textMessage)}`
+    : null;
+
+  res.json({
+    success: true,
+    paymentId: String(mpData.id),
+    status: mpData.status || 'pending',
+    qrCode,
+    qrCodeBase64,
+    ticketUrl,
+    amount,
+    customerName: cleanCustomerName,
+    customerPhone: cleanPhone,
+    whatsappUrl,
+    whatsappText: textMessage,
+  });
+});
+
+// 2. Gerar link de pagamento (Cartão de Crédito / Débito) via Checkout Mercado Pago
+appointmentsRouter.post('/:id/payment-link', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const appointmentId = req.params.id as string;
+
+  const [hasAddon, paymentConfig, appointment] = await Promise.all([
+    hasPlanFeature(tenantId, 'onlinePayments').catch(() => false),
+    prisma.tenantPaymentConfig.findUnique({ where: { tenantId } }),
+    prisma.appointment.findFirst({
+      where: { id: appointmentId, tenantId },
+      include: {
+        customer: true,
+        service: true,
+        professional: true,
+        tenant: true,
+      },
+    }),
+  ]);
+
+  if (!appointment) throw HttpError.notFound('Agendamento não encontrado.');
+  if (appointment.status === 'COMPLETED') {
+    throw HttpError.badRequest('Este agendamento já foi concluído anteriormente.');
+  }
+  if (appointment.status === 'CANCELED') {
+    throw HttpError.badRequest('Este agendamento está cancelado.');
+  }
+
+  if (!hasAddon && req.auth?.role !== 'SUPER_ADMIN') {
+    throw HttpError.forbidden(
+      'O módulo de Recebimentos Online não está ativo no plano do salão. Ative o Add-on em /planos para gerar links de pagamento.'
+    );
+  }
+
+  if (!paymentConfig?.enabled || !paymentConfig.mpAccessToken) {
+    throw HttpError.badRequest(
+      'As credenciais do Mercado Pago não estão configuradas ou o módulo está desativado. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
+    );
+  }
+
+  const rawAmountCents =
+    typeof req.body?.amountCents === 'number' && req.body.amountCents > 0
+      ? Math.round(req.body.amountCents)
+      : appointment.priceCents;
+  const amount = Number((rawAmountCents / 100).toFixed(2));
+
+  const rootDomain = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
+  const notificationUrl = `https://${rootDomain}/api/webhooks/tenant-mercadopago/${tenantId}`;
+  const cleanCustomerName = (appointment.customer.name || 'Cliente').trim();
+
+  const prefPayload = {
+    items: [
+      {
+        id: appointment.id,
+        title: `${appointment.service.name} — ${appointment.tenant.name}`,
+        description: `Atendimento com ${appointment.professional?.name || 'Profissional'}`,
+        category_id: 'services',
+        quantity: 1,
+        currency_id: 'BRL',
+        unit_price: amount,
+      },
+    ],
+    payer: {
+      name: cleanCustomerName,
+      email: sanitizePayerEmail(appointment.customer.email),
+    },
+    notification_url: notificationUrl,
+    external_reference: `app_${appointment.id}`,
+    metadata: {
+      type: 'appointment',
+      appointment_id: appointment.id,
+      tenant_id: tenantId,
+    },
+    back_urls: {
+      success: `https://${rootDomain}/${appointment.tenant.slug}?paid=true&app=${appointment.id}`,
+      pending: `https://${rootDomain}/${appointment.tenant.slug}?pending=true&app=${appointment.id}`,
+      failure: `https://${rootDomain}/${appointment.tenant.slug}?failed=true&app=${appointment.id}`,
+    },
+    auto_return: 'approved',
+  };
+
+  const prefRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${paymentConfig.mpAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(prefPayload),
+  });
+
+  const prefData = (await prefRes.json()) as any;
+  if (!prefRes.ok) {
+    const detail =
+      prefData?.cause?.[0]?.description ||
+      prefData?.message ||
+      'Não foi possível criar o link de pagamento no Mercado Pago.';
+    throw HttpError.badRequest(`Erro no Mercado Pago: ${detail}`);
+  }
+
+  const paymentLink = prefData.init_point || '';
+  const cleanPhone = appointment.customer.phone
+    ? appointment.customer.phone.replace(/\D/g, '')
+    : null;
+  const formattedAmount = amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const textMessage = `Olá ${cleanCustomerName}! 👋\n\nSegue o link seguro para pagamento do seu atendimento de *${appointment.service.name}* na *${appointment.tenant.name}* no valor de *${formattedAmount}*:\n\n${paymentLink}\n\nVocê pode pagar via *Cartão de Crédito*, *Débito* ou *PIX*. O comprovante é gerado na hora! 💈`;
+
+  const whatsappUrl = cleanPhone
+    ? `https://wa.me/55${cleanPhone.replace(/^55/, '')}?text=${encodeURIComponent(textMessage)}`
+    : null;
+
+  res.json({
+    success: true,
+    preferenceId: prefData.id,
+    paymentLink,
+    amount,
+    customerName: cleanCustomerName,
+    customerPhone: cleanPhone,
+    whatsappUrl,
+    whatsappText: textMessage,
+  });
+});
+
+// 3. Checar status da cobrança online e concluir agendamento caso aprovado
+appointmentsRouter.get('/:id/charge-status', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const appointmentId = req.params.id as string;
+  const paymentId = typeof req.query.paymentId === 'string' ? req.query.paymentId.trim() : '';
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId },
+  });
+
+  if (!appointment) throw HttpError.notFound('Agendamento não encontrado.');
+
+  if (appointment.status === 'COMPLETED') {
+    return res.json({ completed: true, status: 'approved', message: 'Agendamento concluído!' });
+  }
+
+  if (paymentId) {
+    const config = await prisma.tenantPaymentConfig.findUnique({ where: { tenantId } });
+    if (config?.mpAccessToken) {
+      try {
+        const mpRes = await fetch(
+          `https://api.mercadopago.com/v1/payments/${encodeURIComponent(paymentId)}`,
+          {
+            headers: { Authorization: `Bearer ${config.mpAccessToken}` },
+          },
+        );
+        if (mpRes.ok) {
+          const mpData = (await mpRes.json()) as any;
+          if (mpData.status === 'approved') {
+            const paymentType = mpData.payment_type_id;
+            const paymentMethod: PaymentMethod =
+              paymentType === 'credit_card'
+                ? 'CREDIT_CARD'
+                : paymentType === 'debit_card'
+                ? 'DEBIT_CARD'
+                : 'PIX';
+
+            await changeAppointmentStatus({
+              tenantId,
+              id: appointment.id,
+              status: 'COMPLETED',
+              paymentMethod,
+            });
+
+            return res.json({
+              completed: true,
+              status: 'approved',
+              message: 'Pagamento aprovado no Mercado Pago! Agendamento concluído.',
+            });
+          }
+
+          return res.json({
+            completed: false,
+            status: mpData.status || 'pending',
+            statusDetail: mpData.status_detail,
+          });
+        }
+      } catch {
+        // Silencioso em falha transitória
+      }
+    }
+  }
+
+  return res.json({ completed: false, status: 'pending' });
+});
+
+// 4. Enviar mensagem de cobrança diretamente no WhatsApp do cliente via Bot
+appointmentsRouter.post('/:id/send-payment-whatsapp', async (req, res) => {
+  const tenantId = req.tenantId!;
+  const appointmentId = req.params.id as string;
+  const textMessage = typeof req.body?.textMessage === 'string' ? req.body.textMessage.trim() : '';
+
+  if (!textMessage) {
+    throw HttpError.badRequest('Mensagem de texto não informada.');
+  }
+
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, tenantId },
+    include: { customer: true },
+  });
+
+  if (!appointment?.customer?.phone) {
+    throw HttpError.badRequest('Cliente não possui telefone cadastrado.');
+  }
+
+  const cleanPhone = appointment.customer.phone.replace(/\D/g, '');
+  let sentViaBot = false;
+  try {
+    const conn = whatsAppService.getConnection(tenantId);
+    if (conn.status === 'CONNECTED') {
+      sentViaBot = await whatsAppService.sendMessage(tenantId, cleanPhone, textMessage);
+    }
+  } catch {
+    sentViaBot = false;
+  }
+
+  const whatsappUrl = `https://wa.me/55${cleanPhone.replace(/^55/, '')}?text=${encodeURIComponent(textMessage)}`;
+
+  res.json({
+    success: true,
+    sentViaBot,
+    whatsappUrl,
+    message: sentViaBot
+      ? 'Cobrança enviada ao WhatsApp do cliente com sucesso pelo Bot!'
+      : 'Link para envio no WhatsApp gerado.',
   });
 });

@@ -23,6 +23,13 @@ import {
   Trash2,
   CalendarSync,
   Send,
+  QrCode,
+  CreditCard,
+  Copy,
+  ExternalLink,
+  Zap,
+  Link as LinkIcon,
+  RefreshCw,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -138,7 +145,7 @@ function layoutDayAppointments(apps: Appointment[]) {
 }
 
 export default function CalendarPage() {
-  const { tenant, user } = useAuth();
+  const { tenant, user, hasPlanFeature } = useAuth();
   const { toast, confirm } = useToast();
   const timezone = tenant?.timezone || 'America/Sao_Paulo';
 
@@ -168,6 +175,25 @@ export default function CalendarPage() {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('PIX');
+
+  // Cobrança Online Mercado Pago (PIX e Link de Pagamento)
+  interface OnlineChargeState {
+    type: 'PIX' | 'LINK';
+    paymentId?: string;
+    preferenceId?: string;
+    qrCode?: string;
+    qrCodeBase64?: string;
+    paymentLink?: string;
+    amount: number;
+    status: string;
+    whatsappUrl?: string | null;
+    whatsappText?: string | null;
+  }
+  const [hasOnlinePayments, setHasOnlinePayments] = useState(false);
+  const [activeCharge, setActiveCharge] = useState<OnlineChargeState | null>(null);
+  const [generatingCharge, setGeneratingCharge] = useState(false);
+  const [sendingChargeWhatsapp, setSendingChargeWhatsapp] = useState(false);
+  const [copiedChargeData, setCopiedChargeData] = useState(false);
 
   // Menu de Contexto (botão direito)
   interface ContextMenuState {
@@ -479,6 +505,167 @@ export default function CalendarPage() {
     }
   };
 
+  // Carrega configuração de pagamentos online (Mercado Pago)
+  useEffect(() => {
+    api
+      .get<{
+        hasAccess?: boolean;
+        hasOnlinePaymentsAddon?: boolean;
+        config?: { enabled: boolean; hasAccessToken: boolean };
+      }>('/api/tenant/payment-config')
+      .then((res) => {
+        const active = Boolean(
+          (res.hasAccess || res.hasOnlinePaymentsAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN') &&
+            res.config?.enabled &&
+            res.config?.hasAccessToken,
+        );
+        setHasOnlinePayments(active);
+      })
+      .catch(() => {});
+  }, [hasPlanFeature, user?.role]);
+
+  const handleGeneratePixCharge = async () => {
+    if (!selectedApp) return;
+    setGeneratingCharge(true);
+    try {
+      const res = await api.post<{
+        success: boolean;
+        paymentId: string;
+        status: string;
+        qrCode: string;
+        qrCodeBase64: string;
+        ticketUrl: string;
+        amount: number;
+        customerName: string;
+        customerPhone: string | null;
+        whatsappUrl: string | null;
+        whatsappText: string | null;
+      }>(`/api/appointments/${selectedApp.id}/charge-pix`);
+
+      setActiveCharge({
+        type: 'PIX',
+        paymentId: res.paymentId,
+        qrCode: res.qrCode,
+        qrCodeBase64: res.qrCodeBase64,
+        amount: res.amount,
+        status: res.status,
+        whatsappUrl: res.whatsappUrl,
+        whatsappText: res.whatsappText,
+      });
+      toast.success('Cobrança PIX gerada com sucesso! QR Code pronto na tela.');
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'Falha ao gerar cobrança PIX no Mercado Pago.',
+      );
+    } finally {
+      setGeneratingCharge(false);
+    }
+  };
+
+  const handleGeneratePaymentLink = async () => {
+    if (!selectedApp) return;
+    setGeneratingCharge(true);
+    try {
+      const res = await api.post<{
+        success: boolean;
+        preferenceId: string;
+        paymentLink: string;
+        amount: number;
+        customerName: string;
+        customerPhone: string | null;
+        whatsappUrl: string | null;
+        whatsappText: string | null;
+      }>(`/api/appointments/${selectedApp.id}/payment-link`);
+
+      setActiveCharge({
+        type: 'LINK',
+        preferenceId: res.preferenceId,
+        paymentLink: res.paymentLink,
+        amount: res.amount,
+        status: 'pending',
+        whatsappUrl: res.whatsappUrl,
+        whatsappText: res.whatsappText,
+      });
+      toast.success('Link de Pagamento gerado com sucesso!');
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof ApiError ? err.message : 'Falha ao gerar link de pagamento no Mercado Pago.',
+      );
+    } finally {
+      setGeneratingCharge(false);
+    }
+  };
+
+  const handleCheckChargeStatus = async (silent = false) => {
+    if (!selectedApp || !activeCharge) return;
+    try {
+      const paymentId = activeCharge.paymentId || '';
+      const res = await api.get<{ completed: boolean; status: string; message?: string }>(
+        `/api/appointments/${selectedApp.id}/charge-status?paymentId=${encodeURIComponent(paymentId)}`,
+      );
+      if (res.completed) {
+        toast.success(
+          res.message || '🎉 Pagamento confirmado no Mercado Pago! Agendamento concluído.',
+        );
+        setActiveCharge(null);
+        setIsStatusModalOpen(false);
+        setSelectedApp(null);
+        await loadData();
+      } else if (!silent) {
+        toast.info('Pagamento ainda pendente. Aguardando cliente...');
+      }
+    } catch {
+      // Ignora erro em polling
+    }
+  };
+
+  const handleSendChargeToWhatsapp = async () => {
+    if (!selectedApp || !activeCharge?.whatsappText) return;
+    setSendingChargeWhatsapp(true);
+    try {
+      const res = await api.post<{
+        success: boolean;
+        sentViaBot: boolean;
+        whatsappUrl: string;
+        message: string;
+      }>(`/api/appointments/${selectedApp.id}/send-payment-whatsapp`, {
+        textMessage: activeCharge.whatsappText,
+      });
+      if (res.sentViaBot) {
+        toast.success(res.message || 'Cobrança enviada com sucesso no WhatsApp!');
+      } else if (res.whatsappUrl) {
+        window.open(res.whatsappUrl, '_blank');
+        toast.info('Abrindo WhatsApp para enviar a cobrança...');
+      }
+    } catch (err: unknown) {
+      if (activeCharge.whatsappUrl) {
+        window.open(activeCharge.whatsappUrl, '_blank');
+      } else {
+        toast.error(
+          err instanceof ApiError ? err.message : 'Falha ao enviar cobrança via WhatsApp.',
+        );
+      }
+    } finally {
+      setSendingChargeWhatsapp(false);
+    }
+  };
+
+  const copyChargeData = (text?: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedChargeData(true);
+    toast.success('Copiado para a área de transferência!');
+    setTimeout(() => setCopiedChargeData(false), 2500);
+  };
+
+  useEffect(() => {
+    if (!activeCharge || !selectedApp || !isStatusModalOpen) return;
+    const interval = setInterval(() => {
+      handleCheckChargeStatus(true);
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [activeCharge, selectedApp, isStatusModalOpen]);
+
   // Serviços disponíveis para reagendamento com base no profissional selecionado
   const rescheduleAvailableServices = useMemo(() => {
     if (!rescheduleProfId) return services;
@@ -633,12 +820,16 @@ export default function CalendarPage() {
 
   const handleQuickComplete = (app: Appointment) => {
     setContextMenu(null);
+    setActiveCharge(null);
+    setPaymentMethod('PIX');
     setSelectedApp(app);
     setIsStatusModalOpen(true);
   };
 
   const handleViewDetails = (app: Appointment) => {
     setContextMenu(null);
+    setActiveCharge(null);
+    setPaymentMethod('PIX');
     setSelectedApp(app);
     setIsStatusModalOpen(true);
   };
@@ -1348,6 +1539,8 @@ export default function CalendarPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      setActiveCharge(null);
+                      setPaymentMethod('PIX');
                       setSelectedApp(delayedAppointments[0]);
                       setIsStatusModalOpen(true);
                     }}
@@ -1658,6 +1851,8 @@ export default function CalendarPage() {
                               key={app.id}
                               onClick={(e) => {
                                 e.stopPropagation();
+                                setActiveCharge(null);
+                                setPaymentMethod('PIX');
                                 setSelectedApp(app);
                                 setIsStatusModalOpen(true);
                               }}
@@ -2061,7 +2256,15 @@ export default function CalendarPage() {
       </Modal>
 
       {/* Modal: Detalhes & Concluir Atendimento */}
-      <Modal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} title="Detalhes do Agendamento">
+      <Modal
+        isOpen={isStatusModalOpen}
+        onClose={() => {
+          setIsStatusModalOpen(false);
+          setActiveCharge(null);
+          setSelectedApp(null);
+        }}
+        title="Detalhes do Agendamento"
+      >
         {selectedApp && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div className="glass-card" style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -2217,56 +2420,401 @@ export default function CalendarPage() {
             )}
 
             {selectedApp.status !== 'COMPLETED' && selectedApp.status !== 'CANCELED' && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>
-                  Forma de Pagamento (lançamento automático no Caixa):
-                </label>
-                <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                  <option value="PIX">Pix</option>
-                  <option value="CREDIT_CARD">Cartão de Crédito</option>
-                  <option value="DEBIT_CARD">Cartão de Débito</option>
-                  <option value="CASH">Dinheiro em Espécie</option>
-                  <option value="TRANSFER">Transferência Bancária</option>
-                  <option value="OTHER">Outro</option>
-                </Select>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
-              {selectedApp.status !== 'COMPLETED' && selectedApp.status !== 'CANCELED' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsStatusModalOpen(false);
-                      handleStartReschedule(selectedApp);
+              <>
+                {activeCharge ? (
+                  <div
+                    style={{
+                      padding: '18px 20px',
+                      borderRadius: '14px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(212, 175, 55, 0.35)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px',
                     }}
-                    className="glass-card"
-                    style={{ padding: '12px 16px', color: '#38BDF8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
-                    <CalendarSync size={16} />
-                    <span>Reagendar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancelAppointment}
-                    className="glass-card"
-                    style={{ padding: '12px 16px', color: '#FB7185', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <XCircle size={16} />
-                    <span>Cancelar Horário</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCompleteAppointment}
-                    className="gold-gradient-primary gold-glow"
-                    style={{ flex: 1, minWidth: '180px', padding: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                  >
-                    <CheckCircle size={16} />
-                    <span>Concluir & Lançar Receita</span>
-                  </button>
-                </>
-              )}
+                    {/* Cabeçalho */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {activeCharge.type === 'PIX' ? (
+                          <QrCode size={20} style={{ color: 'var(--gold-primary)' }} />
+                        ) : (
+                          <CreditCard size={20} style={{ color: '#60A5FA' }} />
+                        )}
+                        <span style={{ fontSize: '0.98rem', fontWeight: 800, color: '#FAFAFA' }}>
+                          {activeCharge.type === 'PIX' ? 'Cobrança PIX Gerada' : 'Link de Pagamento Criado'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 900, color: 'var(--gold-primary)' }}>
+                        R$ {activeCharge.amount.toFixed(2).replace('.', ',')}
+                      </div>
+                    </div>
+
+                    {/* QR Code Pix */}
+                    {activeCharge.type === 'PIX' && activeCharge.qrCodeBase64 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <div
+                          style={{
+                            padding: '12px',
+                            background: '#FFFFFF',
+                            borderRadius: '14px',
+                            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <img
+                            src={`data:image/png;base64,${activeCharge.qrCodeBase64}`}
+                            alt="QR Code Pix"
+                            style={{ width: '180px', height: '180px', display: 'block' }}
+                          />
+                        </div>
+                        <span style={{ fontSize: '0.78rem', color: '#A1A1AA', textAlign: 'center' }}>
+                          Mostre o QR Code acima para o cliente escanear no aplicativo do banco.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Copia e Cola / Link */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#A1A1AA', marginBottom: '6px' }}>
+                        {activeCharge.type === 'PIX' ? 'Chave Pix Copia e Cola:' : 'Link de Pagamento:'}
+                      </label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="text"
+                          readOnly
+                          value={activeCharge.type === 'PIX' ? (activeCharge.qrCode || '') : (activeCharge.paymentLink || '')}
+                          style={{
+                            flex: 1,
+                            padding: '9px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(0, 0, 0, 0.35)',
+                            border: '1px solid rgba(255, 255, 255, 0.12)',
+                            color: '#FAFAFA',
+                            fontSize: '0.78rem',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => copyChargeData(activeCharge.type === 'PIX' ? activeCharge.qrCode : activeCharge.paymentLink)}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(212, 175, 55, 0.4)',
+                            background: 'rgba(212, 175, 55, 0.15)',
+                            color: '#F5D061',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {copiedChargeData ? <Check size={14} /> : <Copy size={14} />}
+                          <span>{copiedChargeData ? 'Copiado!' : 'Copiar'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Status em tempo real */}
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: 'rgba(245, 158, 11, 0.1)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        color: '#FBBF24',
+                        fontSize: '0.8rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Aguardando confirmação do pagamento...</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCheckChargeStatus(false)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#FBBF24',
+                          fontSize: '0.76rem',
+                          fontWeight: 700,
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Checar Agora
+                      </button>
+                    </div>
+
+                    {/* Ações: WhatsApp & Abrir Link */}
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={handleSendChargeToWhatsapp}
+                        disabled={sendingChargeWhatsapp}
+                        style={{
+                          flex: 1,
+                          minWidth: '200px',
+                          padding: '10px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(37, 211, 102, 0.4)',
+                          background: 'rgba(37, 211, 102, 0.16)',
+                          color: '#25D366',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          cursor: sendingChargeWhatsapp ? 'wait' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <MessageCircle size={15} />
+                        <span>{sendingChargeWhatsapp ? 'Enviando...' : 'Enviar no WhatsApp do Cliente'}</span>
+                      </button>
+
+                      {activeCharge.type === 'LINK' && activeCharge.paymentLink && (
+                        <a
+                          href={activeCharge.paymentLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(59, 130, 246, 0.4)',
+                            background: 'rgba(59, 130, 246, 0.16)',
+                            color: '#60A5FA',
+                            fontSize: '0.82rem',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <span>Abrir Checkout</span>
+                          <ExternalLink size={13} />
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Rodapé: Voltar / Concluir Manualmente */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '10px',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                        paddingTop: '10px',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setActiveCharge(null)}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          background: 'transparent',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#A1A1AA',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ← Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCompleteAppointment}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: '6px',
+                          background: 'rgba(16, 185, 129, 0.16)',
+                          border: '1px solid rgba(16, 185, 129, 0.4)',
+                          color: '#34D399',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✓ Já Recebido no Balcão (Concluir Direto)
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 600 }}>
+                        Forma de Pagamento (lançamento automático no Caixa):
+                      </label>
+                      <Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                        <option value="PIX">Pix</option>
+                        <option value="CREDIT_CARD">Cartão de Crédito</option>
+                        <option value="DEBIT_CARD">Cartão de Débito</option>
+                        <option value="CASH">Dinheiro em Espécie</option>
+                        <option value="TRANSFER">Transferência Bancária</option>
+                        <option value="OTHER">Outro</option>
+                      </Select>
+                    </div>
+
+                    {/* CARD DE COBRANÇA ONLINE MERCADO PAGO SE TIVER CONFIGURADO */}
+                    {hasOnlinePayments && paymentMethod === 'PIX' && (
+                      <div
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          background: 'rgba(212, 175, 55, 0.08)',
+                          border: '1px solid rgba(212, 175, 55, 0.28)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: '180px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                            <QrCode size={15} style={{ color: 'var(--gold-primary)' }} />
+                            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#FAFAFA' }}>
+                              Cobrança PIX Automática (Mercado Pago)
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '0.76rem', color: '#A1A1AA', margin: 0 }}>
+                            Gere o QR Code dinâmico na tela para o cliente pagar com validação instantânea.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGeneratePixCharge}
+                          disabled={generatingCharge}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                            color: '#09090B',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            cursor: generatingCharge ? 'wait' : 'pointer',
+                            border: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Zap size={14} />
+                          <span>{generatingCharge ? 'Gerando...' : 'Gerar QR Code Pix'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {hasOnlinePayments && (paymentMethod === 'CREDIT_CARD' || paymentMethod === 'DEBIT_CARD') && (
+                      <div
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          background: 'rgba(59, 130, 246, 0.08)',
+                          border: '1px solid rgba(59, 130, 246, 0.28)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: '180px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                            <CreditCard size={15} style={{ color: '#60A5FA' }} />
+                            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#FAFAFA' }}>
+                              Link de Pagamento (Mercado Pago)
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '0.76rem', color: '#A1A1AA', margin: 0 }}>
+                            Gere um link seguro para o cliente pagar por Cartão de Crédito ou Débito.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGeneratePaymentLink}
+                          disabled={generatingCharge}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, #60A5FA 0%, #3B82F6 100%)',
+                            color: '#FFFFFF',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            cursor: generatingCharge ? 'wait' : 'pointer',
+                            border: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <LinkIcon size={14} />
+                          <span>{generatingCharge ? 'Gerando...' : 'Gerar Link de Pagamento'}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsStatusModalOpen(false);
+                          handleStartReschedule(selectedApp);
+                        }}
+                        className="glass-card"
+                        style={{ padding: '12px 16px', color: '#38BDF8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <CalendarSync size={16} />
+                        <span>Reagendar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelAppointment}
+                        className="glass-card"
+                        style={{ padding: '12px 16px', color: '#FB7185', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <XCircle size={16} />
+                        <span>Cancelar Horário</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCompleteAppointment}
+                        className="gold-gradient-primary gold-glow"
+                        style={{ flex: 1, minWidth: '180px', padding: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                      >
+                        <CheckCircle size={16} />
+                        <span>Concluir & Lançar Receita</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
 
               {selectedApp.status === 'COMPLETED' && (
                 <div
@@ -2286,7 +2834,6 @@ export default function CalendarPage() {
                 </div>
               )}
             </div>
-          </div>
         )}
       </Modal>
 
