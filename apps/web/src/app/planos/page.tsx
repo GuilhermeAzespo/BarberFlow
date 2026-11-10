@@ -494,7 +494,7 @@ const isAddonIncludedInPlan = (plan: PublicPlan | null | undefined, addonKey: st
 const getAddonRouteHref = (addonKey: string): string => {
   switch (addonKey) {
     case 'onlinePayments':
-      return '/settings';
+      return '/settings?tab=integracoes';
     case 'club':
       return '/clube';
     case 'marketing':

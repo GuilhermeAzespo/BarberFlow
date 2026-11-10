@@ -490,15 +490,18 @@ tenantRouter.get('/payment-config', async (req, res) => {
 
   const rootDomain = process.env.PUBLIC_ROOT_DOMAIN || 'barberflow.azespo.com.br';
   const webhookUrl = `https://${rootDomain}/api/webhooks/tenant-mercadopago/${tenantId}`;
+  const maskedToken = maskToken(config?.mpAccessToken);
 
   res.json({
     hasAccess,
+    hasOnlinePaymentsAddon: hasAccess,
     webhookUrl,
     config: {
       enabled: config?.enabled ?? false,
       mpPublicKey: config?.mpPublicKey ?? '',
       hasAccessToken: Boolean(config?.mpAccessToken),
-      maskedAccessToken: maskToken(config?.mpAccessToken),
+      maskedAccessToken: maskedToken,
+      mpAccessTokenPreview: maskedToken,
       mpWebhookSecret: config?.mpWebhookSecret ?? '',
       pixEnabled: config?.pixEnabled ?? true,
       creditCardEnabled: config?.creditCardEnabled ?? true,
@@ -573,13 +576,17 @@ tenantRouter.put('/payment-config', requireRole('OWNER', 'MANAGER'), async (req,
     message: `Integração de Recebimentos Online (Mercado Pago do Salão) ${saved.enabled ? 'ATIVADA' : 'ATUALIZADA'}.`,
   });
 
+  const maskedToken = maskToken(saved.mpAccessToken);
+
   res.json({
     success: true,
+    message: 'Configurações de recebimento online salvas com sucesso!',
     config: {
       enabled: saved.enabled,
       mpPublicKey: saved.mpPublicKey ?? '',
       hasAccessToken: Boolean(saved.mpAccessToken),
-      maskedAccessToken: maskToken(saved.mpAccessToken),
+      maskedAccessToken: maskedToken,
+      mpAccessTokenPreview: maskedToken,
       mpWebhookSecret: saved.mpWebhookSecret ?? '',
       pixEnabled: saved.pixEnabled,
       creditCardEnabled: saved.creditCardEnabled,
@@ -611,23 +618,40 @@ tenantRouter.post('/payment-config/test', requireRole('OWNER', 'MANAGER'), async
     });
 
     if (!mpRes.ok) {
+      let detail = '';
+      try {
+        const errJson = (await mpRes.json()) as any;
+        detail = errJson?.message || errJson?.error || '';
+      } catch {}
       throw HttpError.badRequest(
-        'Access Token inválido ou expirado no Mercado Pago. Verifique se copiou a credencial de Produção (APP_USR-...).'
+        `Access Token inválido ou não autorizado no Mercado Pago (Status ${mpRes.status}${detail ? `: ${detail}` : ''}). Verifique se copiou a credencial de Produção (iniciada por APP_USR-).`
       );
     }
 
     const userData = (await mpRes.json()) as any;
+    const accountNickname =
+      userData.nickname ||
+      [userData.first_name, userData.last_name].filter(Boolean).join(' ') ||
+      `Conta ID ${userData.id}`;
+
     res.json({
+      success: true,
       valid: true,
+      message: `Conexão validada com sucesso! Conta Mercado Pago "${accountNickname}" conectada e pronta para receber pagamentos.`,
       accountId: userData.id,
-      nickname: userData.nickname || '',
+      nickname: accountNickname,
       firstName: userData.first_name || '',
       lastName: userData.last_name || '',
       email: userData.email || '',
+      account: {
+        id: userData.id,
+        nickname: accountNickname,
+        email: userData.email || '',
+      },
     });
   } catch (err) {
     if (err instanceof HttpError) throw err;
-    throw HttpError.badRequest('Não foi possível validar o token na API do Mercado Pago.');
+    throw HttpError.badRequest('Não foi possível conectar à API do Mercado Pago. Verifique sua conexão e tente novamente.');
   }
 });
 

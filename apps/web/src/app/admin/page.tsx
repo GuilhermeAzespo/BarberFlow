@@ -286,6 +286,7 @@ interface TenantItem {
     plan: { id: string; name: string; slug: string; priceCents: number };
     maxProfessionalsOverride?: number | null;
     nfseAddonActive?: boolean;
+    activeAddons?: Array<{ key: string; name?: string; priceCents?: number; expiresAt?: string | null }> | any;
   } | null;
   _count: {
     users: number;
@@ -467,6 +468,7 @@ export default function SuperAdminPage() {
   const [addonsList, setAddonsList] = useState<AdminAddonItem[]>([]);
   const [savingAddons, setSavingAddons] = useState(false);
   const [togglingAddonTenantId, setTogglingAddonTenantId] = useState<string | null>(null);
+  const [selectedQuickAddonKey, setSelectedQuickAddonKey] = useState<string>('onlinePayments');
   const [couponsList, setCouponsList] = useState<AdminCouponItem[]>([]);
   const [savingCoupon, setSavingCoupon] = useState(false);
   const [showCouponForm, setShowCouponForm] = useState(false);
@@ -742,11 +744,17 @@ export default function SuperAdminPage() {
     }
   };
 
-  const handleQuickToggleTenantAddon = async (tenant: TenantItem, nextActive: boolean) => {
+  const handleQuickToggleTenantAddon = async (
+    tenant: TenantItem,
+    addonKey: string,
+    nextActive: boolean,
+  ) => {
     setTogglingAddonTenantId(tenant.id);
     try {
       await api.patch(`/api/superadmin/tenants/${tenant.id}/subscription`, {
-        nfseAddonActive: nextActive,
+        addonKey,
+        addonActive: nextActive,
+        ...(addonKey === 'nfse' ? { nfseAddonActive: nextActive } : {}),
       });
       await Promise.all([loadTenants(), loadAddons(), loadOverview()]);
       toast.success(
@@ -3265,83 +3273,146 @@ export default function SuperAdminPage() {
 
             {/* Controle de Add-on Ativo por Salão */}
             <div className="glass-panel" style={{ padding: '24px' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 4px 0' }}>
-                  Controle Rápido de Add-ons por Salão ({tenants.length})
-                </h4>
-                <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: 0 }}>
-                  Visualize quais salões já possuem o módulo incluso pelo Plano e ative ou desative o Add-on avulso manualmente com 1 clique.
-                </p>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '14px',
+                  marginBottom: '18px',
+                }}
+              >
+                <div>
+                  <h4 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 4px 0' }}>
+                    Controle Rápido de Add-ons por Salão ({tenants.length})
+                  </h4>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Selecione o módulo Add-on desejado abaixo para visualizar quais salões já possuem acesso e ativar ou desativar avulso com 1 clique.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#A1A1AA' }}>
+                    Módulo Add-on:
+                  </label>
+                  <select
+                    value={selectedQuickAddonKey}
+                    onChange={(e) => setSelectedQuickAddonKey(e.target.value)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(212,175,55,0.4)',
+                      color: '#FAFAFA',
+                      fontSize: '0.86rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {addonsList.map((a) => (
+                      <option key={a.key} value={a.key} style={{ background: '#18181B', color: '#FAFAFA' }}>
+                        {a.name} (R$ {a.priceReais}/mês)
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      <th style={{ padding: '10px 12px' }}>Salão</th>
-                      <th style={{ padding: '10px 12px' }}>Plano Atual</th>
-                      <th style={{ padding: '10px 12px' }}>Status do Módulo NFS-e</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Ação Rápida</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tenants.map((t) => {
-                      const planSlug = (t.subscription?.plan?.slug || 'starter').toLowerCase();
-                      const nfseAddonCfg = addonsList.find((a) => a.key === 'nfse');
-                      const includedInPlan = Boolean(nfseAddonCfg?.includedInPlans?.[planSlug]);
-                      const hasAddonActive = Boolean(t.subscription?.nfseAddonActive);
+              {(() => {
+                const currentAddonCfg =
+                  addonsList.find((a) => a.key === selectedQuickAddonKey) || addonsList[0];
+                const addonShortTitle =
+                  currentAddonCfg?.shortName || currentAddonCfg?.name || 'Add-on';
 
-                      return (
-                        <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                          <td style={{ padding: '12px' }}>
-                            <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{t.name}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>/{t.slug}</div>
-                          </td>
-                          <td style={{ padding: '12px', fontWeight: 600, color: 'var(--primary)' }}>
-                            {t.subscription?.plan?.name || 'Sem plano'}
-                          </td>
-                          <td style={{ padding: '12px' }}>
-                            {includedInPlan ? (
-                              <span className="badge badge-success">Incluso no Plano ({t.subscription?.plan?.name})</span>
-                            ) : hasAddonActive ? (
-                              <span className="badge badge-success">Add-on Avulso Ativo</span>
-                            ) : (
-                              <span className="badge badge-neutral">Não contratado</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '12px', textAlign: 'right' }}>
-                            <button
-                              type="button"
-                              disabled={togglingAddonTenantId === t.id}
-                              onClick={() => handleQuickToggleTenantAddon(t, !hasAddonActive)}
-                              style={{
-                                padding: '6px 12px',
-                                borderRadius: '8px',
-                                fontSize: '0.78rem',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                border: hasAddonActive
-                                  ? '1px solid rgba(244, 63, 94, 0.35)'
-                                  : '1px solid rgba(16, 185, 129, 0.35)',
-                                background: hasAddonActive
-                                  ? 'rgba(244, 63, 94, 0.12)'
-                                  : 'rgba(16, 185, 129, 0.14)',
-                                color: hasAddonActive ? '#FB7185' : '#34D399',
-                              }}
-                            >
-                              {togglingAddonTenantId === t.id
-                                ? 'Atualizando...'
-                                : hasAddonActive
-                                ? 'Desativar Add-on Avulso'
-                                : 'Liberar Add-on Avulso'}
-                            </button>
-                          </td>
+                return (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                          <th style={{ padding: '10px 12px' }}>Salão</th>
+                          <th style={{ padding: '10px 12px' }}>Plano Atual</th>
+                          <th style={{ padding: '10px 12px' }}>Status do Módulo ({addonShortTitle})</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Ação Rápida</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {tenants.map((t) => {
+                          const planSlug = (t.subscription?.plan?.slug || 'starter').toLowerCase();
+                          const includedInPlan = Boolean(
+                            currentAddonCfg?.includedInPlans?.[planSlug] ||
+                              DEFAULT_PERMISSIONS_BY_SLUG[planSlug]?.[
+                                selectedQuickAddonKey as keyof PlanPermissions
+                              ],
+                          );
+                          const rawActive = t.subscription?.activeAddons;
+                          const inActiveAddons =
+                            Array.isArray(rawActive) &&
+                            rawActive.some((a: any) => a && a.key === selectedQuickAddonKey);
+                          const hasAddonActive =
+                            selectedQuickAddonKey === 'nfse'
+                              ? Boolean(t.subscription?.nfseAddonActive || inActiveAddons)
+                              : inActiveAddons;
+
+                          return (
+                            <tr key={t.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td style={{ padding: '12px' }}>
+                                <div style={{ fontWeight: 600, color: '#F9FAFB' }}>{t.name}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>/{t.slug}</div>
+                              </td>
+                              <td style={{ padding: '12px', fontWeight: 600, color: 'var(--primary)' }}>
+                                {t.subscription?.plan?.name || 'Sem plano'}
+                              </td>
+                              <td style={{ padding: '12px' }}>
+                                {includedInPlan ? (
+                                  <span className="badge badge-success">Incluso no Plano ({t.subscription?.plan?.name})</span>
+                                ) : hasAddonActive ? (
+                                  <span className="badge badge-success">Add-on Avulso Ativo</span>
+                                ) : (
+                                  <span className="badge badge-neutral">Não contratado</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'right' }}>
+                                <button
+                                  type="button"
+                                  disabled={togglingAddonTenantId === t.id}
+                                  onClick={() =>
+                                    handleQuickToggleTenantAddon(
+                                      t,
+                                      selectedQuickAddonKey,
+                                      !hasAddonActive,
+                                    )
+                                  }
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '8px',
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    border: hasAddonActive
+                                      ? '1px solid rgba(244, 63, 94, 0.35)'
+                                      : '1px solid rgba(16, 185, 129, 0.35)',
+                                    background: hasAddonActive
+                                      ? 'rgba(244, 63, 94, 0.12)'
+                                      : 'rgba(16, 185, 129, 0.14)',
+                                    color: hasAddonActive ? '#FB7185' : '#34D399',
+                                  }}
+                                >
+                                  {togglingAddonTenantId === t.id
+                                    ? 'Atualizando...'
+                                    : hasAddonActive
+                                    ? 'Desativar Add-on Avulso'
+                                    : 'Liberar Add-on Avulso'}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}

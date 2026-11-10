@@ -19,7 +19,13 @@ import {
   syncExpiredTenantsAndSubscriptions,
   type PlanPermissions,
 } from '../../lib/tenant-access.js';
-import { getAddonsCatalog, saveAddonsCatalog, getAddonByKey } from '../../lib/addons.js';
+import {
+  getAddonsCatalog,
+  saveAddonsCatalog,
+  getAddonByKey,
+  activateAddonOnSubscription,
+  cancelAddonOnSubscription,
+} from '../../lib/addons.js';
 import { getCouponsCatalog, saveCouponsCatalog, type SaasCoupon } from '../../lib/coupons.js';
 import { getBillingCyclesConfig, saveBillingCyclesConfig } from '../../lib/billing-cycles.js';
 import {
@@ -56,6 +62,8 @@ const updateSubscriptionSchema = z.object({
   maxAppointmentsOverride: z.number().int().min(1).nullable().optional(),
   nfseAddonActive: z.boolean().optional(),
   nfseAddonExpiresAt: z.coerce.date().nullable().optional(),
+  addonKey: z.string().optional(),
+  addonActive: z.boolean().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });
 
@@ -531,7 +539,22 @@ superAdminRouter.patch('/tenants/:id/subscription', async (req, res) => {
   if (!current) throw HttpError.notFound('Assinatura não encontrada para este salão');
 
   const isSettingLifetime = data.status === 'LIFETIME' || data.isLifetime === true;
-  const { isLifetime: _ignoreIsLifetime, status: rawStatus, ...restData } = data;
+  const {
+    isLifetime: _ignoreIsLifetime,
+    status: rawStatus,
+    addonKey,
+    addonActive,
+    ...restData
+  } = data;
+
+  if (addonKey) {
+    const key = addonKey as keyof PlanPermissions;
+    if (addonActive === false) {
+      await cancelAddonOnSubscription(req.params.id, key);
+    } else {
+      await activateAddonOnSubscription(req.params.id, key, 365);
+    }
+  }
 
   const subUpdateData: Prisma.SubscriptionUncheckedUpdateInput = {
     ...restData,

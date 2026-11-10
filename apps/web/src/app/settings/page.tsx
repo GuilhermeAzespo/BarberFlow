@@ -29,6 +29,7 @@ import {
   KeyRound,
   Zap,
   Lock,
+  ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
 import { api, ApiError } from '../../lib/api';
@@ -176,7 +177,8 @@ export default function SettingsPage() {
   const loadPaymentConfig = async () => {
     try {
       const res = await api.get<{
-        hasOnlinePaymentsAddon: boolean;
+        hasAccess?: boolean;
+        hasOnlinePaymentsAddon?: boolean;
         webhookUrl: string;
         config: {
           enabled: boolean;
@@ -185,11 +187,12 @@ export default function SettingsPage() {
           recurringCardEnabled: boolean;
           mpPublicKey: string;
           hasAccessToken: boolean;
-          mpAccessTokenPreview: string | null;
+          maskedAccessToken?: string | null;
+          mpAccessTokenPreview?: string | null;
           mpWebhookSecret: string;
         };
       }>('/api/tenant/payment-config');
-      setMpHasAddon(Boolean(res.hasOnlinePaymentsAddon));
+      setMpHasAddon(Boolean(res.hasOnlinePaymentsAddon ?? res.hasAccess));
       setMpWebhookUrl(res.webhookUrl || '');
       if (res.config) {
         setMpEnabled(Boolean(res.config.enabled));
@@ -198,7 +201,7 @@ export default function SettingsPage() {
         setMpRecurringCardEnabled(res.config.recurringCardEnabled !== false);
         setMpPublicKey(res.config.mpPublicKey || '');
         setMpHasAccessToken(Boolean(res.config.hasAccessToken));
-        setMpAccessTokenPreview(res.config.mpAccessTokenPreview || null);
+        setMpAccessTokenPreview(res.config.mpAccessTokenPreview || res.config.maskedAccessToken || null);
         setMpWebhookSecret(res.config.mpWebhookSecret || '');
       }
     } catch {
@@ -213,7 +216,7 @@ export default function SettingsPage() {
     setSuccessMsg(null);
     try {
       const res = await api.put<{
-        message: string;
+        message?: string;
         config: {
           enabled: boolean;
           pixEnabled: boolean;
@@ -221,7 +224,8 @@ export default function SettingsPage() {
           recurringCardEnabled: boolean;
           mpPublicKey: string;
           hasAccessToken: boolean;
-          mpAccessTokenPreview: string | null;
+          maskedAccessToken?: string | null;
+          mpAccessTokenPreview?: string | null;
           mpWebhookSecret: string;
         };
       }>('/api/tenant/payment-config', {
@@ -234,7 +238,7 @@ export default function SettingsPage() {
         mpWebhookSecret: mpWebhookSecret.trim(),
       });
       setMpHasAccessToken(Boolean(res.config.hasAccessToken));
-      setMpAccessTokenPreview(res.config.mpAccessTokenPreview || null);
+      setMpAccessTokenPreview(res.config.mpAccessTokenPreview || res.config.maskedAccessToken || null);
       setMpAccessToken('');
       toast.success(res.message || 'Configurações de recebimento online salvas!');
       setSuccessMsg(res.message || 'Configurações de recebimento online salvas!');
@@ -256,19 +260,35 @@ export default function SettingsPage() {
     setMpTestResult(null);
     try {
       const res = await api.post<{
-        success: boolean;
-        message: string;
+        success?: boolean;
+        valid?: boolean;
+        message?: string;
+        accountId?: number | string;
         account?: { id?: number | string; nickname?: string; email?: string };
       }>('/api/tenant/payment-config/test', {
         ...(mpAccessToken.trim() ? { mpAccessToken: mpAccessToken.trim() } : {}),
       });
-      setMpTestResult(res);
-      toast.success(res.message || 'Conexão validada com sucesso!');
+      const isSuccess = Boolean(res.success || res.valid);
+      const msg =
+        res.message ||
+        (isSuccess
+          ? 'Conexão validada com sucesso com o Mercado Pago!'
+          : 'Falha ao validar credenciais do Mercado Pago.');
+      setMpTestResult({
+        success: isSuccess,
+        message: msg,
+        account: res.account || (res.accountId ? { id: res.accountId } : undefined),
+      });
+      if (isSuccess) {
+        toast.success(msg);
+      } else {
+        toast.error(msg);
+      }
     } catch (err: unknown) {
       const msg =
-        err instanceof ApiError
+        err instanceof ApiError && err.message
           ? err.message
-          : 'Falha ao conectar com o Mercado Pago. Verifique seu Access Token.';
+          : 'Falha ao conectar com o Mercado Pago. Verifique seu Access Token de Produção.';
       setMpTestResult({ success: false, message: msg });
       toast.error(msg);
     } finally {
@@ -463,6 +483,7 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const canConfigureOnlinePayments = Boolean(mpHasAddon || hasPlanFeature('onlinePayments'));
   const tenantSlug = slug || tenant?.slug || '';
   const activeCustomDomain = isPremium && currentCustomDomain && (dnsStatus ? dnsStatus.verified : true) ? currentCustomDomain.trim() : null;
   const publicHomeUrl = activeCustomDomain ? `https://${activeCustomDomain}` : (tenantSlug && origin ? `${origin}/${tenantSlug}` : (tenantSlug ? `/${tenantSlug}` : ''));
@@ -953,22 +974,22 @@ export default function SettingsPage() {
                             padding: '3px 10px',
                             borderRadius: '999px',
                             background:
-                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                              canConfigureOnlinePayments
                                 ? 'rgba(16, 185, 129, 0.16)'
                                 : 'rgba(245, 158, 11, 0.16)',
                             color:
-                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                              canConfigureOnlinePayments
                                 ? '#34D399'
                                 : '#FBBF24',
                             border:
-                              mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
+                              canConfigureOnlinePayments
                                 ? '1px solid rgba(16, 185, 129, 0.35)'
                                 : '1px solid rgba(245, 158, 11, 0.35)',
                           }}
                         >
-                          {mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN'
-                            ? '✓ Add-on Liberado no Salão'
-                            : '⚡ Add-on Opcional'}
+                          {canConfigureOnlinePayments
+                            ? '✓ Add-on Ativo no Salão'
+                            : '⚡ Add-on Não Contratado'}
                         </span>
                       </div>
                       <p style={{ color: '#A1A1AA', fontSize: '0.88rem', lineHeight: 1.55, margin: 0 }}>
@@ -981,7 +1002,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {!(mpHasAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN') && (
+                  {!canConfigureOnlinePayments && (
                     <Link
                       href="/planos#marketplace-addons"
                       style={{
@@ -1061,8 +1082,116 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* PASSO A PASSO DE CONFIGURAÇÃO */}
-              <div
+              {!canConfigureOnlinePayments ? (
+                <div
+                  className="glass-panel"
+                  style={{
+                    padding: '40px 32px',
+                    border: '1px solid rgba(212, 175, 55, 0.3)',
+                    background:
+                      'radial-gradient(ellipse at center, rgba(212, 175, 55, 0.08) 0%, rgba(18, 18, 22, 0.95) 75%)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    textAlign: 'center',
+                    gap: '20px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '68px',
+                      height: '68px',
+                      borderRadius: '20px',
+                      background: 'rgba(212, 175, 55, 0.16)',
+                      border: '1px solid rgba(212, 175, 55, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#F5D061',
+                    }}
+                  >
+                    <Lock size={32} />
+                  </div>
+
+                  <div style={{ maxWidth: '640px' }}>
+                    <div
+                      style={{
+                        display: 'inline-block',
+                        padding: '4px 12px',
+                        borderRadius: '999px',
+                        background: 'rgba(245, 158, 11, 0.16)',
+                        border: '1px solid rgba(245, 158, 11, 0.35)',
+                        color: '#FBBF24',
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        marginBottom: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      Módulo Add-on Requerido
+                    </div>
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#FAFAFA', margin: '0 0 10px 0' }}>
+                      Configurações Bloqueadas: Contrate o Add-on para Conectar seu Mercado Pago
+                    </h3>
+                    <p style={{ color: '#A1A1AA', fontSize: '0.92rem', lineHeight: 1.6, margin: 0 }}>
+                      As credenciais e o passo a passo de integração do Mercado Pago ficam liberados assim que o Add-on for contratado. Com ele ativo, seus clientes assinam os planos mensais do Clube VIP na vitrine ou pelo Bot com cartão recorrente ou PIX automático, caindo 100% direto na sua conta.
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '24px',
+                      padding: '16px 24px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      flexWrap: 'wrap',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: '#71717A', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Investimento Mensal
+                      </div>
+                      <div style={{ fontSize: '1.3rem', fontWeight: 900, color: '#F5D061' }}>
+                        + R$ 9,90<span style={{ fontSize: '0.85rem', color: '#A1A1AA', fontWeight: 500 }}>/mês</span>
+                      </div>
+                    </div>
+                    <div style={{ width: '1px', height: '36px', background: 'rgba(255, 255, 255, 0.1)' }} />
+                    <div style={{ textAlign: 'left', fontSize: '0.82rem', color: '#D4D4D8', lineHeight: 1.5 }}>
+                      ✓ 100% do valor pago cai direto na sua conta Mercado Pago<br />
+                      ✓ Cancelamento flexível em qualquer momento (sem multas)
+                    </div>
+                  </div>
+
+                  <Link
+                    href="/planos#marketplace-addons"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '14px 28px',
+                      borderRadius: '12px',
+                      background: 'linear-gradient(135deg, #F5D061 0%, #D4AF37 100%)',
+                      color: '#09090B',
+                      fontWeight: 800,
+                      fontSize: '0.95rem',
+                      textDecoration: 'none',
+                      boxShadow: '0 8px 24px rgba(212, 175, 55, 0.35)',
+                    }}
+                  >
+                    <Zap size={18} />
+                    <span>Contratar Add-on no Marketplace (+ R$ 9,90/mês)</span>
+                    <ArrowRight size={16} />
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  {/* PASSO A PASSO DE CONFIGURAÇÃO */}
+                  <div
                 className="glass-panel"
                 style={{
                   padding: '26px 28px',
@@ -1357,7 +1486,7 @@ export default function SettingsPage() {
                       }}
                     >
                       <ShieldCheck size={14} />
-                      <span>Access Token Configurado ({mpAccessTokenPreview})</span>
+                      <span>Access Token Configurado{mpAccessTokenPreview ? ` (${mpAccessTokenPreview})` : ''}</span>
                     </span>
                   )}
                 </div>
@@ -1527,7 +1656,9 @@ export default function SettingsPage() {
                       onChange={(e) => setMpAccessToken(e.target.value)}
                       placeholder={
                         mpHasAccessToken
-                          ? `Token atual salvo (${mpAccessTokenPreview}) — digite para substituir`
+                          ? (mpAccessTokenPreview
+                              ? `Token atual salvo (${mpAccessTokenPreview}) — digite para substituir`
+                              : 'Token atual salvo — digite para substituir')
                           : 'APP_USR-0000000000000000-000000-xxxxxxxxxxxxxxxx-000000000'
                       }
                       style={{
@@ -1565,7 +1696,12 @@ export default function SettingsPage() {
                   >
                     {mpTestResult.success ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
                     <div>
-                      <div style={{ fontWeight: 700 }}>{mpTestResult.message}</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {mpTestResult.message ||
+                          (mpTestResult.success
+                            ? 'Conexão validada com sucesso no Mercado Pago!'
+                            : 'Falha ao validar credenciais do Mercado Pago.')}
+                      </div>
                       {mpTestResult.account && (
                         <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: '2px' }}>
                           Conta Mercado Pago ID: <strong>{mpTestResult.account.id}</strong> • Usuário:{' '}
@@ -1623,8 +1759,10 @@ export default function SettingsPage() {
                   </button>
                 </div>
               </form>
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {activeTab === 'general' && (
             <>
