@@ -514,12 +514,14 @@ export default function CalendarPage() {
         config?: { enabled: boolean; hasAccessToken: boolean };
       }>('/api/tenant/payment-config')
       .then((res) => {
-        const active = Boolean(
-          (res.hasAccess || res.hasOnlinePaymentsAddon || hasPlanFeature('onlinePayments') || user?.role === 'SUPER_ADMIN') &&
-            res.config?.enabled &&
-            res.config?.hasAccessToken,
+        const hasAddonOrPlan = Boolean(
+          res.hasAccess ||
+            res.hasOnlinePaymentsAddon ||
+            hasPlanFeature('onlinePayments') ||
+            user?.role === 'SUPER_ADMIN',
         );
-        setHasOnlinePayments(active);
+        const hasToken = Boolean(res.config?.hasAccessToken);
+        setHasOnlinePayments(hasAddonOrPlan && hasToken);
       })
       .catch(() => {});
   }, [hasPlanFeature, user?.role]);

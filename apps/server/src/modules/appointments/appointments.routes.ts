@@ -390,9 +390,9 @@ appointmentsRouter.post('/:id/charge-pix', async (req, res) => {
     );
   }
 
-  if (!paymentConfig?.enabled || !paymentConfig.mpAccessToken) {
+  if (!paymentConfig?.mpAccessToken) {
     throw HttpError.badRequest(
-      'As credenciais do Mercado Pago não estão configuradas ou o módulo está desativado. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
+      'As credenciais do Mercado Pago não estão configuradas para este salão. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
     );
   }
 
@@ -509,9 +509,9 @@ appointmentsRouter.post('/:id/payment-link', async (req, res) => {
     );
   }
 
-  if (!paymentConfig?.enabled || !paymentConfig.mpAccessToken) {
+  if (!paymentConfig?.mpAccessToken) {
     throw HttpError.badRequest(
-      'As credenciais do Mercado Pago não estão configuradas ou o módulo está desativado. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
+      'As credenciais do Mercado Pago não estão configuradas para este salão. Acesse Configurações → Recebimentos Online para preencher suas chaves de produção.'
     );
   }
 

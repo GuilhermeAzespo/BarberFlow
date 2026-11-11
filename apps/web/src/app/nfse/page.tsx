@@ -31,6 +31,7 @@ import { Header } from '../../components/Header';
 import { Modal } from '../../components/Modal';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
+import { useToast } from '../../components/Toast';
 
 const formatBRL = (cents: number) =>
   ((cents || 0) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -158,6 +159,7 @@ const DEFAULT_STATS = {
 
 export default function NfsePage() {
   const { hasPlanFeature, refresh: refreshAuth, subscription, isAddonFeature, getAddonPriceCents } = useAuth();
+  const { confirm } = useToast();
   const hasNfseAccess = hasPlanFeature('nfse');
 
   const [activeTab, setActiveTab] = useState<'invoices' | 'pending' | 'config'>('invoices');
@@ -535,7 +537,15 @@ export default function NfsePage() {
   };
 
   const handleRemoveCertificate = async () => {
-    if (!window.confirm('Deseja realmente remover o Certificado Digital A1 vinculado a este salão?')) return;
+    const ok = await confirm({
+      title: 'Remover Certificado Digital?',
+      message: 'Deseja realmente remover o Certificado Digital A1 vinculado a este salão?',
+      confirmText: 'Sim, Remover',
+      cancelText: 'Cancelar',
+      danger: true,
+      icon: 'trash',
+    });
+    if (!ok) return;
     try {
       await api.delete('/api/nfse/certificate');
       showToast('success', 'Certificado Digital removido com sucesso.');

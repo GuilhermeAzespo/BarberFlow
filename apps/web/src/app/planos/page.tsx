@@ -566,7 +566,7 @@ interface PaymentHistoryItem {
 
 export default function PlanosPage() {
   const { tenant, subscription, refresh, isTrialExpired } = useAuth();
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
   const [plans, setPlans] = useState<PublicPlan[]>(sortPlansFixed(DEFAULT_PLANS));
   const [activeProfsCount, setActiveProfsCount] = useState<number>(1);
   const [billingInfo, setBillingInfo] = useState<BillingStatusResponse | null>(null);
@@ -637,8 +637,19 @@ export default function PlanosPage() {
     : [];
   const checkoutAddonsMonthlyCents = checkoutBillableAddons.reduce((acc, a) => acc + a.priceCents, 0);
   const checkoutAddonsCycleCents = checkoutAddonsMonthlyCents * (checkoutCycle?.months || 1);
+
+  // Cálculo Pró-rata Inteligente para Add-on contratado avulso no meio do ciclo da assinatura
+  const addonRenewDays = billingInfo?.subscription?.renewDaysLeft ?? billingInfo?.subscription?.trialDaysLeft ?? 30;
+  const addonDaysRemaining = Math.max(1, Math.min(30, addonRenewDays));
+  const addonIsProRata = Boolean(selectedAddonForCheckout && addonDaysRemaining < 30);
+  const addonProRataCents = selectedAddonForCheckout
+    ? (addonIsProRata
+        ? Math.max(100, Math.round(selectedAddonForCheckout.priceCents * (addonDaysRemaining / 30)))
+        : selectedAddonForCheckout.priceCents)
+    : 0;
+
   const checkoutBaseInvoiceCents = selectedAddonForCheckout
-    ? selectedAddonForCheckout.priceCents
+    ? addonProRataCents
     : (checkoutCycle?.amountCents ?? 0) + checkoutAddonsCycleCents;
   const checkoutAmountCents = appliedCoupon
     ? appliedCoupon.finalAmountCents
@@ -829,11 +840,15 @@ export default function PlanosPage() {
   };
 
   const handleCancelAddon = async (addonKey: string, addonName: string) => {
-    if (
-      !window.confirm(
-        `Deseja realmente cancelar apenas o Add-on "${addonName}"?\n\n• O seu Plano atual continuará 100% ativo normalmente.\n• O valor deste Add-on será removido da sua fatura imediatamente.`,
-      )
-    ) {
+    const ok = await confirm({
+      title: 'Cancelar Add-on?',
+      message: `Deseja realmente cancelar apenas o Add-on "${addonName}"?\n\n• O seu Plano atual continuará 100% ativo normalmente.\n• O valor deste Add-on será removido da sua fatura imediatamente.`,
+      confirmText: 'Sim, Cancelar Add-on',
+      cancelText: 'Manter Add-on',
+      danger: true,
+      icon: 'alert',
+    });
+    if (!ok) {
       return;
     }
 
@@ -2552,7 +2567,9 @@ export default function PlanosPage() {
                 </h4>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {selectedAddonForCheckout
-                    ? 'Liberado imediatamente após confirmação e incluído na sua fatura mensal'
+                    ? addonIsProRata
+                      ? `Ativação proporcional aos ${addonDaysRemaining} dias restantes do seu ciclo atual`
+                      : 'Liberado imediatamente após confirmação e incluído na sua fatura mensal'
                     : billingCycle === 'MONTHLY'
                       ? '30 dias de acesso com liberação imediata'
                       : `${checkoutCycle?.days || 30} dias de acesso (${checkoutCycle?.months} meses)`}
@@ -2566,6 +2583,15 @@ export default function PlanosPage() {
                     </span>
                     <span style={{ fontSize: '1.45rem', fontWeight: 800, color: '#34D399' }}>
                       {formatBRL(appliedCoupon.finalAmountCents)}
+                    </span>
+                  </>
+                ) : selectedAddonForCheckout && addonIsProRata ? (
+                  <>
+                    <span style={{ fontSize: '0.82rem', color: 'var(--text-dim)', textDecoration: 'line-through', display: 'block' }}>
+                      {formatBRL(selectedAddonForCheckout.priceCents)}
+                    </span>
+                    <span style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--primary)' }}>
+                      {formatBRL(checkoutAmountCents)}
                     </span>
                   </>
                 ) : checkoutCycle && checkoutCycle.discountPct > 0 ? (
@@ -2584,7 +2610,9 @@ export default function PlanosPage() {
                 )}
                 <span style={{ fontSize: '0.76rem', color: 'var(--text-dim)', display: 'block' }}>
                   {selectedAddonForCheckout
-                    ? '/ mês'
+                    ? addonIsProRata
+                      ? `pró-rata (${addonDaysRemaining}d restantes)`
+                      : '/ mês'
                     : billingCycle === 'MONTHLY'
                       ? '/ mês'
                       : `total (${CYCLE_META[billingCycle].period})`}
@@ -2646,9 +2674,30 @@ export default function PlanosPage() {
                     </span>
                   </div>
                 </div>
-                <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                  💡 Hoje você pagará apenas <strong>{formatBRL(checkoutAmountCents)}</strong> para ativar o Add-on imediatamente. Você pode cancelar somente o Add-on quando quiser.
-                </div>
+                {addonIsProRata ? (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      background: 'rgba(229, 179, 56, 0.12)',
+                      border: '1px solid rgba(229, 179, 56, 0.35)',
+                      fontSize: '0.78rem',
+                      color: '#F8FAFC',
+                      lineHeight: '1.45',
+                    }}
+                  >
+                    💡 <strong>Cobrança Pró-rata Inteligente:</strong> Hoje você pagará apenas{' '}
+                    <strong style={{ color: 'var(--primary)', fontSize: '0.86rem' }}>
+                      {formatBRL(checkoutAmountCents)}
+                    </strong>{' '}
+                    proporcional aos <strong>{addonDaysRemaining} dias restantes</strong> do seu ciclo atual de assinatura (valor cheio {formatBRL(selectedAddonForCheckout.priceCents)}/mês). Nas próximas faturas mensais, o Add-on será cobrado pelo valor integral de {formatBRL(selectedAddonForCheckout.priceCents)}. Você pode cancelar somente o Add-on quando quiser!
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                    💡 Hoje você pagará apenas <strong>{formatBRL(checkoutAmountCents)}</strong> para ativar o Add-on imediatamente. Você pode cancelar somente o Add-on quando quiser.
+                  </div>
+                )}
               </div>
             ) : (
               selectedPlanForCheckout &&

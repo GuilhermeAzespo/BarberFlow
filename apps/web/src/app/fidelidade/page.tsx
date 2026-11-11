@@ -524,14 +524,14 @@ export default function LoyaltyPage() {
                   </div>
                 ) : (
                   <div className="table-responsive">
-                    <table className="data-table" style={{ fontSize: '0.86rem' }}>
+                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.86rem' }}>
                       <thead>
                         <tr>
-                          <th>Cliente</th>
-                          <th>Progresso no Cartão</th>
-                          <th>Status / Prêmio</th>
-                          <th>Último Selo</th>
-                          <th style={{ textAlign: 'right' }}>Ações Rápidas</th>
+                          <th style={{ width: '28%' }}>Cliente</th>
+                          <th style={{ width: '28%', minWidth: '220px' }}>Progresso no Cartão</th>
+                          <th style={{ width: '20%' }}>Status / Prêmio</th>
+                          <th style={{ width: '12%', whiteSpace: 'nowrap' }}>Último Selo</th>
+                          <th style={{ width: '12%', textAlign: 'right', whiteSpace: 'nowrap' }}>Ações Rápidas</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -907,13 +907,13 @@ export default function LoyaltyPage() {
                 </p>
               ) : (
                 <div style={{ maxHeight: '260px', overflowY: 'auto' }}>
-                  <table className="data-table" style={{ fontSize: '0.8rem' }}>
+                  <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
                     <thead>
                       <tr>
-                        <th>Data/Hora</th>
-                        <th>Tipo</th>
-                        <th>Selos</th>
-                        <th>Descrição</th>
+                        <th style={{ width: '25%', whiteSpace: 'nowrap' }}>Data/Hora</th>
+                        <th style={{ width: '20%' }}>Tipo</th>
+                        <th style={{ width: '15%' }}>Selos</th>
+                        <th style={{ width: '40%' }}>Descrição</th>
                       </tr>
                     </thead>
                     <tbody>

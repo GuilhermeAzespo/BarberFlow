@@ -427,4 +427,91 @@ export async function cancelAddonOnSubscription(
   return nextEntries;
 }
 
+export interface AddonProRataCalculation {
+  isProRata: boolean;
+  fullPriceCents: number;
+  proRataAmountCents: number;
+  daysRemaining: number;
+  totalCycleDays: number;
+  explanation: string;
+}
+
+/**
+ * Calcula a cobrança proporcional (pró-rata) de um Add-on contratado no meio do ciclo da assinatura.
+ * Ex: Se faltam 15 dias para a próxima renovação mensal, o cliente paga apenas 50% de R$ 9,90 (R$ 4,95).
+ * Nas próximas renovações mensais do plano, o Add-on será cobrado pelo valor integral.
+ */
+export function calculateAddonProRata(params: {
+  subscription?: {
+    currentPeriodStart?: Date | string | null;
+    currentPeriodEnd?: Date | string | null;
+    trialEndsAt?: Date | string | null;
+    status?: string;
+  } | null;
+  addonPriceCents: number;
+}): AddonProRataCalculation {
+  const fullPriceCents = params.addonPriceCents;
+  const sub = params.subscription;
+
+  if (!sub || fullPriceCents <= 0) {
+    return {
+      isProRata: false,
+      fullPriceCents,
+      proRataAmountCents: fullPriceCents,
+      daysRemaining: 30,
+      totalCycleDays: 30,
+      explanation: 'Cobrança integral padrão de 30 dias.',
+    };
+  }
+
+  const now = new Date();
+  const periodEnd = sub.currentPeriodEnd
+    ? new Date(sub.currentPeriodEnd)
+    : sub.trialEndsAt
+    ? new Date(sub.trialEndsAt)
+    : null;
+
+  if (!periodEnd) {
+    return {
+      isProRata: false,
+      fullPriceCents,
+      proRataAmountCents: fullPriceCents,
+      daysRemaining: 30,
+      totalCycleDays: 30,
+      explanation: 'Assinatura sem data de término periódica. Cobrança mensal cheia.',
+    };
+  }
+
+  const totalCycleDays = 30;
+  const msRemaining = periodEnd.getTime() - now.getTime();
+  const rawDaysRemaining = Math.ceil(msRemaining / (1000 * 60 * 60 * 24));
+
+  if (rawDaysRemaining <= 0 || rawDaysRemaining >= totalCycleDays) {
+    return {
+      isProRata: false,
+      fullPriceCents,
+      proRataAmountCents: fullPriceCents,
+      daysRemaining: Math.max(1, rawDaysRemaining),
+      totalCycleDays,
+      explanation: 'Cobrança do ciclo integral (30 dias).',
+    };
+  }
+
+  const daysRemaining = Math.max(1, Math.min(totalCycleDays - 1, rawDaysRemaining));
+  const ratio = daysRemaining / totalCycleDays;
+  const rawCents = Math.round(fullPriceCents * ratio);
+
+  // Piso mínimo do Mercado Pago é R$ 1,00 (100 centavos)
+  const proRataAmountCents = Math.max(100, Math.min(fullPriceCents, rawCents));
+
+  return {
+    isProRata: true,
+    fullPriceCents,
+    proRataAmountCents,
+    daysRemaining,
+    totalCycleDays,
+    explanation: `Cobrança proporcional (pró-rata) para ${daysRemaining} dias restantes até a renovação da sua fatura.`,
+  };
+}
+
 

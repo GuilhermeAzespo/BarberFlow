@@ -1507,10 +1507,10 @@ export default function SettingsPage() {
                 >
                   <div>
                     <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#FAFAFA', marginBottom: '3px' }}>
-                      Habilitar Recebimentos Online do Clube VIP na Vitrine e no Bot WhatsApp
+                      Habilitar Recebimentos Online na Vitrine Pública e Bot WhatsApp (Clube VIP)
                     </div>
                     <div style={{ fontSize: '0.81rem', color: '#A1A1AA' }}>
-                      Quando ativado, o botão <strong>"Assinar Online (Cartão ou PIX)"</strong> aparecerá nos planos do Clube VIP da sua vitrine pública.
+                      Quando ativado, o botão <strong>"Assinar Online (Cartão ou PIX)"</strong> aparecerá nos planos do Clube VIP da vitrine e no WhatsApp. <em>Cobranças no Caixa da Agenda (QR Code PIX e Link de Pagamento) funcionam automaticamente com o Access Token salvo.</em>
                     </div>
                   </div>
                   <input

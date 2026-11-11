@@ -27,6 +27,7 @@ import {
   parseSubscriptionActiveAddons,
   activateAddonOnSubscription,
   cancelAddonOnSubscription,
+  calculateAddonProRata,
   type SubscribedAddonEntry,
 } from '../../lib/addons.js';
 import { validateAndCalculateCoupon, incrementCouponUsage } from '../../lib/coupons.js';
@@ -992,8 +993,13 @@ billingRouter.post('/addon/:addonKey/pix', async (req, res) => {
     );
   }
   const addonPriceCents = addonCfg.priceCents;
+  const proRata = calculateAddonProRata({
+    subscription: tenant.subscription,
+    addonPriceCents,
+  });
+  const checkoutBaseCents = proRata.proRataAmountCents;
 
-  let finalAmountCents = addonPriceCents;
+  let finalAmountCents = checkoutBaseCents;
   let appliedCouponCode: string | null = null;
   let discountCents = 0;
 
@@ -1001,7 +1007,7 @@ billingRouter.post('/addon/:addonKey/pix', async (req, res) => {
     const couponCheck = await validateAndCalculateCoupon({
       code: body.couponCode,
       targetType: 'ADDON',
-      originalAmountCents: addonPriceCents,
+      originalAmountCents: checkoutBaseCents,
     });
     if (!couponCheck.valid || !couponCheck.coupon) {
       throw HttpError.badRequest(couponCheck.message);
@@ -1031,6 +1037,10 @@ billingRouter.post('/addon/:addonKey/pix', async (req, res) => {
         addonKey,
         addonName: addonCfg.name,
         originalAmountCents: addonPriceCents,
+        isProRata: proRata.isProRata,
+        proRataAmountCents: proRata.proRataAmountCents,
+        daysRemaining: proRata.daysRemaining,
+        totalCycleDays: proRata.totalCycleDays,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
       },
     },
@@ -1039,9 +1049,9 @@ billingRouter.post('/addon/:addonKey/pix', async (req, res) => {
   try {
     const pixResult = await createMercadoPagoPix({
       amountCents: finalAmountCents,
-      description: `BarberFlow - Add-on ${addonCfg.shortName} (${tenant.name})${
-        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
-      }`,
+      description: `BarberFlow - Add-on ${addonCfg.shortName}${
+        proRata.isProRata ? ` (Pró-rata ${proRata.daysRemaining}d)` : ''
+      } (${tenant.name})${appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''}`,
       payerEmail,
       payerName,
       payerCpf: body.payerCpf,
@@ -1130,8 +1140,13 @@ billingRouter.post('/addon/:addonKey/card', async (req, res) => {
     );
   }
   const addonPriceCents = addonCfg.priceCents;
+  const proRata = calculateAddonProRata({
+    subscription: tenant.subscription,
+    addonPriceCents,
+  });
+  const checkoutBaseCents = proRata.proRataAmountCents;
 
-  let finalAmountCents = addonPriceCents;
+  let finalAmountCents = checkoutBaseCents;
   let appliedCouponCode: string | null = null;
   let discountCents = 0;
 
@@ -1139,7 +1154,7 @@ billingRouter.post('/addon/:addonKey/card', async (req, res) => {
     const couponCheck = await validateAndCalculateCoupon({
       code: data.couponCode,
       targetType: 'ADDON',
-      originalAmountCents: addonPriceCents,
+      originalAmountCents: checkoutBaseCents,
     });
     if (!couponCheck.valid || !couponCheck.coupon) {
       throw HttpError.badRequest(couponCheck.message);
@@ -1186,6 +1201,10 @@ billingRouter.post('/addon/:addonKey/card', async (req, res) => {
         addonKey,
         addonName: addonCfg.name,
         originalAmountCents: addonPriceCents,
+        isProRata: proRata.isProRata,
+        proRataAmountCents: proRata.proRataAmountCents,
+        daysRemaining: proRata.daysRemaining,
+        totalCycleDays: proRata.totalCycleDays,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode, discountCents } : {}),
       },
     },
@@ -1195,9 +1214,9 @@ billingRouter.post('/addon/:addonKey/card', async (req, res) => {
     const cardResult = await createMercadoPagoCardPayment({
       amountCents: finalAmountCents,
       token: cardToken,
-      description: `BarberFlow - Add-on ${addonCfg.shortName} (${tenant.name})${
-        appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''
-      }`,
+      description: `BarberFlow - Add-on ${addonCfg.shortName}${
+        proRata.isProRata ? ` (Pró-rata ${proRata.daysRemaining}d)` : ''
+      } (${tenant.name})${appliedCouponCode ? ` [Cupom ${appliedCouponCode}]` : ''}`,
       installments: data.installments,
       paymentMethodId: data.paymentMethodId || inferPaymentMethodId(data.cardNumber),
       payerEmail,
